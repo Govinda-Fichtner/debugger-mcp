@@ -24,6 +24,7 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 ## Quick Links
 
+- **[Docker Deployment Guide](docs/DOCKER.md)** - Running with Docker (recommended)
 - **[Main Architecture Proposal](docs/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design (68 pages)
 - **[MVP Implementation Plan](docs/MVP_IMPLEMENTATION_PLAN.md)** - Phase 1 development guide
 - **[Getting Started](GETTING_STARTED.md)** - Developer setup and first steps
@@ -79,27 +80,57 @@ AI Agent (Claude Desktop, Gemini CLI, etc.)
    (Python)  (Node.js)    (Go)   (Rust/C++)
 ```
 
-## Usage (Future)
+## Usage
 
-### Install
-
-```bash
-cargo install debugger_mcp
-```
-
-### Run as MCP Server
+### Option 1: Docker (Recommended)
 
 ```bash
-debugger_mcp serve
+# Build the image
+docker build -t debugger-mcp:latest .
+
+# Run the server
+docker run -i debugger-mcp:latest
+
+# Or use docker-compose
+docker-compose up -d
 ```
 
-### Configure with Claude Desktop
+**Configure with Claude Desktop:**
+
+```json
+{
+  "mccpServers": {
+    "debugger": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "${workspaceFolder}:/workspace",
+        "debugger-mcp:latest"
+      ]
+    }
+  }
+}
+```
+
+See [Docker Documentation](docs/DOCKER.md) for details.
+
+### Option 2: Native Install
+
+```bash
+# Build from source
+cargo build --release
+
+# Run as MCP Server
+./target/release/debugger_mcp serve
+```
+
+**Configure with Claude Desktop:**
 
 ```json
 {
   "mcpServers": {
     "debugger": {
-      "command": "debugger_mcp",
+      "command": "/path/to/debugger_mcp",
       "args": ["serve"]
     }
   }
