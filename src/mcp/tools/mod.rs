@@ -57,6 +57,31 @@ pub struct SessionStateArgs {
     pub session_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitForStopArgs {
+    pub session_id: String,
+    #[serde(default = "default_timeout")]
+    pub timeout_ms: u64,
+}
+
+fn default_timeout() -> u64 {
+    5000
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListBreakpointsArgs {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepArgs {
+    pub session_id: String,
+    pub thread_id: Option<i32>,
+}
+
 pub struct ToolsHandler {
     session_manager: Arc<RwLock<SessionManager>>,
 }
@@ -75,6 +100,11 @@ impl ToolsHandler {
             "debugger_stack_trace" => self.debugger_stack_trace(arguments).await,
             "debugger_evaluate" => self.debugger_evaluate(arguments).await,
             "debugger_disconnect" => self.debugger_disconnect(arguments).await,
+            "debugger_wait_for_stop" => self.debugger_wait_for_stop(arguments).await,
+            "debugger_list_breakpoints" => self.debugger_list_breakpoints(arguments).await,
+            "debugger_step_over" => self.debugger_step_over(arguments).await,
+            "debugger_step_into" => self.debugger_step_into(arguments).await,
+            "debugger_step_out" => self.debugger_step_out(arguments).await,
             _ => Err(Error::MethodNotFound(name.to_string())),
         }
     }
@@ -159,10 +189,18 @@ impl ToolsHandler {
 
     async fn debugger_stack_trace(&self, arguments: Value) -> Result<Value> {
         let args: StackTraceArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.read().await;
         let session = manager.get_session(&args.session_id).await?;
-        
+
+        // Validate we're in a stopped state
+        let state = session.get_state().await;
+        if !matches!(state, crate::debug::state::DebugState::Stopped { .. }) {
+            return Err(Error::InvalidState(
+                "Cannot get stack trace while program is running. The program must be stopped at a breakpoint, entry point, or step. Use debugger_wait_for_stop() to wait for the program to stop.".to_string()
+            ));
+        }
+
         let frames = session.stack_trace().await?;
 
         Ok(json!({
@@ -172,14 +210,171 @@ impl ToolsHandler {
 
     async fn debugger_evaluate(&self, arguments: Value) -> Result<Value> {
         let args: EvaluateArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.read().await;
         let session = manager.get_session(&args.session_id).await?;
-        
+
+        // Validate we're in a stopped state
+        let state = session.get_state().await;
+        if !matches!(state, crate::debug::state::DebugState::Stopped { .. }) {
+            return Err(Error::InvalidState(
+                "Cannot evaluate expressions while program is running. The program must be stopped at a breakpoint, entry point, or step. Use debugger_wait_for_stop() to wait for the program to stop.".to_string()
+            ));
+        }
+
         let result = session.evaluate(&args.expression, args.frame_id).await?;
 
         Ok(json!({
             "result": result
+        }))
+    }
+
+    async fn debugger_wait_for_stop(&self, arguments: Value) -> Result<Value> {
+        let args: WaitForStopArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let session = manager.get_session(&args.session_id).await?;
+
+        let timeout = tokio::time::Duration::from_millis(args.timeout_ms);
+        let start = tokio::time::Instant::now();
+
+        loop {
+            let state = session.get_state().await;
+
+            // Check if we're stopped
+            if let crate::debug::state::DebugState::Stopped { thread_id, reason } = state {
+                return Ok(json!({
+                    "state": "Stopped",
+                    "threadId": thread_id,
+                    "reason": reason
+                }));
+            }
+
+            // Check if program terminated
+            if matches!(state, crate::debug::state::DebugState::Terminated) {
+                return Ok(json!({
+                    "state": "Terminated",
+                    "reason": "Program exited"
+                }));
+            }
+
+            // Check if program failed
+            if let crate::debug::state::DebugState::Failed { error } = state {
+                return Err(Error::Dap(format!("Session failed: {}", error)));
+            }
+
+            // Check timeout
+            if start.elapsed() > timeout {
+                return Err(Error::InvalidState(format!(
+                    "Timeout waiting for program to stop ({}ms). Current state: {:?}",
+                    args.timeout_ms,
+                    state
+                )));
+            }
+
+            // Sleep briefly before checking again
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+    }
+
+    async fn debugger_list_breakpoints(&self, arguments: Value) -> Result<Value> {
+        let args: ListBreakpointsArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let session = manager.get_session(&args.session_id).await?;
+
+        let full_state = session.get_full_state().await;
+
+        // Collect all breakpoints from all source files
+        let mut all_breakpoints = Vec::new();
+        for (source_path, breakpoints) in full_state.breakpoints.iter() {
+            for bp in breakpoints {
+                all_breakpoints.push(json!({
+                    "id": bp.id,
+                    "verified": bp.verified,
+                    "line": bp.line,
+                    "sourcePath": source_path
+                }));
+            }
+        }
+
+        Ok(json!({
+            "breakpoints": all_breakpoints
+        }))
+    }
+
+    async fn debugger_step_over(&self, arguments: Value) -> Result<Value> {
+        let args: StepArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let session = manager.get_session(&args.session_id).await?;
+
+        // Validate we're in a stopped state
+        let state = session.get_state().await;
+        let thread_id = if let crate::debug::state::DebugState::Stopped { thread_id, .. } = state {
+            thread_id
+        } else {
+            return Err(Error::InvalidState(
+                "Cannot step while program is running. The program must be stopped first.".to_string()
+            ));
+        };
+
+        let thread_id = args.thread_id.unwrap_or(thread_id);
+        session.step_over(thread_id).await?;
+
+        Ok(json!({
+            "status": "stepping",
+            "threadId": thread_id
+        }))
+    }
+
+    async fn debugger_step_into(&self, arguments: Value) -> Result<Value> {
+        let args: StepArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let session = manager.get_session(&args.session_id).await?;
+
+        // Validate we're in a stopped state
+        let state = session.get_state().await;
+        let thread_id = if let crate::debug::state::DebugState::Stopped { thread_id, .. } = state {
+            thread_id
+        } else {
+            return Err(Error::InvalidState(
+                "Cannot step while program is running. The program must be stopped first.".to_string()
+            ));
+        };
+
+        let thread_id = args.thread_id.unwrap_or(thread_id);
+        session.step_into(thread_id).await?;
+
+        Ok(json!({
+            "status": "stepping",
+            "threadId": thread_id
+        }))
+    }
+
+    async fn debugger_step_out(&self, arguments: Value) -> Result<Value> {
+        let args: StepArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let session = manager.get_session(&args.session_id).await?;
+
+        // Validate we're in a stopped state
+        let state = session.get_state().await;
+        let thread_id = if let crate::debug::state::DebugState::Stopped { thread_id, .. } = state {
+            thread_id
+        } else {
+            return Err(Error::InvalidState(
+                "Cannot step while program is running. The program must be stopped first.".to_string()
+            ));
+        };
+
+        let thread_id = args.thread_id.unwrap_or(thread_id);
+        session.step_out(thread_id).await?;
+
+        Ok(json!({
+            "status": "stepping",
+            "threadId": thread_id
         }))
     }
 
@@ -392,6 +587,98 @@ impl ToolsHandler {
                     "priority": 0.4
                 }
             }),
+            json!({
+                "name": "debugger_wait_for_stop",
+                "title": "Wait For Program To Stop",
+                "description": "Blocks until the debugger stops (at breakpoint, step, or entry point), or times out. More efficient than polling debugger_session_state.\n\nWORKFLOW:\n1. Call debugger_continue() to resume execution\n2. Call this tool to wait for the next stop event\n3. Returns immediately when program stops, no polling needed!\n\nTIMING: Blocks until stopped or timeout (default 5000ms)\n\nRETURNS: State info including threadId and reason for stopping\n\nSEE ALSO: debugger_session_state (for current state), debugger_continue (to resume)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Session ID from debugger_start"
+                        },
+                        "timeoutMs": {
+                            "type": "integer",
+                            "default": 5000,
+                            "description": "Maximum time to wait in milliseconds (default: 5000)"
+                        }
+                    },
+                    "required": ["sessionId"]
+                }
+            }),
+            json!({
+                "name": "debugger_list_breakpoints",
+                "title": "List All Breakpoints",
+                "description": "Lists all breakpoints currently set across all source files.\n\nUSEFUL FOR:\n- Verifying which breakpoints are active\n- Checking breakpoint verification status\n- Debugging why a breakpoint might not be hit\n\nTIMING: Returns immediately (<10ms)\n\nRETURNS: Array of breakpoints with id, verified status, line, and sourcePath",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Session ID from debugger_start"
+                        }
+                    },
+                    "required": ["sessionId"]
+                }
+            }),
+            json!({
+                "name": "debugger_step_over",
+                "title": "Step Over (Next Line)",
+                "description": "Executes the current line and stops at the next line. Does NOT step into function calls.\n\nREQUIRES: Program must be stopped (at breakpoint, entry, or previous step)\n\nWORKFLOW:\n1. Ensure program is stopped\n2. Call this tool to execute one line\n3. Use debugger_wait_for_stop to wait for the step to complete\n4. Inspect state with debugger_stack_trace and debugger_evaluate\n\nTIMING: Returns quickly; use debugger_wait_for_stop to detect completion\n\nSEE ALSO: debugger_step_into (to step into functions), debugger_step_out (to step out)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Session ID from debugger_start"
+                        },
+                        "threadId": {
+                            "type": "integer",
+                            "description": "Thread ID (optional, uses stopped thread if not specified)"
+                        }
+                    },
+                    "required": ["sessionId"]
+                }
+            }),
+            json!({
+                "name": "debugger_step_into",
+                "title": "Step Into (Enter Function)",
+                "description": "Steps into function calls on the current line. If no function call, behaves like step_over.\n\nREQUIRES: Program must be stopped\n\nUSEFUL FOR: Debugging function implementations line by line\n\nWORKFLOW: Same as debugger_step_over\n\nSEE ALSO: debugger_step_over (to skip functions), debugger_step_out (to exit function)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Session ID from debugger_start"
+                        },
+                        "threadId": {
+                            "type": "integer",
+                            "description": "Thread ID (optional)"
+                        }
+                    },
+                    "required": ["sessionId"]
+                }
+            }),
+            json!({
+                "name": "debugger_step_out",
+                "title": "Step Out (Exit Function)",
+                "description": "Continues execution until the current function returns, then stops at the caller.\n\nREQUIRES: Program must be stopped inside a function\n\nUSEFUL FOR: Quickly exiting from deep call stacks\n\nWORKFLOW: Same as debugger_step_over\n\nSEE ALSO: debugger_step_into (to enter function), debugger_step_over (to skip line)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Session ID from debugger_start"
+                        },
+                        "threadId": {
+                            "type": "integer",
+                            "description": "Thread ID (optional)"
+                        }
+                    },
+                    "required": ["sessionId"]
+                }
+            }),
         ]
     }
 }
@@ -493,7 +780,7 @@ mod tests {
     #[test]
     fn test_list_tools() {
         let tools = ToolsHandler::list_tools();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 12); // Updated from 7 to 12
 
         // Verify tool names
         let tool_names: Vec<&str> = tools
@@ -501,6 +788,7 @@ mod tests {
             .filter_map(|t| t["name"].as_str())
             .collect();
 
+        // Original tools
         assert!(tool_names.contains(&"debugger_start"));
         assert!(tool_names.contains(&"debugger_session_state"));
         assert!(tool_names.contains(&"debugger_set_breakpoint"));
@@ -508,6 +796,13 @@ mod tests {
         assert!(tool_names.contains(&"debugger_stack_trace"));
         assert!(tool_names.contains(&"debugger_evaluate"));
         assert!(tool_names.contains(&"debugger_disconnect"));
+
+        // New tools
+        assert!(tool_names.contains(&"debugger_wait_for_stop"));
+        assert!(tool_names.contains(&"debugger_list_breakpoints"));
+        assert!(tool_names.contains(&"debugger_step_over"));
+        assert!(tool_names.contains(&"debugger_step_into"));
+        assert!(tool_names.contains(&"debugger_step_out"));
     }
 
     #[test]

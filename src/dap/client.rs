@@ -529,11 +529,47 @@ impl DapClient {
 
     pub async fn continue_execution(&self, thread_id: i32) -> Result<()> {
         let args = ContinueArguments { thread_id };
-        
+
         let response = self.send_request("continue", Some(serde_json::to_value(args)?)).await?;
-        
+
         if !response.success {
             return Err(Error::Dap(format!("Continue failed: {:?}", response.message)));
+        }
+
+        Ok(())
+    }
+
+    pub async fn next(&self, thread_id: i32) -> Result<()> {
+        let args = NextArguments { thread_id };
+
+        let response = self.send_request("next", Some(serde_json::to_value(args)?)).await?;
+
+        if !response.success {
+            return Err(Error::Dap(format!("Next (step over) failed: {:?}", response.message)));
+        }
+
+        Ok(())
+    }
+
+    pub async fn step_in(&self, thread_id: i32) -> Result<()> {
+        let args = StepInArguments { thread_id };
+
+        let response = self.send_request("stepIn", Some(serde_json::to_value(args)?)).await?;
+
+        if !response.success {
+            return Err(Error::Dap(format!("StepIn failed: {:?}", response.message)));
+        }
+
+        Ok(())
+    }
+
+    pub async fn step_out(&self, thread_id: i32) -> Result<()> {
+        let args = StepOutArguments { thread_id };
+
+        let response = self.send_request("stepOut", Some(serde_json::to_value(args)?)).await?;
+
+        if !response.success {
+            return Err(Error::Dap(format!("StepOut failed: {:?}", response.message)));
         }
 
         Ok(())

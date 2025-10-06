@@ -194,6 +194,27 @@ pub struct ContinueArguments {
     pub thread_id: i32,
 }
 
+/// Next (Step Over) Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextArguments {
+    pub thread_id: i32,
+}
+
+/// StepIn (Step Into) Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepInArguments {
+    pub thread_id: i32,
+}
+
+/// StepOut (Step Out) Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StepOutArguments {
+    pub thread_id: i32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -318,6 +318,30 @@ impl DebugSession {
         Ok(())
     }
 
+    pub async fn step_over(&self, thread_id: i32) -> Result<()> {
+        let client = self.client.read().await;
+        client.next(thread_id).await?;
+
+        // State will be updated by 'stopped' event handler when step completes
+        Ok(())
+    }
+
+    pub async fn step_into(&self, thread_id: i32) -> Result<()> {
+        let client = self.client.read().await;
+        client.step_in(thread_id).await?;
+
+        // State will be updated by 'stopped' event handler when step completes
+        Ok(())
+    }
+
+    pub async fn step_out(&self, thread_id: i32) -> Result<()> {
+        let client = self.client.read().await;
+        client.step_out(thread_id).await?;
+
+        // State will be updated by 'stopped' event handler when step completes
+        Ok(())
+    }
+
     pub async fn stack_trace(&self) -> Result<Vec<crate::dap::types::StackFrame>> {
         let state = self.state.read().await;
         let thread_id = state.threads.first().copied().unwrap_or(1);
@@ -345,6 +369,11 @@ impl DebugSession {
     pub async fn get_state(&self) -> DebugState {
         let state = self.state.read().await;
         state.state.clone()
+    }
+
+    pub async fn get_full_state(&self) -> SessionState {
+        let state = self.state.read().await;
+        state.clone()
     }
 }
 
