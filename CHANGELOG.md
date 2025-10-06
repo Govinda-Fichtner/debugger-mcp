@@ -2,6 +2,31 @@
 
 ## [Unreleased] - 2025-10-07
 
+### Documentation - Ruby Validation and Language Addition Guide
+
+#### Comprehensive Documentation Update
+- **Status**: ✅ Ruby debugging fully validated with 100% success rate
+- **New Guides**:
+  - `docs/ADDING_NEW_LANGUAGE.md` - Complete guide for adding language support (150+ lines)
+  - `docs/IMPLEMENTATION_STATUS_OCT_2025.md` - Current implementation status with both Python and Ruby validated
+- **Updated Files**:
+  - `README.md` - Updated status to "Production-Ready", Phase 2 marked complete, added language addition guide link
+  - Supported Languages table enhanced with validation status
+- **Success Validation**:
+  - End-to-end testing with Claude: 100% success rate
+  - All 13 MCP tools working across Python and Ruby
+  - Bug identification successful (fizzbuzz n % 4 → n % 5)
+- **Key Learnings Documented**:
+  - DAP specification compliance critical
+  - stopOnEntry not universal (entry breakpoint pattern works for all)
+  - Transport mechanisms vary (STDIO vs TCP)
+  - Language-specific parsing needed for first executable line detection
+  - Adapter bugs exist (workarounds documented)
+- **References**:
+  - Success report: `/home/vagrant/projects/fizzbuzz-ruby-test/SUCCESS_REPORT.md`
+  - GitHub Issue #1: Proper DAP sequence for all languages
+  - Language addition guide: `docs/ADDING_NEW_LANGUAGE.md`
+
 ### Fixed - Ruby stopOnEntry Issue
 
 #### Ruby Debugging: stopOnEntry Now Works Correctly (Entry Breakpoint Solution)
