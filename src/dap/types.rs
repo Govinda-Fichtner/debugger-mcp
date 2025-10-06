@@ -1,1 +1,193 @@
-// DAP types will be implemented here
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+/// DAP Protocol Message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Message {
+    #[serde(rename = "request")]
+    Request(Request),
+    #[serde(rename = "response")]
+    Response(Response),
+    #[serde(rename = "event")]
+    Event(Event),
+}
+
+/// DAP Request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Request {
+    pub seq: i32,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Value>,
+}
+
+/// DAP Response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Response {
+    pub seq: i32,
+    pub request_seq: i32,
+    pub command: String,
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<Value>,
+}
+
+/// DAP Event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Event {
+    pub seq: i32,
+    pub event: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<Value>,
+}
+
+/// Initialize Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitializeRequestArguments {
+    pub client_id: Option<String>,
+    pub client_name: Option<String>,
+    pub adapter_id: String,
+    pub locale: Option<String>,
+    pub lines_start_at_1: Option<bool>,
+    pub columns_start_at_1: Option<bool>,
+    pub path_format: Option<String>,
+}
+
+/// Capabilities returned by initialize
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Capabilities {
+    pub supports_configuration_done_request: Option<bool>,
+    pub supports_function_breakpoints: Option<bool>,
+    pub supports_conditional_breakpoints: Option<bool>,
+    pub supports_hit_conditional_breakpoints: Option<bool>,
+    pub supports_evaluate_for_hovers: Option<bool>,
+    pub supports_set_variable: Option<bool>,
+    pub supports_restart_frame: Option<bool>,
+    pub supports_step_in_targets_request: Option<bool>,
+}
+
+/// Launch Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaunchRequestArguments {
+    pub no_debug: Option<bool>,
+    #[serde(flatten)]
+    pub additional: Value,
+}
+
+/// SetBreakpoints Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBreakpointsArguments {
+    pub source: Source,
+    pub breakpoints: Option<Vec<SourceBreakpoint>>,
+    pub source_modified: Option<bool>,
+}
+
+/// Source reference
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub name: Option<String>,
+    pub path: Option<String>,
+    pub source_reference: Option<i32>,
+}
+
+/// Source breakpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceBreakpoint {
+    pub line: i32,
+    pub column: Option<i32>,
+    pub condition: Option<String>,
+    pub hit_condition: Option<String>,
+}
+
+/// Breakpoint response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Breakpoint {
+    pub id: Option<i32>,
+    pub verified: bool,
+    pub message: Option<String>,
+    pub source: Option<Source>,
+    pub line: Option<i32>,
+    pub column: Option<i32>,
+}
+
+/// StackTrace Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackTraceArguments {
+    pub thread_id: i32,
+    pub start_frame: Option<i32>,
+    pub levels: Option<i32>,
+}
+
+/// Stack Frame
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackFrame {
+    pub id: i32,
+    pub name: String,
+    pub source: Option<Source>,
+    pub line: i32,
+    pub column: i32,
+    pub end_line: Option<i32>,
+    pub end_column: Option<i32>,
+}
+
+/// Thread info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Thread {
+    pub id: i32,
+    pub name: String,
+}
+
+/// Evaluate Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvaluateArguments {
+    pub expression: String,
+    pub frame_id: Option<i32>,
+    pub context: Option<String>,
+}
+
+/// Variable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Variable {
+    pub name: String,
+    pub value: String,
+    #[serde(rename = "type")]
+    pub type_: Option<String>,
+    pub variables_reference: i32,
+}
+
+/// Scopes Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopesArguments {
+    pub frame_id: i32,
+}
+
+/// Scope
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scope {
+    pub name: String,
+    pub variables_reference: i32,
+    pub expensive: bool,
+}
+
+/// Continue Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContinueArguments {
+    pub thread_id: i32,
+}
