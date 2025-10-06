@@ -10,6 +10,8 @@ impl PythonAdapter {
 
     pub fn args() -> Vec<String> {
         vec![
+            // Add Python flag to disable frozen modules (helps with Python 3.11+)
+            "-Xfrozen_modules=off".to_string(),
             "-m".to_string(),
             "debugpy.adapter".to_string(),
         ]
@@ -36,6 +38,10 @@ impl PythonAdapter {
             "args": args,
             "console": "internalConsole",  // Use internalConsole instead of integratedTerminal
             "stopOnEntry": stop_on_entry,
+            // Add Python options to disable frozen modules (Python 3.11+)
+            "pythonArgs": ["-Xfrozen_modules=off"],
+            // Use the same Python interpreter that's running the adapter
+            "python": "python",
         });
 
         if let Some(cwd_path) = cwd {
@@ -58,9 +64,10 @@ mod tests {
     #[test]
     fn test_args() {
         let args = PythonAdapter::args();
-        assert_eq!(args.len(), 2);
-        assert_eq!(args[0], "-m");
-        assert_eq!(args[1], "debugpy.adapter");
+        assert_eq!(args.len(), 3);
+        assert_eq!(args[0], "-Xfrozen_modules=off");
+        assert_eq!(args[1], "-m");
+        assert_eq!(args[2], "debugpy.adapter");
     }
 
     #[test]
