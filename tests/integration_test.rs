@@ -364,7 +364,7 @@ async fn test_tools_list() {
     // This calls the static method directly
     let tools = ToolsHandler::list_tools();
 
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 12);
 
     // Verify all tools are present
     let tool_names: Vec<&str> = tools

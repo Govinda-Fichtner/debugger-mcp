@@ -8,18 +8,24 @@ impl RubyAdapter {
         "rdbg".to_string()
     }
 
-    pub fn args_with_options(stop_on_entry: bool) -> Vec<String> {
-        // Use --command mode for stdio communication (not --open which uses sockets)
-        // -O flag runs the program (similar to debugpy's behavior)
-        let mut args = vec![
-            "--command".to_string(),
-        ];
+    pub fn args_with_options(program: &str, program_args: &[String], stop_on_entry: bool) -> Vec<String> {
+        // rdbg runs the program directly via stdio (unlike debugpy which is just an adapter server)
+        // Command format: rdbg [options] program.rb [program args]
+        let mut args = vec![];
 
         // Add --nonstop flag if we DON'T want to stop on entry
-        // Default rdbg behavior is to stop at program start
-        if !stop_on_entry {
+        // Default rdbg behavior is to stop at program start with --stop-at-load
+        if stop_on_entry {
+            args.push("--stop-at-load".to_string());
+        } else {
             args.push("--nonstop".to_string());
         }
+
+        // Add program path
+        args.push(program.to_string());
+
+        // Add program arguments
+        args.extend(program_args.iter().cloned());
 
         args
     }
@@ -63,19 +69,31 @@ mod tests {
 
     #[test]
     fn test_args_with_stop_on_entry() {
-        let args = RubyAdapter::args_with_options(true);
-        assert_eq!(args.len(), 1);
-        assert_eq!(args[0], "--command");
+        let program = "/path/to/script.rb";
+        let program_args = vec!["arg1".to_string(), "arg2".to_string()];
+        let args = RubyAdapter::args_with_options(program, &program_args, true);
+
+        assert_eq!(args.len(), 4); // --stop-at-load + program + 2 args
+        assert_eq!(args[0], "--stop-at-load");
+        assert_eq!(args[1], program);
+        assert_eq!(args[2], "arg1");
+        assert_eq!(args[3], "arg2");
         // Should NOT have --nonstop when stopOnEntry is true
         assert!(!args.contains(&"--nonstop".to_string()));
     }
 
     #[test]
     fn test_args_without_stop_on_entry() {
-        let args = RubyAdapter::args_with_options(false);
-        assert_eq!(args.len(), 2);
-        assert_eq!(args[0], "--command");
-        assert_eq!(args[1], "--nonstop");
+        let program = "/path/to/script.rb";
+        let program_args = vec!["arg1".to_string()];
+        let args = RubyAdapter::args_with_options(program, &program_args, false);
+
+        assert_eq!(args.len(), 3); // --nonstop + program + 1 arg
+        assert_eq!(args[0], "--nonstop");
+        assert_eq!(args[1], program);
+        assert_eq!(args[2], "arg1");
+        // Should NOT have --stop-at-load when stopOnEntry is false
+        assert!(!args.contains(&"--stop-at-load".to_string()));
     }
 
     #[test]

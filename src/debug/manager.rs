@@ -48,7 +48,7 @@ impl SessionManager {
             }
             "ruby" => {
                 let cmd = RubyAdapter::command();
-                let adapter_args = RubyAdapter::args_with_options(stop_on_entry);
+                let adapter_args = RubyAdapter::args_with_options(&program, &args, stop_on_entry);
                 let adapter_id = RubyAdapter::adapter_id();
                 let launch_args = RubyAdapter::launch_args_with_options(
                     &program,
