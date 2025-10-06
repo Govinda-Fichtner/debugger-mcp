@@ -10,7 +10,7 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 ## Status
 
-🎉 **Phase: MVP Core Implementation Complete** 🎉
+🎉 **Phase: MVP Multi-Language Support Complete** 🎉
 
 - ✅ Comprehensive architecture proposal (135+ pages)
 - ✅ Technology stack selected (Rust, Tokio, Clap, DAP)
@@ -19,8 +19,11 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 - ✅ MCP server with STDIO transport (~400 LOC)
 - ✅ Complete DAP client with async correlation (~270 LOC)
 - ✅ Debug session management (~400 LOC)
-- ✅ 6 MCP tools implemented
-- ⏳ Integration testing: Ready to test with Python debugpy
+- ✅ 13 MCP tools implemented
+- ✅ **Python support** via debugpy
+- ✅ **Ruby support** via rdbg (debug gem)
+- ✅ Comprehensive integration tests (Python + Ruby)
+- ✅ Docker variants: Python-only, Ruby-only, Multi-lang
 
 ## Quick Links
 
@@ -33,25 +36,30 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 ## Features
 
-### Phase 1: MVP (Python Support) - IMPLEMENTED ✅
+### Supported Languages ✅
+
+| Language | Debugger | Status | Docker Image |
+|----------|----------|--------|--------------|
+| **Python** | debugpy | ✅ Full support | `:python`, `:latest` |
+| **Ruby** | rdbg (debug gem) | ✅ Full support | `:ruby`, `:latest` |
+| Node.js | inspector protocol | ⏳ Planned | - |
+| Go | delve | ⏳ Planned | - |
+| Rust | CodeLLDB | ⏳ Planned | - |
+
+### Implemented Features ✅
 - ✅ Start/stop debugging sessions (`debugger_start`, `debugger_disconnect`)
-- ✅ Set source breakpoints (`debugger_set_breakpoint`)
-- ✅ Execution control - continue (`debugger_continue`)
+- ✅ Set source breakpoints (`debugger_set_breakpoint`, `debugger_list_breakpoints`)
+- ✅ Execution control (`debugger_continue`, `debugger_wait_for_stop`)
 - ✅ Expression evaluation (`debugger_evaluate`)
 - ✅ Stack trace inspection (`debugger_stack_trace`)
-- ⏳ Step over/into/out (not yet implemented)
-- ⏳ Conditional breakpoints, logpoints (not yet implemented)
+- ✅ Step commands (`debugger_step_over`, `debugger_step_into`, `debugger_step_out`)
+- ✅ Session state queries (`debugger_session_state`)
 
-### Phase 2: Multi-Language
-- Python (debugpy)
-- Ruby (rdbg)
-- Node.js (inspector protocol)
-- Go (delve)
-- Rust (CodeLLDB)
-- More via plugin system
+### Planned Features
+- ⏳ Conditional breakpoints, logpoints
+- ⏳ Exception breakpoints
 
-### Phase 3: Advanced Features
-- Exception breakpoints
+### Future Enhancements
 - Multi-threaded debugging
 - Remote debugging
 - Attach to running processes
@@ -77,23 +85,28 @@ AI Agent (Claude Desktop, Gemini CLI, etc.)
 └─────────────────┼─────────────────────────┘
                   ↕ Debug Adapter Protocol
         ┌─────────┼──────────┐
-   debugpy   node-debug   delve  CodeLLDB
-   (Python)  (Node.js)    (Go)   (Rust/C++)
+   debugpy      rdbg    node-debug   delve  CodeLLDB
+   (Python)   (Ruby)    (Node.js)    (Go)   (Rust/C++)
 ```
 
 ## Usage
 
 ### Option 1: Docker (Recommended)
 
+Choose the Docker image based on your needs:
+
 ```bash
-# Build the image
+# For Python projects (smallest, ~120 MB)
+docker build -f Dockerfile.python -t debugger-mcp:python .
+docker run -i debugger-mcp:python
+
+# For Ruby projects (~100 MB)
+docker build -f Dockerfile.ruby -t debugger-mcp:ruby .
+docker run -i debugger-mcp:ruby
+
+# For projects using both Python and Ruby (~220 MB)
 docker build -t debugger-mcp:latest .
-
-# Run the server
 docker run -i debugger-mcp:latest
-
-# Or use docker-compose
-docker-compose up -d
 ```
 
 **Configure with Claude Desktop:**
@@ -140,19 +153,38 @@ cargo build --release
 
 ### Use with AI Agent
 
+**Python Example:**
 ```
 User: "My Python script crashes. Can you debug it?"
 
 Claude:
-  → debugger_start(language="python", program="script.py")
-  → debugger_set_exception_breakpoints(filters=["uncaught"])
+  → debugger_start(language="python", program="script.py", stopOnEntry=true)
+  → debugger_set_breakpoint(sourcePath="script.py", line=42)
   → debugger_continue()
-  [Program crashes]
-  → debugger_evaluate("locals()")
-  → Read stack trace
-  
+  → debugger_wait_for_stop()
+  [Program stops at breakpoint]
+  → stack = debugger_stack_trace()
+  → debugger_evaluate(expression="user_data", frameId=stack.stackFrames[0].id)
+
   "The crash occurs because 'user_data' is None when fetch_user() fails.
    The code doesn't check for None before accessing user_data.name..."
+```
+
+**Ruby Example:**
+```
+User: "My Ruby script has a bug in the fizzbuzz function. Can you debug it?"
+
+Claude:
+  → debugger_start(language="ruby", program="fizzbuzz.rb", stopOnEntry=true)
+  → debugger_set_breakpoint(sourcePath="fizzbuzz.rb", line=9)
+  → debugger_continue()
+  → debugger_wait_for_stop()
+  [Program stops at breakpoint]
+  → stack = debugger_stack_trace()
+  → debugger_evaluate(expression="n", frameId=stack.stackFrames[0].id)
+
+  "The bug is on line 9: it checks 'n % 4' instead of 'n % 5' for Buzz.
+   This causes incorrect output for numbers divisible by 5..."
 ```
 
 ## Technology Stack
