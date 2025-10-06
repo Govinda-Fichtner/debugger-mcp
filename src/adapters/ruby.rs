@@ -9,13 +9,14 @@ impl RubyAdapter {
     }
 
     pub fn args_with_options(stop_on_entry: bool) -> Vec<String> {
+        // Use --command mode for stdio communication (not --open which uses sockets)
+        // -O flag runs the program (similar to debugpy's behavior)
         let mut args = vec![
-            "--open".to_string(),
-            // Port is added dynamically by the caller
+            "--command".to_string(),
         ];
 
         // Add --nonstop flag if we DON'T want to stop on entry
-        // Default rdbg behavior with --open is to stop at program start
+        // Default rdbg behavior is to stop at program start
         if !stop_on_entry {
             args.push("--nonstop".to_string());
         }
@@ -64,7 +65,7 @@ mod tests {
     fn test_args_with_stop_on_entry() {
         let args = RubyAdapter::args_with_options(true);
         assert_eq!(args.len(), 1);
-        assert_eq!(args[0], "--open");
+        assert_eq!(args[0], "--command");
         // Should NOT have --nonstop when stopOnEntry is true
         assert!(!args.contains(&"--nonstop".to_string()));
     }
@@ -73,7 +74,7 @@ mod tests {
     fn test_args_without_stop_on_entry() {
         let args = RubyAdapter::args_with_options(false);
         assert_eq!(args.len(), 2);
-        assert_eq!(args[0], "--open");
+        assert_eq!(args[0], "--command");
         assert_eq!(args[1], "--nonstop");
     }
 

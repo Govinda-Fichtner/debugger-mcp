@@ -17,21 +17,26 @@ gem "debug", ">= 1.0.0"
 
 ### Command-Line Interface
 
-**Basic DAP Server Mode**:
+**STDIO DAP Mode (Used by MCP Server)**:
 ```bash
-rdbg --open --port <PORT> target.rb
+rdbg --command target.rb
 ```
 
 **Key Flags**:
-- `--open`: Start DAP server (stops at program start by default)
-- `--open --nonstop`: Start DAP server but continue execution
-- `--port <PORT>`: Specify TCP port for DAP server
-- `--host <HOST>`: Specify host (default: 127.0.0.1)
+- `--command`: Use stdio for DAP communication (default mode)
+- `--nonstop`: Continue execution without stopping at entry
 - `--stop-at-load`: Stop immediately when debugger loads
+
+**Socket DAP Server Mode** (NOT used by MCP):
+```bash
+rdbg --open --port <PORT> target.rb
+```
+- `--open`: Start DAP server via TCP/UNIX socket
+- Note: Our MCP server uses stdio mode, not socket mode
 
 **With Bundle**:
 ```bash
-bundle exec rdbg --open --port <PORT> -c -- bundle exec ruby target.rb
+bundle exec rdbg --command target.rb
 ```
 
 ### DAP Protocol Support
@@ -139,34 +144,30 @@ Command::new("python3")
     ])
 ```
 
-**Ruby (rdbg)** - Option A (Simple):
+**Ruby (rdbg)** - STDIO Mode (Implemented):
 ```rust
 Command::new("rdbg")
     .args([
-        "--open",
-        "--port", &port.to_string(),
-        "--host", host,
-        "--nonstop",  // or not, depending on stopOnEntry
+        "--command",  // Use stdio for DAP communication
+        "--nonstop",  // Optional: only if stopOnEntry is false
         program
     ])
 ```
 
-**Ruby (rdbg)** - Option B (With Bundle):
+**Why `--command` instead of `--open`**:
+- `--command`: Uses stdin/stdout for DAP protocol (like debugpy)
+- `--open`: Creates TCP/UNIX socket (requires separate connection)
+- Our DAP client uses stdin/stdout, so `--command` is required
+
+**Bundle Support** (Future Enhancement):
 ```rust
 Command::new("bundle")
     .args([
         "exec", "rdbg",
-        "--open",
-        "--port", &port.to_string(),
-        "--host", host,
-        "--nonstop",
-        "-c", "--",
-        "bundle", "exec", "ruby",
+        "--command",
         program
     ])
 ```
-
-**Decision Needed**: Start with Option A (simple), add bundle support later if needed.
 
 ### 3. stopOnEntry Handling
 
