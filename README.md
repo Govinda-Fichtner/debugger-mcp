@@ -25,9 +25,10 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 ## Quick Links
 
 - **[Docker Deployment Guide](docs/DOCKER.md)** - Running with Docker (recommended)
+- **[Getting Started](docs/GETTING_STARTED.md)** - Developer setup and first steps
 - **[Main Architecture Proposal](docs/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design (68 pages)
 - **[MVP Implementation Plan](docs/MVP_IMPLEMENTATION_PLAN.md)** - Phase 1 development guide
-- **[Getting Started](GETTING_STARTED.md)** - Developer setup and first steps
+- **[MVP Implementation Status](docs/MVP_IMPLEMENTATION_STATUS.md)** - Current implementation status
 - **[Documentation Index](docs/README.md)** - All documentation
 
 ## Features

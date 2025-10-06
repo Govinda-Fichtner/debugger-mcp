@@ -4,7 +4,49 @@ This directory contains comprehensive documentation for the DAP-based MCP debugg
 
 ## 📋 Main Documents
 
-### [**DAP_MCP_SERVER_PROPOSAL.md**](./DAP_MCP_SERVER_PROPOSAL.md) ⭐
+### [**GETTING_STARTED.md**](./GETTING_STARTED.md) 🚀
+**Quick start guide for developers**
+
+Get up and running:
+- Project setup and prerequisites
+- Building and running the server
+- Development workflow
+- Testing guide
+- Docker deployment
+
+**Start here** if you want to use or develop the server.
+
+---
+
+### [**DOCKER.md**](./DOCKER.md) 🐳
+**Docker deployment guide**
+
+Container deployment:
+- Multi-stage Alpine build
+- Docker Compose setup
+- MCP client integration (Claude Desktop, Cline)
+- Production deployment
+- Troubleshooting
+
+**Use this** for containerized deployments.
+
+---
+
+### [**MVP_IMPLEMENTATION_STATUS.md**](./MVP_IMPLEMENTATION_STATUS.md) ✅
+**Current implementation status and achievements**
+
+Implementation summary:
+- ~1,540 lines of Rust code implemented
+- 6 MCP tools fully functional
+- Complete DAP client with async correlation
+- Build and test status
+- Next steps and missing features
+
+**Check this** for current project status.
+
+---
+
+### [**DAP_MCP_SERVER_PROPOSAL.md**](./DAP_MCP_SERVER_PROPOSAL.md) 📖
 **The primary architecture and design document** (20,000+ words)
 
 Complete proposal covering:
@@ -19,11 +61,25 @@ Complete proposal covering:
 - Risk assessment and mitigation
 - Future enhancements
 
-**Start here** for complete understanding of the project.
+**Reference this** for architectural decisions and design rationale.
 
 ---
 
-### [**architecture/COMPONENTS.md**](./architecture/COMPONENTS.md)
+### [**MVP_IMPLEMENTATION_PLAN.md**](./MVP_IMPLEMENTATION_PLAN.md) 📋
+**Phase 1 development plan and TDD workflow**
+
+Implementation guide:
+- Python → Ruby phased approach
+- TDD workflow with examples
+- FizzBuzz integration test specification
+- Week-by-week checklist
+- Component implementation order
+
+**Follow this** for systematic development.
+
+---
+
+### [**architecture/COMPONENTS.md**](./architecture/COMPONENTS.md) 🏗️
 **Technical deep-dive into component architecture**
 
 Detailed specifications for:
@@ -126,8 +182,8 @@ Model Context Protocol - Anthropic's standard for exposing capabilities to AI mo
 
 ## 📊 Project Status
 
-**Phase**: Proposal / Architecture Complete ✅
-**Next Step**: Begin Phase 1 Implementation (MVP)
+**Phase**: MVP Core Implementation Complete ✅
+**Next Step**: Integration Testing & Additional Features
 
 ### Completion Status
 - [x] Research Phase Complete (DAP, MCP, Rust ecosystem)
@@ -135,49 +191,50 @@ Model Context Protocol - Anthropic's standard for exposing capabilities to AI mo
 - [x] MCP Interface Design Complete
 - [x] Use Case Definition Complete
 - [x] Risk Analysis Complete
-- [ ] Implementation (Not started)
-- [ ] Testing (Not started)
-- [ ] Documentation (In progress - this doc)
+- [x] MVP Implementation Complete (~1,540 LOC)
+- [x] Docker Deployment Support
+- [x] Documentation Complete
+- [ ] Integration Testing (Ready, needs Python debugpy)
+- [ ] Additional Features (stepping, exception breakpoints)
 
 ---
 
-## 🚀 Quick Start (Future Implementation)
+## 🚀 Quick Start
 
-Once implemented, usage will look like:
+### Using Docker (Recommended)
 
 ```bash
-# Install
-cargo install dap-mcp-server
+# Build
+docker build -t debugger-mcp:latest .
 
 # Run
-dap-mcp-server --stdio
+docker run -i debugger-mcp:latest
+```
 
-# Or with Claude Desktop
-# Add to claude_desktop_config.json:
+### Using Cargo
+
+```bash
+# Build
+cargo build --release
+
+# Run
+./target/release/debugger_mcp serve
+```
+
+### Configure with Claude Desktop
+
+```json
 {
   "mcpServers": {
     "debugger": {
-      "command": "dap-mcp-server",
-      "args": ["--stdio"]
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "${workspaceFolder}:/workspace", "debugger-mcp:latest"]
     }
   }
 }
 ```
 
-Then from Claude:
-```
-User: "Debug my Python script that crashes"
-
-Claude:
-  → debugger_start(language="python", program="script.py")
-  → debugger_set_exception_breakpoints(filters=["uncaught"])
-  → debugger_continue()
-  [Crash occurs]
-  → debugger_evaluate("locals()")
-  → Read debugger://sessions/{id}/stackTrace
-
-  "The crash is because variable 'user_data' is None when fetch_user() fails..."
-```
+See [GETTING_STARTED.md](./GETTING_STARTED.md) and [DOCKER.md](./DOCKER.md) for detailed instructions.
 
 ---
 
@@ -186,9 +243,13 @@ Claude:
 | Document | Words | Pages | Status |
 |----------|-------|-------|--------|
 | DAP_MCP_SERVER_PROPOSAL.md | 20,000+ | 68 | ✅ Complete |
+| MVP_IMPLEMENTATION_STATUS.md | 2,500+ | 9 | ✅ Complete |
+| MVP_IMPLEMENTATION_PLAN.md | 5,000+ | 21 | ✅ Complete |
+| GETTING_STARTED.md | 3,000+ | 13 | ✅ Complete |
+| DOCKER.md | 2,000+ | 6 | ✅ Complete |
 | architecture/COMPONENTS.md | 5,000+ | 17 | ✅ Complete |
 | Research (3 docs) | 15,000+ | 50+ | ✅ Complete |
-| **Total** | **40,000+** | **135+** | **✅ Comprehensive** |
+| **Total** | **52,500+** | **184+** | **✅ Comprehensive** |
 
 ---
 
