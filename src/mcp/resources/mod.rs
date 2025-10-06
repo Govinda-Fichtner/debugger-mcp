@@ -103,7 +103,12 @@ impl ResourcesHandler {
 
     /// Read resource contents by URI
     pub async fn read_resource(&self, uri: &str) -> Result<ResourceContents> {
-        // Parse URI
+        // Check for embedded documentation resources first (debugger-docs://)
+        if uri.starts_with("debugger-docs://") {
+            return self.documentation_handler.read_resource(uri).await;
+        }
+
+        // Parse debugger:// URIs
         if !uri.starts_with("debugger://") {
             return Err(Error::InvalidRequest(format!("Invalid resource URI: {}", uri)));
         }
@@ -122,9 +127,6 @@ impl ResourcesHandler {
         } else if path == "error-handling" {
             // Error handling guide
             Self::read_error_handling()
-        } else if uri.starts_with("debugger-docs://") {
-            // Embedded documentation from GitHub
-            self.documentation_handler.read_resource(uri).await
         } else if let Some(rest) = path.strip_prefix("sessions/") {
             // Parse session-specific resources
             let parts: Vec<&str> = rest.split('/').collect();
