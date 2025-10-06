@@ -23,7 +23,7 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 - ✅ **Python support** via debugpy
 - ✅ **Ruby support** via rdbg (debug gem)
 - ✅ Comprehensive integration tests (Python + Ruby)
-- ✅ Docker variants: Python-only, Ruby-only, Multi-lang
+- ✅ Language-specific Docker images (Python, Ruby)
 
 ## Quick Links
 
@@ -40,8 +40,8 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 | Language | Debugger | Status | Docker Image |
 |----------|----------|--------|--------------|
-| **Python** | debugpy | ✅ Full support | `:python`, `:latest` |
-| **Ruby** | rdbg (debug gem) | ✅ Full support | `:ruby`, `:latest` |
+| **Python** | debugpy | ✅ Full support | `Dockerfile.python` |
+| **Ruby** | rdbg (debug gem) | ✅ Full support | `Dockerfile.ruby` |
 | Node.js | inspector protocol | ⏳ Planned | - |
 | Go | delve | ⏳ Planned | - |
 | Rust | CodeLLDB | ⏳ Planned | - |
@@ -93,20 +93,16 @@ AI Agent (Claude Desktop, Gemini CLI, etc.)
 
 ### Option 1: Docker (Recommended)
 
-Choose the Docker image based on your needs:
+Choose the Docker image based on your project's language:
 
 ```bash
-# For Python projects (smallest, ~120 MB)
+# For Python projects (~120 MB)
 docker build -f Dockerfile.python -t debugger-mcp:python .
 docker run -i debugger-mcp:python
 
 # For Ruby projects (~100 MB)
 docker build -f Dockerfile.ruby -t debugger-mcp:ruby .
 docker run -i debugger-mcp:ruby
-
-# For projects using both Python and Ruby (~220 MB)
-docker build -t debugger-mcp:latest .
-docker run -i debugger-mcp:latest
 ```
 
 **Configure with Claude Desktop:**
