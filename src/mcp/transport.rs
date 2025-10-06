@@ -1,5 +1,4 @@
 use crate::{Error, Result};
-use serde_json::Value;
 use super::protocol::JsonRpcMessage;
 use super::transport_trait::McpTransportTrait;
 use async_trait::async_trait;

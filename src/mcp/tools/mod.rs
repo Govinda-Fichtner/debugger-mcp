@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use crate::debug::SessionManager;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -399,7 +399,7 @@ mod tests {
     #[tokio::test]
     async fn test_tools_handler_new() {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
-        let handler = ToolsHandler::new(manager);
+        let _handler = ToolsHandler::new(manager);
         // Just verify it constructs without panic
         assert!(true);
     }

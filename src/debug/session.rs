@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::Result;
 use crate::dap::client::DapClient;
 use crate::dap::types::{Source, SourceBreakpoint};
 use super::state::{SessionState, DebugState};
@@ -150,7 +150,7 @@ mod tests {
     use super::*;
     use crate::dap::transport_trait::DapTransportTrait;
     use crate::dap::types::*;
-    use async_trait::async_trait;
+    use crate::Error;
     use mockall::mock;
     use serde_json::json;
 

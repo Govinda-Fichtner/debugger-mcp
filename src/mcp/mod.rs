@@ -4,7 +4,7 @@ pub mod protocol;
 pub mod resources;
 pub mod tools;
 
-use crate::{Error, Result};
+use crate::Result;
 use crate::debug::SessionManager;
 use transport::StdioTransport;
 use protocol::ProtocolHandler;

@@ -239,7 +239,7 @@ mod tests {
     #[tokio::test]
     async fn test_resources_handler_new() {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
-        let handler = ResourcesHandler::new(manager);
+        let _handler = ResourcesHandler::new(manager);
         // Just verify construction works
         assert!(true);
     }

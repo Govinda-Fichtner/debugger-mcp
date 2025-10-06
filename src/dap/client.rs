@@ -17,6 +17,7 @@ pub struct DapClient {
     transport: Arc<RwLock<Box<dyn DapTransportTrait>>>,
     seq_counter: Arc<AtomicI32>,
     pending_requests: Arc<RwLock<HashMap<i32, ResponseSender>>>,
+    #[allow(dead_code)] // Reserved for future event handling
     event_tx: mpsc::UnboundedSender<Event>,
     _child: Option<Child>,
 }
@@ -286,7 +287,6 @@ mod tests {
     use super::super::transport_trait::DapTransportTrait;
     use mockall::mock;
     use serde_json::json;
-    use tokio::time::{timeout, Duration};
 
     mock! {
         pub TestTransport {}

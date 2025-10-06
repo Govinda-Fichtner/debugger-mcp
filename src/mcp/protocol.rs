@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::{Error, Result};
 use super::tools::ToolsHandler;
 use super::resources::ResourcesHandler;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{debug, warn};
+
+#[cfg(test)]
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
