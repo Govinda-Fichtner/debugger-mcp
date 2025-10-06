@@ -100,26 +100,24 @@ RUN apk add --no-cache ruby ruby-dev ruby-bundler && \
 
 ---
 
-### Option B: Multiple Language-Specific Dockerfiles
+### Option B: Multiple Language-Specific Dockerfiles ✅ IMPLEMENTED
 
 **Structure**:
 ```
-dockerfiles/
+debugger_mcp/
 ├── Dockerfile.python      # Python + debugpy only
 ├── Dockerfile.ruby        # Ruby + debug gem only
-├── Dockerfile.node        # Node.js + debug adapter only
-└── Dockerfile.multi-lang  # All languages (for those who need it)
+└── Dockerfile.node        # Node.js + debug adapter only (future)
 ```
 
 **Build**:
 ```bash
-docker build -f dockerfiles/Dockerfile.python -t mcp-debugger:python .
-docker build -f dockerfiles/Dockerfile.ruby -t mcp-debugger:ruby .
-docker build -f dockerfiles/Dockerfile.multi-lang -t mcp-debugger:latest .
+docker build -f Dockerfile.python -t mcp-debugger:python .
+docker build -f Dockerfile.ruby -t mcp-debugger:ruby .
 ```
 
 **Pros**:
-- ✅ Smaller images (~100-150 MB each)
+- ✅ Smaller images (~100-120 MB each)
 - ✅ Users pull only what they need
 - ✅ Faster builds and pulls
 - ✅ Better security (smaller attack surface)
@@ -127,15 +125,15 @@ docker build -f dockerfiles/Dockerfile.multi-lang -t mcp-debugger:latest .
 - ✅ Clear separation of concerns
 
 **Cons**:
-- ❌ More Dockerfiles to maintain
-- ❌ Users must choose correct image
-- ❌ Multi-language projects need the "fat" image anyway
-- ❌ More complex CI/CD (build multiple images)
+- ❌ More Dockerfiles to maintain (but simpler per-file)
+- ❌ Users must choose correct image (but clearer choice)
+- ❌ More complex CI/CD (but more flexible)
 
 **Best For**:
-- Single-language projects (majority case)
-- Resource-constrained environments
-- Security-conscious deployments
+- Single-language projects (majority case) ✅
+- Resource-constrained environments ✅
+- Security-conscious deployments ✅
+- **This is our implementation** ✅
 
 ---
 
@@ -254,30 +252,25 @@ docker run -v /usr/bin/python3:/usr/bin/python3 \
 4. **Maintainable**: Each Dockerfile is simple and focused
 5. **Scalable**: Easy to add new languages without bloating existing images
 
-### Proposed Structure
+### Implemented Structure
 
 ```
 debugger_mcp/
-├── Dockerfile                    # Default: Multi-language (for backward compatibility)
-├── dockerfiles/
-│   ├── Dockerfile.python        # Python-only (~120 MB)
-│   ├── Dockerfile.ruby          # Ruby-only (~100 MB)
-│   └── Dockerfile.base          # Binary-only (optional, for advanced users)
+├── Dockerfile.python            # Python-only (~120 MB)
+├── Dockerfile.ruby              # Ruby-only (~100 MB)
 ├── docker-compose.yml           # Examples for each variant
 └── docs/
     └── DOCKER_DEPLOYMENT.md     # Guide for choosing image
 ```
 
+**Note**: No multi-language Dockerfile - users choose the language-specific image they need.
+
 ### Docker Tags
 
 ```bash
-# Language-specific (RECOMMENDED for most users)
+# Language-specific images (choose based on your project)
 docker pull ghcr.io/you/debugger-mcp:python
 docker pull ghcr.io/you/debugger-mcp:ruby
-
-# Multi-language (for projects using multiple languages)
-docker pull ghcr.io/you/debugger-mcp:latest
-docker pull ghcr.io/you/debugger-mcp:multi
 
 # Version-specific
 docker pull ghcr.io/you/debugger-mcp:python-v0.2.0
@@ -287,15 +280,13 @@ docker pull ghcr.io/you/debugger-mcp:ruby-v0.2.0
 ### Build Process
 
 ```bash
-# Build all variants
-docker build -f dockerfiles/Dockerfile.python -t mcp-debugger:python .
-docker build -f dockerfiles/Dockerfile.ruby -t mcp-debugger:ruby .
-docker build -f Dockerfile -t mcp-debugger:latest .  # multi-lang
+# Build language-specific variants
+docker build -f Dockerfile.python -t mcp-debugger:python .
+docker build -f Dockerfile.ruby -t mcp-debugger:ruby .
 
 # Tag and push
 docker tag mcp-debugger:python ghcr.io/you/debugger-mcp:python
 docker tag mcp-debugger:ruby ghcr.io/you/debugger-mcp:ruby
-docker tag mcp-debugger:latest ghcr.io/you/debugger-mcp:latest
 ```
 
 ### CI/CD Updates
@@ -304,46 +295,41 @@ docker tag mcp-debugger:latest ghcr.io/you/debugger-mcp:latest
 # .github/workflows/docker.yml
 strategy:
   matrix:
-    variant: [python, ruby, multi]
+    variant: [python, ruby]
 
 steps:
   - name: Build ${{ matrix.variant }}
     run: |
-      if [ "${{ matrix.variant }}" = "multi" ]; then
-        docker build -f Dockerfile -t mcp-debugger:${{ matrix.variant }} .
-      else
-        docker build -f dockerfiles/Dockerfile.${{ matrix.variant }} \
-                     -t mcp-debugger:${{ matrix.variant }} .
-      fi
+      docker build -f Dockerfile.${{ matrix.variant }} \
+                   -t mcp-debugger:${{ matrix.variant }} .
 ```
 
 ---
 
-## Migration Path
+## Implementation Path
 
-### Phase 1: Add Ruby to Existing Dockerfile (Immediate)
-- Quick win to get Ruby support working
-- Single Dockerfile temporarily has both Python and Ruby
-- **Commit**: "feat: Add Ruby runtime to Docker image"
+### ✅ Implemented: Language-Specific Dockerfiles
 
-### Phase 2: Split Dockerfiles (Next Sprint)
-- Create `dockerfiles/` directory
-- Create `Dockerfile.python`, `Dockerfile.ruby`
-- Keep existing `Dockerfile` as multi-lang
-- Update docs
-- **Commit**: "refactor: Split into language-specific Dockerfiles"
+- Created `Dockerfile.python` (Python-only, ~120 MB)
+- Created `Dockerfile.ruby` (Ruby-only, ~100 MB)
+- **No multi-language Dockerfile** - users choose based on project needs
+- Updated docs to reflect language-specific approach
+- **Commits**:
+  - "feat: Add Ruby language support and Docker variants"
+  - "refactor: Remove multi-lang Dockerfile"
 
-### Phase 3: Optimize & Publish (Future)
-- Set up CI/CD for multi-image builds
+### Future: Optimize & Publish
+
+- Set up CI/CD for language-specific image builds
 - Publish to container registry
 - Add docker-compose examples
-- **Commit**: "ci: Add multi-variant Docker builds"
+- **Commit**: "ci: Add language-specific Docker builds"
 
 ---
 
 ## User Documentation Impact
 
-### Getting Started (Updated)
+### Getting Started
 
 **For Python Projects**:
 ```bash
@@ -355,61 +341,45 @@ docker run -v $(pwd):/workspace ghcr.io/you/debugger-mcp:python
 docker run -v $(pwd):/workspace ghcr.io/you/debugger-mcp:ruby
 ```
 
-**For Multi-Language Projects**:
-```bash
-docker run -v $(pwd):/workspace ghcr.io/you/debugger-mcp:latest
-```
-
 ### Choosing an Image
 
 | Use Case | Recommended Image | Size |
 |----------|------------------|------|
-| Python-only project | `:python` | ~120 MB |
-| Ruby-only project | `:ruby` | ~100 MB |
-| Multi-language project | `:latest` | ~220 MB |
-| Custom setup | `:base` + manual runtime | ~30 MB + runtime |
+| Python project | `:python` | ~120 MB |
+| Ruby project | `:ruby` | ~100 MB |
 
 ---
 
 ## Decision Summary
 
-### Immediate Action (This PR)
-✅ Add Ruby to existing Dockerfile
-- Gets Ruby support working quickly
-- Allows testing and validation
-- Temporary "fat" image acceptable for MVP
+### ✅ Implemented: Language-Specific Only
+- `Dockerfile.python` - Python debugging only (~120 MB)
+- `Dockerfile.ruby` - Ruby debugging only (~100 MB)
+- **No multi-language image** - users choose what they need
+- Follows industry best practices (debug adapters are language-specific)
 
-### Future Enhancement (Next PR)
-✅ Split into language-specific Dockerfiles
-- Better user experience
-- Smaller images
-- Follows industry best practices
-
-### Long-Term
-✅ Maintain multiple variants:
-- `:python` - Python debugging only
-- `:ruby` - Ruby debugging only
-- `:node` - Node.js debugging (future)
-- `:latest` - Multi-language support
-- `:base` - Advanced users only (optional)
+### Future Languages
+- `:node` - Node.js debugging (planned)
+- `:go` - Go debugging (planned)
+- `:rust` - Rust debugging (planned)
 
 ---
 
 ## Conclusion
 
-**For MVP / Current PR**: Add Ruby to existing Dockerfile ✅
-
-**For Production**: Split into language-specific Dockerfiles ✅
+**Implemented Strategy**: Language-specific Dockerfiles only ✅
 
 **Rationale**:
 1. Industry norm is language-specific debug adapters
-2. Smaller images benefit most users
+2. Smaller images benefit most users (no unused runtimes)
 3. Clear separation of concerns
 4. Easier maintenance long-term
-5. Users can choose what they need
+5. Users choose what they need (Python or Ruby)
+6. No "kitchen sink" approach - focused and efficient
 
 **This aligns with**:
 - ✅ Container best practices (small, focused images)
 - ✅ Security best practices (minimal attack surface)
 - ✅ User experience (fast downloads, clear choices)
 - ✅ Development workflow (easier testing per language)
+- ✅ Industry standards (VS Code, nvim-dap use language-specific adapters)
