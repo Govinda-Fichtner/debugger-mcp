@@ -1,14 +1,16 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod error;
+pub mod mcp;
+pub mod debug;
+pub mod dap;
+pub mod adapters;
+pub mod process;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use error::Error;
+pub use mcp::McpServer;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub type Result<T> = std::result::Result<T, Error>;
+
+pub async fn serve() -> Result<()> {
+    let server = McpServer::new().await?;
+    server.run().await
 }
