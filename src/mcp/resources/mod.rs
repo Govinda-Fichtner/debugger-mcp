@@ -182,12 +182,9 @@ impl ResourcesHandler {
         let state = session.get_state().await;
 
         // Only get stack trace if stopped
-        let frames = match state {
+        let frames: Vec<crate::dap::types::StackFrame> = match state {
             crate::debug::state::DebugState::Stopped { .. } => {
-                match session.stack_trace().await {
-                    Ok(frames) => frames,
-                    Err(_) => vec![],
-                }
+                session.stack_trace().await.unwrap_or_default()
             }
             _ => vec![],
         };
@@ -239,9 +236,10 @@ mod tests {
     #[tokio::test]
     async fn test_resources_handler_new() {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
-        let _handler = ResourcesHandler::new(manager);
-        // Just verify construction works
-        assert!(true);
+        let handler = ResourcesHandler::new(manager);
+        // Verify construction works and list_resources is callable
+        let resources = handler.list_resources().await.unwrap();
+        assert!(resources.len() >= 1); // At least the list resource itself
     }
 
     #[tokio::test]

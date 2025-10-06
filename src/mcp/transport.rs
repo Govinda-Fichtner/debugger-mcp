@@ -10,6 +10,12 @@ pub struct StdioTransport {
     stdout: tokio::io::Stdout,
 }
 
+impl Default for StdioTransport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StdioTransport {
     pub fn new() -> Self {
         Self {

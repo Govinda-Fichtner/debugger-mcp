@@ -26,6 +26,9 @@ pub enum Error {
     #[error("Method not found: {0}")]
     MethodNotFound(String),
 
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -37,6 +40,7 @@ impl Error {
             Error::AdapterNotFound(_) => -32002,
             Error::Dap(_) => -32003,
             Error::Process(_) => -32004,
+            Error::InvalidState(_) => -32005,
             Error::InvalidRequest(_) => -32600,
             Error::MethodNotFound(_) => -32601,
             Error::Internal(_) => -32603,

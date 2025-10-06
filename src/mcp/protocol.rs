@@ -57,6 +57,12 @@ pub struct ProtocolHandler {
     resources_handler: Option<Arc<ResourcesHandler>>,
 }
 
+impl Default for ProtocolHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtocolHandler {
     pub fn new() -> Self {
         Self {

@@ -2,9 +2,11 @@ use crate::Result;
 use crate::dap::client::DapClient;
 use crate::dap::types::{Source, SourceBreakpoint};
 use super::state::{SessionState, DebugState};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use tracing::info;
 
 pub struct DebugSession {
     pub id: String,
@@ -12,6 +14,8 @@ pub struct DebugSession {
     pub program: String,
     client: Arc<RwLock<DapClient>>,
     pub(crate) state: Arc<RwLock<SessionState>>,
+    /// Pending breakpoints that will be applied after initialization completes
+    pending_breakpoints: Arc<RwLock<HashMap<String, Vec<SourceBreakpoint>>>>,
 }
 
 impl DebugSession {
@@ -21,41 +25,63 @@ impl DebugSession {
         client: DapClient,
     ) -> Result<Self> {
         let id = Uuid::new_v4().to_string();
-        
+
         Ok(Self {
             id,
             language,
             program,
             client: Arc::new(RwLock::new(client)),
             state: Arc::new(RwLock::new(SessionState::new())),
+            pending_breakpoints: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
-    pub async fn initialize(&self, adapter_id: &str) -> Result<()> {
+    /// Initialize and launch using the proper DAP sequence
+    /// This combines initialize and launch into one atomic operation
+    pub async fn initialize_and_launch(&self, adapter_id: &str, launch_args: serde_json::Value) -> Result<()> {
         {
             let mut state = self.state.write().await;
             state.set_state(DebugState::Initializing);
         }
 
         let client = self.client.read().await;
-        client.initialize(adapter_id).await?;
 
-        {
-            let mut state = self.state.write().await;
-            state.set_state(DebugState::Initialized);
+        // Use the DapClient's event-driven initialize_and_launch method
+        // This properly handles the 'initialized' event and configurationDone sequence
+        client.initialize_and_launch(adapter_id, launch_args).await?;
+
+        // Apply pending breakpoints after initialization
+        info!("🔧 Applying pending breakpoints after initialization");
+        let pending = self.pending_breakpoints.read().await;
+        for (source_path, breakpoints) in pending.iter() {
+            info!("  Applying {} breakpoint(s) for {}", breakpoints.len(), source_path);
+            let source = Source {
+                name: None,
+                path: Some(source_path.clone()),
+                source_reference: None,
+            };
+
+            match client.set_breakpoints(source, breakpoints.clone()).await {
+                Ok(result_bps) => {
+                    // Update state with results
+                    let mut state = self.state.write().await;
+                    for (idx, bp) in result_bps.iter().enumerate() {
+                        if let Some(id) = bp.id {
+                            let line = breakpoints.get(idx).map(|b| b.line).unwrap_or(0);
+                            state.update_breakpoint(source_path, line, id, bp.verified);
+                        }
+                    }
+                    info!("  ✅ Applied {} breakpoint(s)", result_bps.len());
+                }
+                Err(e) => {
+                    info!("  ⚠️  Failed to apply breakpoints: {}", e);
+                }
+            }
         }
+        drop(pending);
 
-        Ok(())
-    }
-
-    pub async fn launch(&self, launch_args: serde_json::Value) -> Result<()> {
-        {
-            let mut state = self.state.write().await;
-            state.set_state(DebugState::Launching);
-        }
-
-        let client = self.client.read().await;
-        client.launch(launch_args).await?;
+        // Clear pending breakpoints
+        self.pending_breakpoints.write().await.clear();
 
         {
             let mut state = self.state.write().await;
@@ -65,39 +91,132 @@ impl DebugSession {
         Ok(())
     }
 
-    pub async fn set_breakpoint(&self, source_path: String, line: i32) -> Result<bool> {
-        // Add to state
-        {
-            let mut state = self.state.write().await;
-            state.add_breakpoint(source_path.clone(), line);
+    /// Initialize and launch in the background, returning immediately
+    /// Updates state to indicate initialization status
+    pub async fn initialize_and_launch_async(
+        self: Arc<Self>,
+        adapter_id: String,
+        launch_args: serde_json::Value,
+    ) {
+        let session_id = self.id.clone();
+        info!("🚀 Starting async initialization for session {}", session_id);
+
+        match self.initialize_and_launch(&adapter_id, launch_args).await {
+            Ok(()) => {
+                info!("✅ Async initialization completed successfully for session {}", session_id);
+            }
+            Err(e) => {
+                info!("❌ Async initialization failed for session {}: {}", session_id, e);
+                let mut state = self.state.write().await;
+                state.set_state(DebugState::Failed {
+                    error: format!("Initialization failed: {}", e),
+                });
+            }
         }
+    }
 
-        // Set via DAP
-        let source = Source {
-            name: None,
-            path: Some(source_path.clone()),
-            source_reference: None,
-        };
-
-        let breakpoints = vec![SourceBreakpoint {
-            line,
-            column: None,
-            condition: None,
-            hit_condition: None,
-        }];
+    // Deprecated: Use initialize_and_launch instead
+    // Kept for backward compatibility
+    pub async fn initialize(&self, adapter_id: &str) -> Result<()> {
+        let mut state = self.state.write().await;
+        state.set_state(DebugState::Initializing);
+        drop(state);
 
         let client = self.client.read().await;
-        let result = client.set_breakpoints(source, breakpoints).await?;
+        client.initialize(adapter_id).await?;
 
-        // Update state with results
-        if let Some(bp) = result.first() {
-            let mut state = self.state.write().await;
-            if let Some(id) = bp.id {
-                state.update_breakpoint(&source_path, line, id, bp.verified);
+        let mut state = self.state.write().await;
+        state.set_state(DebugState::Initialized);
+
+        Ok(())
+    }
+
+    // Deprecated: Use initialize_and_launch instead
+    // Kept for backward compatibility
+    pub async fn launch(&self, launch_args: serde_json::Value) -> Result<()> {
+        let mut state = self.state.write().await;
+        state.set_state(DebugState::Launching);
+        drop(state);
+
+        let client = self.client.read().await;
+        client.launch(launch_args).await?;
+
+        let mut state = self.state.write().await;
+        state.set_state(DebugState::Running);
+
+        Ok(())
+    }
+
+    pub async fn set_breakpoint(&self, source_path: String, line: i32) -> Result<bool> {
+        // Check current state
+        let current_state = {
+            let state = self.state.read().await;
+            state.state.clone()
+        };
+
+        // If still initializing, store as pending
+        match current_state {
+            DebugState::NotStarted | DebugState::Initializing => {
+                info!("📌 Session initializing, storing breakpoint as pending: {}:{}", source_path, line);
+                let mut pending = self.pending_breakpoints.write().await;
+                pending
+                    .entry(source_path.clone())
+                    .or_insert_with(Vec::new)
+                    .push(SourceBreakpoint {
+                        line,
+                        column: None,
+                        condition: None,
+                        hit_condition: None,
+                    });
+
+                // Add to state for tracking
+                let mut state = self.state.write().await;
+                state.add_breakpoint(source_path, line);
+
+                // Return true to indicate it will be set
+                Ok(true)
             }
-            Ok(bp.verified)
-        } else {
-            Ok(false)
+            DebugState::Running | DebugState::Stopped { .. } | DebugState::Initialized | DebugState::Launching => {
+                // Add to state
+                {
+                    let mut state = self.state.write().await;
+                    state.add_breakpoint(source_path.clone(), line);
+                }
+
+                // Set via DAP immediately
+                let source = Source {
+                    name: None,
+                    path: Some(source_path.clone()),
+                    source_reference: None,
+                };
+
+                let breakpoints = vec![SourceBreakpoint {
+                    line,
+                    column: None,
+                    condition: None,
+                    hit_condition: None,
+                }];
+
+                let client = self.client.read().await;
+                let result = client.set_breakpoints(source, breakpoints).await?;
+
+                // Update state with results
+                if let Some(bp) = result.first() {
+                    let mut state = self.state.write().await;
+                    if let Some(id) = bp.id {
+                        state.update_breakpoint(&source_path, line, id, bp.verified);
+                    }
+                    Ok(bp.verified)
+                } else {
+                    Ok(false)
+                }
+            }
+            DebugState::Terminated | DebugState::Failed { .. } => {
+                Err(crate::Error::InvalidState(format!(
+                    "Cannot set breakpoint in state: {:?}",
+                    current_state
+                )))
+            }
         }
     }
 

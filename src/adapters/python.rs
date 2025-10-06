@@ -20,13 +20,22 @@ impl PythonAdapter {
     }
 
     pub fn launch_args(program: &str, args: &[String], cwd: Option<&str>) -> Value {
+        Self::launch_args_with_options(program, args, cwd, false)
+    }
+
+    pub fn launch_args_with_options(
+        program: &str,
+        args: &[String],
+        cwd: Option<&str>,
+        stop_on_entry: bool,
+    ) -> Value {
         let mut launch = json!({
             "request": "launch",
             "type": "python",
             "program": program,
             "args": args,
-            "console": "integratedTerminal",
-            "stopOnEntry": false,
+            "console": "internalConsole",  // Use internalConsole instead of integratedTerminal
+            "stopOnEntry": stop_on_entry,
         });
 
         if let Some(cwd_path) = cwd {
@@ -69,8 +78,8 @@ mod tests {
         assert_eq!(launch["type"], "python");
         assert_eq!(launch["program"], program);
         assert_eq!(launch["args"], json!(args));
-        assert_eq!(launch["console"], "integratedTerminal");
-        assert_eq!(launch["stopOnEntry"], false);
+        assert_eq!(launch["console"], "internalConsole");
+        assert!(!launch["stopOnEntry"].as_bool().unwrap_or(true));
         assert!(launch["cwd"].is_null());
     }
 
@@ -88,7 +97,7 @@ mod tests {
     #[test]
     fn test_launch_args_empty_args() {
         let program = "test.py";
-        let args: Vec<String> = vec![];
+        let args = Vec::<String>::new();
         let launch = PythonAdapter::launch_args(program, &args, None);
 
         assert_eq!(launch["args"], json!([]));

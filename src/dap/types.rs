@@ -48,8 +48,10 @@ pub struct Event {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeRequestArguments {
+    #[serde(rename = "clientID")]
     pub client_id: Option<String>,
     pub client_name: Option<String>,
+    #[serde(rename = "adapterID")]
     pub adapter_id: String,
     pub locale: Option<String>,
     pub lines_start_at_1: Option<bool>,

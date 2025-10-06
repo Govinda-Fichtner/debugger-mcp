@@ -13,6 +13,8 @@ pub struct DebuggerStartArgs {
     #[serde(default)]
     pub args: Vec<String>,
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub stop_on_entry: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +51,12 @@ pub struct DisconnectArgs {
     pub session_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStateArgs {
+    pub session_id: String,
+}
+
 pub struct ToolsHandler {
     session_manager: Arc<RwLock<SessionManager>>,
 }
@@ -61,6 +69,7 @@ impl ToolsHandler {
     pub async fn handle_tool(&self, name: &str, arguments: Value) -> Result<Value> {
         match name {
             "debugger_start" => self.debugger_start(arguments).await,
+            "debugger_session_state" => self.debugger_session_state(arguments).await,
             "debugger_set_breakpoint" => self.debugger_set_breakpoint(arguments).await,
             "debugger_continue" => self.debugger_continue(arguments).await,
             "debugger_stack_trace" => self.debugger_stack_trace(arguments).await,
@@ -72,15 +81,49 @@ impl ToolsHandler {
 
     async fn debugger_start(&self, arguments: Value) -> Result<Value> {
         let args: DebuggerStartArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.read().await;
         let session_id = manager
-            .create_session(&args.language, args.program, args.args, args.cwd)
+            .create_session(&args.language, args.program, args.args, args.cwd, args.stop_on_entry)
             .await?;
 
         Ok(json!({
             "sessionId": session_id,
             "status": "started"
+        }))
+    }
+
+    async fn debugger_session_state(&self, arguments: Value) -> Result<Value> {
+        let args: SessionStateArgs = serde_json::from_value(arguments)?;
+
+        let manager = self.session_manager.read().await;
+        let state = manager.get_session_state(&args.session_id).await?;
+
+        // Convert DebugState to JSON-friendly format
+        let (state_str, details) = match state {
+            crate::debug::state::DebugState::NotStarted => ("NotStarted", json!({})),
+            crate::debug::state::DebugState::Initializing => ("Initializing", json!({})),
+            crate::debug::state::DebugState::Initialized => ("Initialized", json!({})),
+            crate::debug::state::DebugState::Launching => ("Launching", json!({})),
+            crate::debug::state::DebugState::Running => ("Running", json!({})),
+            crate::debug::state::DebugState::Stopped { thread_id, reason } => {
+                ("Stopped", json!({
+                    "threadId": thread_id,
+                    "reason": reason
+                }))
+            }
+            crate::debug::state::DebugState::Terminated => ("Terminated", json!({})),
+            crate::debug::state::DebugState::Failed { error } => {
+                ("Failed", json!({
+                    "error": error
+                }))
+            }
+        };
+
+        Ok(json!({
+            "sessionId": args.session_id,
+            "state": state_str,
+            "details": details
         }))
     }
 
@@ -175,9 +218,27 @@ impl ToolsHandler {
                         "cwd": {
                             "type": "string",
                             "description": "Working directory for the program"
+                        },
+                        "stopOnEntry": {
+                            "type": "boolean",
+                            "description": "Stop at the first line of the program"
                         }
                     },
                     "required": ["language", "program"]
+                }
+            }),
+            json!({
+                "name": "debugger_session_state",
+                "description": "Get the current state of a debugging session",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {
+                            "type": "string",
+                            "description": "Debug session ID"
+                        }
+                    },
+                    "required": ["sessionId"]
                 }
             }),
             json!({
@@ -367,7 +428,7 @@ mod tests {
     #[test]
     fn test_list_tools() {
         let tools = ToolsHandler::list_tools();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 7);
 
         // Verify tool names
         let tool_names: Vec<&str> = tools
@@ -376,6 +437,7 @@ mod tests {
             .collect();
 
         assert!(tool_names.contains(&"debugger_start"));
+        assert!(tool_names.contains(&"debugger_session_state"));
         assert!(tool_names.contains(&"debugger_set_breakpoint"));
         assert!(tool_names.contains(&"debugger_continue"));
         assert!(tool_names.contains(&"debugger_stack_trace"));
@@ -400,8 +462,9 @@ mod tests {
     async fn test_tools_handler_new() {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
         let _handler = ToolsHandler::new(manager);
-        // Just verify it constructs without panic
-        assert!(true);
+        // Verify list_tools returns expected tools
+        let tools = ToolsHandler::list_tools();
+        assert!(tools.iter().any(|t| t["name"] == "debugger_start"));
     }
 
     #[tokio::test]

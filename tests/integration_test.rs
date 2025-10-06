@@ -7,6 +7,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::path::PathBuf;
 
+mod helpers;
+use helpers::log_validator::LogValidator;
+
 #[tokio::test]
 async fn test_mcp_server_initializes() {
     // Test that we can create an MCP server
@@ -39,6 +42,20 @@ async fn test_mcp_initialize_request() {
 #[ignore] // Run with: cargo test --test integration_test -- --ignored --nocapture
 async fn test_fizzbuzz_debugging_integration() {
     use tokio::time::{timeout, Duration};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    // Initialize log validator
+    let log_validator = LogValidator::new();
+
+    // Initialize logging with both console output and log capture
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_test_writer()
+        .finish()
+        .with(log_validator.layer());
+
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Failed to set subscriber");
 
     // Wrap entire test in timeout
     let test_result = timeout(Duration::from_secs(30), async {
@@ -57,7 +74,7 @@ async fn test_fizzbuzz_debugging_integration() {
 
         // Check if debugpy is available
         let debugpy_check = std::process::Command::new("python3")
-            .args(&["-c", "import debugpy"])
+            .args(["-c", "import debugpy"])
             .output();
 
         if debugpy_check.is_err() || !debugpy_check.unwrap().status.success() {
@@ -66,40 +83,46 @@ async fn test_fizzbuzz_debugging_integration() {
             return Ok::<(), String>(());
         }
 
-        // 1. Start debugger session
+        // 1. Start debugger session with stopOnEntry to allow breakpoint setting
         println!("🔧 Starting debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
             "language": "python",
             "program": fizzbuzz_str,
             "args": [],
-            "cwd": null
+            "cwd": null,
+            "stopOnEntry": true
         });
 
         let start_result = timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             tools_handler.handle_tool("debugger_start", start_args)
         ).await;
 
         // If adapter spawn fails or times out, skip test gracefully
-        if start_result.is_err() {
-            println!("⚠️  Skipping FizzBuzz test: debugger_start timed out");
-            println!("   This indicates DAP adapter is not responding properly");
-            return Ok(());
-        }
+        let start_result = match start_result {
+            Err(_) => {
+                println!("⚠️  Skipping FizzBuzz test: debugger_start timed out");
+                println!("   This indicates DAP adapter is not responding properly");
+                return Ok(());
+            }
+            Ok(result) => result,
+        };
 
-        let start_result = start_result.unwrap();
-        if start_result.is_err() {
-            let err = start_result.unwrap_err();
-            println!("⚠️  Skipping FizzBuzz test: {}", err);
-            println!("   This is expected if debugpy adapter is not properly configured");
-            return Ok(());
-        }
-
-    let start_response = start_result.unwrap();
+        let start_response = match start_result {
+            Err(err) => {
+                println!("⚠️  Skipping FizzBuzz test: {}", err);
+                println!("   This is expected if debugpy adapter is not properly configured");
+                return Ok(());
+            }
+            Ok(response) => response,
+        };
     let session_id = start_response["sessionId"].as_str().unwrap().to_string();
 
     println!("✅ Debug session started: {}", session_id);
+
+    // Give debugger a moment to stop at entry
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // 2. Set breakpoint at fizzbuzz function (line 18 where "FizzBuzz" is returned)
     println!("🎯 Setting breakpoint at line 18");
@@ -110,15 +133,22 @@ async fn test_fizzbuzz_debugging_integration() {
         "line": 18
     });
 
-    let bp_result = tools_handler.handle_tool("debugger_set_breakpoint", bp_args).await;
+    let bp_result = timeout(
+        Duration::from_secs(10),
+        tools_handler.handle_tool("debugger_set_breakpoint", bp_args)
+    ).await;
 
-    if bp_result.is_err() {
-        println!("⚠️  Breakpoint set failed (may be timing issue): {:?}", bp_result);
-        // Continue with test anyway
-    } else {
-        let bp_response = bp_result.unwrap();
-        let verified = bp_response["verified"].as_bool().unwrap_or(false);
-        println!("✅ Breakpoint set, verified: {}", verified);
+    match bp_result {
+        Err(_) => {
+            println!("⚠️  Breakpoint set timed out after 10 seconds");
+        }
+        Ok(Err(e)) => {
+            println!("⚠️  Breakpoint set failed: {:?}", e);
+        }
+        Ok(Ok(bp_response)) => {
+            let verified = bp_response["verified"].as_bool().unwrap_or(false);
+            println!("✅ Breakpoint set, verified: {}", verified);
+        }
     }
 
     // 3. Continue execution (program will run and hit breakpoint)
@@ -251,6 +281,56 @@ async fn test_fizzbuzz_debugging_integration() {
             println!("   This is acceptable - the test validates the API structure");
         }
     }
+
+    // Validate logs after test completion
+    // Give background tasks a moment to complete logging
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    println!("\n📋 Validating logs...");
+    let validation_result = log_validator.validate();
+    log_validator.print_summary(&validation_result);
+
+    // Print log statistics
+    let stats = log_validator.get_stats();
+    println!("\n📊 Log Level Statistics:");
+    println!("   Total:  {}", stats.total);
+    println!("   ERROR:  {}", stats.error);
+    println!("   WARN:   {}", stats.warn);
+    println!("   INFO:   {}", stats.info);
+    println!("   DEBUG:  {}", stats.debug);
+    println!("   TRACE:  {}", stats.trace);
+
+    // Assert that critical logs are present
+    assert!(
+        validation_result.missing_logs.len() < 5,
+        "Too many missing critical logs: {} missing. Missing: {:?}",
+        validation_result.missing_logs.len(),
+        validation_result.missing_logs
+    );
+
+    // Assert log quality
+    assert!(
+        validation_result.quality_issues.len() < 10,
+        "Too many log quality issues: {}. Issues: {:?}",
+        validation_result.quality_issues.len(),
+        validation_result.quality_issues
+    );
+
+    // Assert we have a reasonable number of logs
+    assert!(
+        stats.total >= 50,
+        "Expected at least 50 logs for a complete debug session, got {}",
+        stats.total
+    );
+
+    // Assert no critical errors (unless expected)
+    assert!(
+        stats.error == 0,
+        "Unexpected ERROR level logs found: {}",
+        stats.error
+    );
+
+    println!("\n✅ Log validation completed successfully!");
 }
 
 /// Test resource queries without active sessions

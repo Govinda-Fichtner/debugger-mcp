@@ -1,9 +1,8 @@
-/// Fake DAP Adapter for Integration Testing
+/// Fake DAP Adapter for Integration Testing.
 ///
 /// This is a minimal DAP adapter implementation that responds to DAP protocol
 /// requests for testing purposes. It doesn't actually debug anything, but
 /// simulates the protocol correctly.
-
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -129,7 +128,7 @@ impl FakeDapAdapter {
                             // Store breakpoint
                             self.breakpoints
                                 .entry(source_path.to_string())
-                                .or_insert_with(Vec::new)
+                                .or_default()
                                 .push(line);
 
                             json!({

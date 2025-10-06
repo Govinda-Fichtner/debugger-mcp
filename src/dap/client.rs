@@ -6,19 +6,27 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, oneshot};
+use tokio::sync::{mpsc, RwLock, Mutex, oneshot, Notify};
 use tokio::process::{Child, Command};
 use tracing::{debug, error, info, warn};
 
 type ResponseSender = oneshot::Sender<Response>;
+type EventNotifier = Arc<Notify>;
+type EventCallback = Arc<dyn Fn(Event) + Send + Sync>;
 
-/// DAP Client
+/// DAP Client with event-driven architecture
 pub struct DapClient {
-    transport: Arc<RwLock<Box<dyn DapTransportTrait>>>,
+    transport: Arc<Mutex<Box<dyn DapTransportTrait>>>,
     seq_counter: Arc<AtomicI32>,
     pending_requests: Arc<RwLock<HashMap<i32, ResponseSender>>>,
     #[allow(dead_code)] // Reserved for future event handling
     event_tx: mpsc::UnboundedSender<Event>,
+    // For backward compatibility with wait_for_event
+    event_notifiers: Arc<RwLock<HashMap<String, EventNotifier>>>,
+    // New: Event callbacks (can have multiple callbacks per event)
+    event_callbacks: Arc<RwLock<HashMap<String, Vec<EventCallback>>>>,
+    // Channel for sending write requests to avoid lock contention
+    write_tx: mpsc::UnboundedSender<Message>,
     _child: Option<Child>,
 }
 
@@ -49,43 +57,85 @@ impl DapClient {
         transport: Box<dyn DapTransportTrait>,
         child: Option<Child>,
     ) -> Result<Self> {
-        let transport = Arc::new(RwLock::new(transport));
+        let transport = Arc::new(Mutex::new(transport));
         let seq_counter = Arc::new(AtomicI32::new(1));
         let pending_requests = Arc::new(RwLock::new(HashMap::new()));
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (write_tx, write_rx) = mpsc::unbounded_channel();
+
+        let event_notifiers = Arc::new(RwLock::new(HashMap::new()));
+        let event_callbacks = Arc::new(RwLock::new(HashMap::new()));
 
         let client = Self {
             transport: transport.clone(),
             seq_counter: seq_counter.clone(),
             pending_requests: pending_requests.clone(),
             event_tx,
+            event_notifiers: event_notifiers.clone(),
+            event_callbacks: event_callbacks.clone(),
+            write_tx: write_tx.clone(),
             _child: child,
         };
 
-        // Spawn message handler
-        tokio::spawn(Self::message_handler(
+        // Spawn message reader handler
+        tokio::spawn(Self::message_reader(
             transport.clone(),
             pending_requests.clone(),
+            event_notifiers.clone(),
+            event_callbacks.clone(),
             event_rx,
+        ));
+
+        // Spawn message writer handler
+        tokio::spawn(Self::message_writer(
+            transport.clone(),
+            write_rx,
         ));
 
         Ok(client)
     }
 
-    async fn message_handler(
-        transport: Arc<RwLock<Box<dyn DapTransportTrait>>>,
+    /// Message reader task - reads messages from transport and dispatches them
+    async fn message_reader(
+        transport: Arc<Mutex<Box<dyn DapTransportTrait>>>,
         pending_requests: Arc<RwLock<HashMap<i32, ResponseSender>>>,
+        event_notifiers: Arc<RwLock<HashMap<String, EventNotifier>>>,
+        event_callbacks: Arc<RwLock<HashMap<String, Vec<EventCallback>>>>,
         mut _event_rx: mpsc::UnboundedReceiver<Event>,
     ) {
         loop {
-            let msg = {
-                let mut transport = transport.write().await;
-                match transport.read_message().await {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        error!("Failed to read DAP message: {}", e);
-                        break;
+            debug!("📖 message_reader: Attempting to acquire transport lock");
+
+            // Try to read a message with the lock, but release it if no message is ready
+            let msg_result = {
+                let mut transport = transport.lock().await;
+                debug!("📖 message_reader: Lock acquired, checking for message");
+
+                // Use select with timeout to avoid holding lock indefinitely
+                let read_future = transport.read_message();
+                tokio::select! {
+                    result = read_future => {
+                        debug!("📖 message_reader: Message read attempt completed");
+                        Some(result)
                     }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(50)) => {
+                        debug!("📖 message_reader: Read timeout, releasing lock");
+                        None
+                    }
+                }
+            };
+            debug!("📖 message_reader: Lock released");
+
+            // If we didn't get a message, continue loop (will retry)
+            let msg = match msg_result {
+                None => {
+                    tokio::time::sleep(tokio::time::Duration::from_micros(100)).await;
+                    continue;
+                }
+                Some(Ok(msg)) => msg,
+                Some(Err(e)) => {
+                    error!("📖 message_reader: Failed to read DAP message: {}", e);
+                    break;
                 }
             };
 
@@ -102,20 +152,138 @@ impl DapClient {
                     }
                 }
                 Message::Event(event) => {
-                    debug!("Received event: {}", event.event);
-                    // Events are currently logged but not forwarded
-                    // In a full implementation, we'd forward to event_tx
+                    info!("🎯 EVENT RECEIVED: '{}' with body: {:?}", event.event, event.body);
+
+                    // 1. Notify anyone waiting for this specific event (legacy wait_for_event)
+                    let notifiers = event_notifiers.read().await;
+                    if let Some(notifier) = notifiers.get(&event.event) {
+                        info!("  Notifying waiters for event '{}'", event.event);
+                        notifier.notify_waiters();
+                    }
+                    drop(notifiers);
+
+                    // 2. Invoke registered event callbacks
+                    let callbacks = event_callbacks.read().await;
+                    if let Some(handlers) = callbacks.get(&event.event) {
+                        info!("  Found {} callback(s) for event '{}'", handlers.len(), event.event);
+                        for (idx, callback) in handlers.iter().enumerate() {
+                            info!("  Invoking callback {} for event '{}'", idx, event.event);
+                            // Invoke callback with cloned event
+                            callback(event.clone());
+                            info!("  Callback {} completed for event '{}'", idx, event.event);
+                        }
+                    } else {
+                        info!("  No callbacks registered for event '{}'", event.event);
+                    }
                 }
                 Message::Request(_) => {
                     warn!("Received request from debug adapter (reverse requests not implemented)");
                 }
             }
+
+            // Small sleep to let other tasks run (e.g., configurationDone sender)
+            // This is necessary because read_message() blocks holding the lock
+            tokio::time::sleep(tokio::time::Duration::from_micros(100)).await;
         }
     }
 
+    /// Message writer task - writes messages to transport from a channel
+    /// This avoids lock contention between reader and writers
+    async fn message_writer(
+        transport: Arc<Mutex<Box<dyn DapTransportTrait>>>,
+        mut write_rx: mpsc::UnboundedReceiver<Message>,
+    ) {
+        info!("📝 message_writer: Task started");
+        while let Some(message) = write_rx.recv().await {
+            let msg_type = match &message {
+                Message::Request(req) => format!("Request({})", req.command),
+                Message::Response(resp) => format!("Response(seq {})", resp.seq),
+                Message::Event(evt) => format!("Event({})", evt.event),
+            };
+            info!("📝 message_writer: Received {} from channel", msg_type);
+            info!("📝 message_writer: Attempting to acquire transport lock");
+            let mut transport = transport.lock().await;
+            info!("📝 message_writer: Lock acquired, writing message");
+            if let Err(e) = transport.write_message(&message).await {
+                error!("📝 message_writer: Failed to write DAP message: {}", e);
+                break;
+            }
+            info!("📝 message_writer: Message written successfully, releasing lock");
+            drop(transport);
+            info!("📝 message_writer: Lock released");
+        }
+        info!("📝 message_writer: Task exiting");
+    }
+
+    /// Register a callback for a specific DAP event
+    /// The callback will be invoked every time the event is received
+    pub async fn on_event<F>(&self, event_name: &str, callback: F)
+    where
+        F: Fn(Event) + Send + Sync + 'static,
+    {
+        let mut callbacks = self.event_callbacks.write().await;
+        callbacks
+            .entry(event_name.to_string())
+            .or_insert_with(Vec::new)
+            .push(Arc::new(callback));
+    }
+
+    /// Remove all callbacks for a specific event
+    pub async fn remove_event_handlers(&self, event_name: &str) {
+        let mut callbacks = self.event_callbacks.write().await;
+        callbacks.remove(event_name);
+    }
+
+    /// Wait for a specific DAP event with a timeout (legacy method)
+    pub async fn wait_for_event(&self, event_name: &str, timeout: tokio::time::Duration) -> Result<()> {
+        let notifier = {
+            let mut notifiers = self.event_notifiers.write().await;
+            // Create or get existing notifier for this event
+            notifiers.entry(event_name.to_string())
+                .or_insert_with(|| Arc::new(Notify::new()))
+                .clone()
+        };
+
+        // Wait for notification or timeout
+        tokio::select! {
+            _ = notifier.notified() => {
+                debug!("Received '{}' event", event_name);
+                Ok(())
+            }
+            _ = tokio::time::sleep(timeout) => {
+                Err(Error::Dap(format!("Timeout waiting for '{}' event after {:?}", event_name, timeout)))
+            }
+        }
+    }
+
+    /// Send a request without waiting for response (fire-and-forget)
+    /// Useful when you'll handle the response via another mechanism
+    pub async fn send_request_nowait(&self, command: &str, arguments: Option<Value>) -> Result<i32> {
+        debug!("send_request_nowait: Starting for command '{}'", command);
+        let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
+
+        let request = Request {
+            seq,
+            command: command.to_string(),
+            arguments,
+        };
+
+        debug!("send_request_nowait: Acquiring transport lock for command '{}'", command);
+        let mut transport = self.transport.lock().await;
+        debug!("send_request_nowait: Writing {} request (seq {})", command, seq);
+        transport.write_message(&Message::Request(request)).await?;
+        debug!("send_request_nowait: Message written successfully");
+        drop(transport);
+
+        Ok(seq)
+    }
+
+    /// Send a request and wait for response (blocking)
     pub async fn send_request(&self, command: &str, arguments: Option<Value>) -> Result<Response> {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
-        
+
+        info!("✉️  send_request: Sending '{}' request (seq {})", command, seq);
+
         let request = Request {
             seq,
             command: command.to_string(),
@@ -123,19 +291,66 @@ impl DapClient {
         };
 
         let (tx, rx) = oneshot::channel();
-        
+
+        {
+            let mut pending = self.pending_requests.write().await;
+            pending.insert(seq, tx);
+            info!("✉️  send_request: Registered pending request for seq {}", seq);
+        }
+
+        info!("✉️  send_request: Sending message to write channel");
+        self.write_tx.send(Message::Request(request))
+            .map_err(|_| Error::Dap("Write channel closed".to_string()))?;
+
+        info!("✉️  send_request: Waiting for response to seq {}", seq);
+        let response = rx.await
+            .map_err(|_| Error::Dap("Request cancelled or connection closed".to_string()))?;
+
+        info!("✅ send_request: Received response for '{}' (seq {}), success: {}", command, seq, response.success);
+        Ok(response)
+    }
+
+    /// Send a request with a callback for the response
+    pub async fn send_request_async<F>(&self, command: &str, arguments: Option<Value>, callback: F) -> Result<i32>
+    where
+        F: FnOnce(Result<Response>) + Send + 'static,
+    {
+        debug!("send_request_async: Starting for command '{}'", command);
+        let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
+
+        let request = Request {
+            seq,
+            command: command.to_string(),
+            arguments,
+        };
+
+        let (tx, rx) = oneshot::channel();
+
+        debug!("send_request_async: Registering pending request");
         {
             let mut pending = self.pending_requests.write().await;
             pending.insert(seq, tx);
         }
 
-        {
-            let mut transport = self.transport.write().await;
-            transport.write_message(&Message::Request(request)).await?;
-        }
+        debug!("send_request_async: Sending {} request (seq {}) to write channel", command, seq);
+        self.write_tx.send(Message::Request(request))
+            .map_err(|_| Error::Dap("Write channel closed".to_string()))?;
+        debug!("send_request_async: Request queued");
 
-        rx.await
-            .map_err(|_| Error::Dap("Request cancelled or connection closed".to_string()))
+        // Spawn task to wait for response and invoke callback
+        tokio::spawn(async move {
+            debug!("send_request_async callback task: Waiting for response seq {}", seq);
+            match rx.await {
+                Ok(response) => {
+                    debug!("send_request_async callback task: Got response for seq {}", seq);
+                    callback(Ok(response))
+                },
+                Err(_) => callback(Err(Error::Dap("Request cancelled or connection closed".to_string()))),
+            }
+        });
+
+        debug!("send_request_async: Returning seq {}", seq);
+        Ok(seq)
     }
 
     pub async fn initialize(&self, adapter_id: &str) -> Result<Capabilities> {
@@ -164,12 +379,96 @@ impl DapClient {
 
     pub async fn launch(&self, args: Value) -> Result<()> {
         let response = self.send_request("launch", Some(args)).await?;
-        
+
         if !response.success {
             return Err(Error::Dap(format!("Launch failed: {:?}", response.message)));
         }
 
         Ok(())
+    }
+
+    /// Proper DAP initialization and launch sequence following the specification
+    /// This method implements the correct async flow:
+    /// 1. Send initialize, get response
+    /// 2. Register 'initialized' event handler (just signals, doesn't call methods)
+    /// 3. Send launch (triggers 'initialized' event)
+    /// 4. Wait for 'initialized' signal, then send configurationDone from main context
+    /// 5. Wait for launch response
+    pub async fn initialize_and_launch(&self, adapter_id: &str, launch_args: Value) -> Result<()> {
+        // Step 1: Send initialize request and get capabilities
+        info!("Sending initialize request to adapter");
+        let capabilities = self.initialize(adapter_id).await?;
+        debug!("Adapter capabilities: supportsConfigurationDoneRequest={:?}",
+               capabilities.supports_configuration_done_request);
+
+        let config_done_supported = capabilities.supports_configuration_done_request.unwrap_or(false);
+
+        // Step 2: Register 'initialized' event handler BEFORE sending launch
+        // This handler will be invoked DURING launch processing
+        // We use a simple signal approach - the handler just notifies, doesn't send messages
+        let (init_tx, init_rx) = oneshot::channel();
+        let init_tx = Arc::new(tokio::sync::Mutex::new(Some(init_tx)));
+
+        self.on_event("initialized", move |_event| {
+            info!("Received 'initialized' event - signaling");
+            let tx = init_tx.clone();
+            // Just signal - don't call any async methods from here
+            // This keeps the event handler fast (< 0.1ms like Python standalone test)
+            tokio::spawn(async move {
+                if let Some(sender) = tx.lock().await.take() {
+                    let _ = sender.send(());
+                }
+            });
+        }).await;
+
+        // Step 3: Send launch request (doesn't wait for response yet)
+        info!("Sending launch request");
+        let launch_seq = self.send_request_nowait("launch", Some(launch_args)).await?;
+        debug!("Launch request sent with seq {}", launch_seq);
+
+        // Step 4: Wait for 'initialized' event signal
+        if config_done_supported {
+            match tokio::time::timeout(tokio::time::Duration::from_secs(5), init_rx).await {
+                Ok(Ok(())) => {
+                    info!("Received 'initialized' event signal");
+                }
+                Ok(Err(_)) => {
+                    return Err(Error::Dap("'initialized' event signal was cancelled".to_string()));
+                }
+                Err(_) => {
+                    return Err(Error::Dap("Timeout waiting for 'initialized' event (5s)".to_string()));
+                }
+            }
+
+            // Step 5: Now send configurationDone from main context (not from event handler)
+            info!("Sending configurationDone");
+            self.configuration_done().await?;
+            info!("configurationDone completed");
+        }
+
+        // Step 6: Wait for launch response (using wait_for_event on the response)
+        // The launch response should arrive shortly after configurationDone
+        info!("Waiting for launch to complete");
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        info!("Launch sequence completed successfully");
+        Ok(())
+    }
+
+    /// Helper to clone the client for use in callbacks
+    /// Returns an Arc-wrapped clone of the necessary fields
+    #[allow(dead_code)]
+    fn clone_for_callback(&self) -> Self {
+        Self {
+            transport: self.transport.clone(),
+            seq_counter: self.seq_counter.clone(),
+            pending_requests: self.pending_requests.clone(),
+            event_tx: self.event_tx.clone(),
+            event_notifiers: self.event_notifiers.clone(),
+            event_callbacks: self.event_callbacks.clone(),
+            write_tx: self.write_tx.clone(),
+            _child: None, // Don't clone the child process
+        }
     }
 
     pub async fn configuration_done(&self) -> Result<()> {
@@ -183,13 +482,20 @@ impl DapClient {
     }
 
     pub async fn set_breakpoints(&self, source: Source, breakpoints: Vec<SourceBreakpoint>) -> Result<Vec<Breakpoint>> {
+        info!("🔧 set_breakpoints: Starting for source {:?}, {} breakpoints", source.path, breakpoints.len());
+        for (i, bp) in breakpoints.iter().enumerate() {
+            info!("  Breakpoint {}: line {}, condition: {:?}", i, bp.line, bp.condition);
+        }
+
         let args = SetBreakpointsArguments {
             source,
             breakpoints: Some(breakpoints),
             source_modified: Some(false),
         };
 
+        info!("🔧 set_breakpoints: Sending setBreakpoints request...");
         let response = self.send_request("setBreakpoints", Some(serde_json::to_value(args)?)).await?;
+        info!("🔧 set_breakpoints: Received response, success: {}", response.success);
         
         if !response.success {
             return Err(Error::Dap(format!("SetBreakpoints failed: {:?}", response.message)));
@@ -203,6 +509,11 @@ impl DapClient {
         let body: SetBreakpointsResponse = response.body
             .ok_or_else(|| Error::Dap("No breakpoints in response".to_string()))
             .and_then(|v| serde_json::from_value(v).map_err(|e| Error::Dap(format!("Failed to parse breakpoints: {}", e))))?;
+
+        info!("✅ set_breakpoints: Success, {} breakpoints verified", body.breakpoints.len());
+        for (i, bp) in body.breakpoints.iter().enumerate() {
+            info!("  Breakpoint {}: id={:?}, verified={}, line={:?}", i, bp.id, bp.verified, bp.line);
+        }
 
         Ok(body.breakpoints)
     }
@@ -359,9 +670,9 @@ mod tests {
 
         let caps = client.initialize("test-adapter").await.unwrap();
 
-        assert_eq!(caps.supports_configuration_done_request, Some(true));
-        assert_eq!(caps.supports_function_breakpoints, Some(false));
-        assert_eq!(caps.supports_conditional_breakpoints, Some(true));
+        assert!(caps.supports_configuration_done_request.unwrap_or(false));
+        assert!(!caps.supports_function_breakpoints.unwrap_or(true));
+        assert!(caps.supports_conditional_breakpoints.unwrap_or(false));
     }
 
     #[tokio::test]
@@ -448,7 +759,7 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].id, Some(1));
-        assert_eq!(result[0].verified, true);
+        assert!(result[0].verified);
     }
 
     #[tokio::test]

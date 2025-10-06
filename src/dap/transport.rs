@@ -221,7 +221,7 @@ mod tests {
             .times(3)
             .returning(|_| Ok(()));
 
-        let commands = vec!["initialize", "launch", "configurationDone"];
+        let commands = ["initialize", "launch", "configurationDone"];
 
         for (i, cmd) in commands.iter().enumerate() {
             let request = Message::Request(Request {

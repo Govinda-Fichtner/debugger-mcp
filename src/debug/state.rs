@@ -28,6 +28,12 @@ pub struct SessionState {
     pub threads: Vec<i32>,
 }
 
+impl Default for SessionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionState {
     pub fn new() -> Self {
         Self {
@@ -51,7 +57,7 @@ impl SessionState {
         
         self.breakpoints
             .entry(source)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(bp);
     }
 

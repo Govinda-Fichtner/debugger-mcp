@@ -11,6 +11,12 @@ pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<String, Arc<DebugSession>>>>,
 }
 
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionManager {
     pub fn new() -> Self {
         Self {
@@ -24,16 +30,18 @@ impl SessionManager {
         program: String,
         args: Vec<String>,
         cwd: Option<String>,
+        stop_on_entry: bool,
     ) -> Result<String> {
         let (command, adapter_args, adapter_id, launch_args) = match language {
             "python" => {
                 let cmd = PythonAdapter::command();
                 let adapter_args = PythonAdapter::args();
                 let adapter_id = PythonAdapter::adapter_id();
-                let launch_args = PythonAdapter::launch_args(
+                let launch_args = PythonAdapter::launch_args_with_options(
                     &program,
                     &args,
                     cwd.as_deref(),
+                    stop_on_entry,
                 );
                 (cmd, adapter_args, adapter_id, launch_args)
             }
@@ -47,16 +55,18 @@ impl SessionManager {
         let session = DebugSession::new(language.to_string(), program, client).await?;
         let session_id = session.id.clone();
 
-        // Initialize DAP
-        session.initialize(adapter_id).await?;
-
-        // Launch program
-        session.launch(launch_args).await?;
-
-        // Store session
+        // Store session immediately
         let session_arc = Arc::new(session);
-        let mut sessions = self.sessions.write().await;
-        sessions.insert(session_id.clone(), session_arc);
+        {
+            let mut sessions = self.sessions.write().await;
+            sessions.insert(session_id.clone(), session_arc.clone());
+        }
+
+        // Initialize and launch in the background
+        tokio::spawn(session_arc.initialize_and_launch_async(
+            adapter_id.to_string(),
+            launch_args,
+        ));
 
         Ok(session_id)
     }
@@ -67,6 +77,11 @@ impl SessionManager {
             .get(session_id)
             .cloned()
             .ok_or_else(|| Error::SessionNotFound(session_id.to_string()))
+    }
+
+    pub async fn get_session_state(&self, session_id: &str) -> Result<crate::debug::state::DebugState> {
+        let session = self.get_session(session_id).await?;
+        Ok(session.get_state().await)
     }
 
     pub async fn list_sessions(&self) -> Vec<String> {
@@ -139,7 +154,7 @@ mod tests {
     async fn test_create_session_unknown_language() {
         let manager = SessionManager::new();
         let result = manager
-            .create_session("ruby", "test.rb".to_string(), vec![], None)
+            .create_session("ruby", "test.rb".to_string(), vec![], None, false)
             .await;
 
         assert!(result.is_err());
