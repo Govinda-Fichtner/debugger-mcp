@@ -4,8 +4,12 @@ pub mod resources;
 pub mod tools;
 
 use crate::{Error, Result};
+use crate::debug::SessionManager;
 use transport::StdioTransport;
-use protocol::{JsonRpcMessage, ProtocolHandler};
+use protocol::ProtocolHandler;
+use tools::ToolsHandler;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, error};
 
 pub struct McpServer {
@@ -16,9 +20,16 @@ pub struct McpServer {
 impl McpServer {
     pub async fn new() -> Result<Self> {
         info!("Initializing MCP server");
+
+        let session_manager = Arc::new(RwLock::new(SessionManager::new()));
+        let tools_handler = Arc::new(ToolsHandler::new(session_manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_tools_handler(tools_handler);
+
         Ok(Self {
             transport: StdioTransport::new(),
-            handler: ProtocolHandler::new(),
+            handler,
         })
     }
 
