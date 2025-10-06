@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::{Error, Result};
 use super::tools::ToolsHandler;
+use super::resources::ResourcesHandler;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
@@ -52,6 +53,7 @@ pub struct JsonRpcError {
 pub struct ProtocolHandler {
     initialized: bool,
     tools_handler: Option<Arc<ToolsHandler>>,
+    resources_handler: Option<Arc<ResourcesHandler>>,
 }
 
 impl ProtocolHandler {
@@ -59,11 +61,16 @@ impl ProtocolHandler {
         Self {
             initialized: false,
             tools_handler: None,
+            resources_handler: None,
         }
     }
 
     pub fn set_tools_handler(&mut self, handler: Arc<ToolsHandler>) {
         self.tools_handler = Some(handler);
+    }
+
+    pub fn set_resources_handler(&mut self, handler: Arc<ResourcesHandler>) {
+        self.resources_handler = Some(handler);
     }
 
     pub async fn handle_message(&mut self, msg: JsonRpcMessage) -> JsonRpcMessage {
@@ -109,6 +116,8 @@ impl ProtocolHandler {
             "initialize" => self.handle_initialize(req).await,
             "tools/list" => self.handle_tools_list(req).await,
             "tools/call" => self.handle_tools_call(req).await,
+            "resources/list" => self.handle_resources_list(req).await,
+            "resources/read" => self.handle_resources_read(req).await,
             _ => JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id: req.id,
@@ -213,6 +222,118 @@ impl ProtocolHandler {
                         "type": "text",
                         "text": serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())
                     }]
+                })),
+                error: None,
+            },
+            Err(e) => JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: e.error_code(),
+                    message: e.to_string(),
+                    data: None,
+                }),
+            },
+        }
+    }
+
+    async fn handle_resources_list(&self, req: JsonRpcRequest) -> JsonRpcResponse {
+        debug!("Handling resources/list request");
+
+        let handler = match &self.resources_handler {
+            Some(h) => h,
+            None => {
+                return JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: req.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: "Resources handler not initialized".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match handler.list_resources().await {
+            Ok(resources) => JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id,
+                result: Some(serde_json::json!({
+                    "resources": resources
+                })),
+                error: None,
+            },
+            Err(e) => JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: e.error_code(),
+                    message: e.to_string(),
+                    data: None,
+                }),
+            },
+        }
+    }
+
+    async fn handle_resources_read(&self, req: JsonRpcRequest) -> JsonRpcResponse {
+        debug!("Handling resources/read request");
+
+        let params = match req.params {
+            Some(p) => p,
+            None => {
+                return JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: req.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32602,
+                        message: "Missing parameters for resources/read".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+        if uri.is_empty() {
+            return JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32602,
+                    message: "Missing 'uri' parameter".to_string(),
+                    data: None,
+                }),
+            };
+        }
+
+        let handler = match &self.resources_handler {
+            Some(h) => h,
+            None => {
+                return JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: req.id,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32603,
+                        message: "Resources handler not initialized".to_string(),
+                        data: None,
+                    }),
+                };
+            }
+        };
+
+        match handler.read_resource(uri).await {
+            Ok(contents) => JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: req.id,
+                result: Some(serde_json::json!({
+                    "contents": [contents]
                 })),
                 error: None,
             },
@@ -536,5 +657,151 @@ mod tests {
         let response = handler.handle_request(req).await;
         assert!(response.error.is_none());
         assert!(response.result.is_some());
+    }
+
+    // Resource handler tests
+
+    #[tokio::test]
+    async fn test_resources_list_without_handler() {
+        let mut handler = ProtocolHandler::new();
+        // Don't set resources_handler
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/list".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("Resources handler not initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_resources_list_with_handler() {
+        use crate::debug::SessionManager;
+        use crate::mcp::resources::ResourcesHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let resources_handler = Arc::new(ResourcesHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_resources_handler(resources_handler);
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/list".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+
+        let result = response.result.unwrap();
+        assert!(result["resources"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_resources_read_without_handler() {
+        let mut handler = ProtocolHandler::new();
+        // Don't set resources_handler
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/read".to_string(),
+            params: Some(json!({
+                "uri": "debugger://sessions"
+            })),
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("Resources handler not initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_resources_read_missing_params() {
+        use crate::debug::SessionManager;
+        use crate::mcp::resources::ResourcesHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let resources_handler = Arc::new(ResourcesHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_resources_handler(resources_handler);
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/read".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("Missing parameters"));
+    }
+
+    #[tokio::test]
+    async fn test_resources_read_missing_uri() {
+        use crate::debug::SessionManager;
+        use crate::mcp::resources::ResourcesHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let resources_handler = Arc::new(ResourcesHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_resources_handler(resources_handler);
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/read".to_string(),
+            params: Some(json!({})),
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32602);
+        assert!(error.message.contains("Missing 'uri'"));
+    }
+
+    #[tokio::test]
+    async fn test_resources_read_success() {
+        use crate::debug::SessionManager;
+        use crate::mcp::resources::ResourcesHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let resources_handler = Arc::new(ResourcesHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_resources_handler(resources_handler);
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "resources/read".to_string(),
+            params: Some(json!({
+                "uri": "debugger://sessions"
+            })),
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+
+        let result = response.result.unwrap();
+        assert!(result["contents"].is_array());
     }
 }

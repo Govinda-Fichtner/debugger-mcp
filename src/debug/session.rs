@@ -11,7 +11,7 @@ pub struct DebugSession {
     pub language: String,
     pub program: String,
     client: Arc<RwLock<DapClient>>,
-    state: Arc<RwLock<SessionState>>,
+    pub(crate) state: Arc<RwLock<SessionState>>,
 }
 
 impl DebugSession {

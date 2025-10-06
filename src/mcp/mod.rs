@@ -9,6 +9,7 @@ use crate::debug::SessionManager;
 use transport::StdioTransport;
 use protocol::ProtocolHandler;
 use tools::ToolsHandler;
+use resources::ResourcesHandler;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, error};
@@ -23,10 +24,16 @@ impl McpServer {
         info!("Initializing MCP server");
 
         let session_manager = Arc::new(RwLock::new(SessionManager::new()));
-        let tools_handler = Arc::new(ToolsHandler::new(session_manager));
+
+        // Create tools handler
+        let tools_handler = Arc::new(ToolsHandler::new(Arc::clone(&session_manager)));
+
+        // Create resources handler
+        let resources_handler = Arc::new(ResourcesHandler::new(Arc::clone(&session_manager)));
 
         let mut handler = ProtocolHandler::new();
         handler.set_tools_handler(tools_handler);
+        handler.set_resources_handler(resources_handler);
 
         Ok(Self {
             transport: StdioTransport::new(),
