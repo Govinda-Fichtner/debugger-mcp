@@ -191,3 +191,70 @@ pub struct Scope {
 pub struct ContinueArguments {
     pub thread_id: i32,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_request_serialization() {
+        let req = Request {
+            seq: 1,
+            command: "initialize".to_string(),
+            arguments: Some(json!({"clientID": "test"})),
+        };
+        
+        let serialized = serde_json::to_string(&req).unwrap();
+        assert!(serialized.contains("initialize"));
+        assert!(serialized.contains("\"seq\":1"));
+    }
+
+    #[test]
+    fn test_response_serialization() {
+        let resp = Response {
+            seq: 2,
+            request_seq: 1,
+            command: "initialize".to_string(),
+            success: true,
+            message: None,
+            body: Some(json!({"capabilities": {}})),
+        };
+        
+        let serialized = serde_json::to_string(&resp).unwrap();
+        assert!(serialized.contains("\"success\":true"));
+    }
+
+    #[test]
+    fn test_source_breakpoint() {
+        let bp = SourceBreakpoint {
+            line: 10,
+            column: Some(5),
+            condition: Some("x > 0".to_string()),
+            hit_condition: None,
+        };
+        
+        assert_eq!(bp.line, 10);
+        assert_eq!(bp.column, Some(5));
+    }
+
+    #[test]
+    fn test_stack_frame() {
+        let frame = StackFrame {
+            id: 1,
+            name: "main".to_string(),
+            source: Some(Source {
+                name: Some("test.py".to_string()),
+                path: Some("/path/to/test.py".to_string()),
+                source_reference: None,
+            }),
+            line: 42,
+            column: 10,
+            end_line: None,
+            end_column: None,
+        };
+        
+        assert_eq!(frame.name, "main");
+        assert_eq!(frame.line, 42);
+    }
+}

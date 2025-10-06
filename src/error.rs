@@ -44,3 +44,71 @@ impl Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_not_found_error() {
+        let err = Error::SessionNotFound("test-id".to_string());
+        assert_eq!(err.error_code(), -32001);
+        assert_eq!(err.to_string(), "Session not found: test-id");
+    }
+
+    #[test]
+    fn test_adapter_not_found_error() {
+        let err = Error::AdapterNotFound("ruby".to_string());
+        assert_eq!(err.error_code(), -32002);
+        assert_eq!(err.to_string(), "Adapter not found for language: ruby");
+    }
+
+    #[test]
+    fn test_dap_error() {
+        let err = Error::Dap("connection failed".to_string());
+        assert_eq!(err.error_code(), -32003);
+        assert_eq!(err.to_string(), "DAP error: connection failed");
+    }
+
+    #[test]
+    fn test_process_error() {
+        let err = Error::Process("spawn failed".to_string());
+        assert_eq!(err.error_code(), -32004);
+        assert_eq!(err.to_string(), "Process error: spawn failed");
+    }
+
+    #[test]
+    fn test_invalid_request_error() {
+        let err = Error::InvalidRequest("malformed JSON".to_string());
+        assert_eq!(err.error_code(), -32600);
+        assert_eq!(err.to_string(), "Invalid request: malformed JSON");
+    }
+
+    #[test]
+    fn test_method_not_found_error() {
+        let err = Error::MethodNotFound("unknown_method".to_string());
+        assert_eq!(err.error_code(), -32601);
+        assert_eq!(err.to_string(), "Method not found: unknown_method");
+    }
+
+    #[test]
+    fn test_internal_error() {
+        let err = Error::Internal("unexpected state".to_string());
+        assert_eq!(err.error_code(), -32603);
+        assert_eq!(err.to_string(), "Internal error: unexpected state");
+    }
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let err: Error = io_err.into();
+        assert_eq!(err.error_code(), -32603);
+    }
+
+    #[test]
+    fn test_json_error_conversion() {
+        let json_err = serde_json::from_str::<i32>("not a number").unwrap_err();
+        let err: Error = json_err.into();
+        assert_eq!(err.error_code(), -32603);
+    }
+}

@@ -229,3 +229,200 @@ impl ProtocolHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_jsonrpc_request_serialization() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "test_method".to_string(),
+            params: Some(json!({"key": "value"})),
+        };
+
+        let serialized = serde_json::to_string(&req).unwrap();
+        assert!(serialized.contains("test_method"));
+        assert!(serialized.contains("\"jsonrpc\":\"2.0\""));
+    }
+
+    #[test]
+    fn test_jsonrpc_response_success() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            result: Some(json!({"status": "ok"})),
+            error: None,
+        };
+
+        let serialized = serde_json::to_string(&resp).unwrap();
+        assert!(serialized.contains("\"status\":\"ok\""));
+        assert!(!serialized.contains("error"));
+    }
+
+    #[test]
+    fn test_jsonrpc_response_error() {
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            result: None,
+            error: Some(JsonRpcError {
+                code: -32600,
+                message: "Invalid request".to_string(),
+                data: None,
+            }),
+        };
+
+        assert_eq!(resp.error.as_ref().unwrap().code, -32600);
+        assert_eq!(resp.error.as_ref().unwrap().message, "Invalid request");
+    }
+
+    #[test]
+    fn test_jsonrpc_notification() {
+        let notif = JsonRpcNotification {
+            jsonrpc: "2.0".to_string(),
+            method: "notify".to_string(),
+            params: Some(json!({"event": "test"})),
+        };
+
+        assert_eq!(notif.method, "notify");
+        assert!(notif.params.is_some());
+    }
+
+    #[test]
+    fn test_protocol_handler_new() {
+        let handler = ProtocolHandler::new();
+        assert!(!handler.initialized);
+        assert!(handler.tools_handler.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_initialize() {
+        let mut handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "initialize".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_initialize(req).await;
+        assert!(handler.initialized);
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+
+        let result = response.result.unwrap();
+        assert_eq!(result["protocolVersion"], "2024-11-05");
+        assert_eq!(result["serverInfo"]["name"], "debugger_mcp");
+    }
+
+    #[tokio::test]
+    async fn test_handle_tools_list() {
+        let handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(2),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_tools_list(req).await;
+        assert!(response.result.is_some());
+        assert!(response.error.is_none());
+
+        let result = response.result.unwrap();
+        assert!(result["tools"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tools_call_missing_params() {
+        let handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(3),
+            method: "tools/call".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_tools_call(req).await;
+        assert!(response.result.is_none());
+        assert!(response.error.is_some());
+        assert_eq!(response.error.unwrap().code, -32600);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tools_call_no_handler() {
+        let handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(4),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "test_tool",
+                "arguments": {}
+            })),
+        };
+
+        let response = handler.handle_tools_call(req).await;
+        assert!(response.error.is_some());
+        assert_eq!(response.error.unwrap().message, "Tools handler not initialized");
+    }
+
+    #[tokio::test]
+    async fn test_handle_unknown_method() {
+        let mut handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(5),
+            method: "unknown_method".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        assert_eq!(response.error.as_ref().unwrap().code, -32601);
+        assert!(response.error.unwrap().message.contains("Method not found"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_notification_message() {
+        let mut handler = ProtocolHandler::new();
+        let notif = JsonRpcNotification {
+            jsonrpc: "2.0".to_string(),
+            method: "test_notification".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_message(JsonRpcMessage::Notification(notif)).await;
+        match response {
+            JsonRpcMessage::Response(r) => {
+                assert!(r.error.is_some());
+                assert!(r.error.unwrap().message.contains("Notifications not yet supported"));
+            }
+            _ => panic!("Expected response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_response_message() {
+        let mut handler = ProtocolHandler::new();
+        let resp = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            result: Some(json!({})),
+            error: None,
+        };
+
+        let response = handler.handle_message(JsonRpcMessage::Response(resp)).await;
+        match response {
+            JsonRpcMessage::Response(r) => {
+                assert!(r.error.is_some());
+                assert!(r.error.unwrap().message.contains("Server does not accept response messages"));
+            }
+            _ => panic!("Expected response"),
+        }
+    }
+}

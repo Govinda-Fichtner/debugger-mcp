@@ -1,0 +1,24 @@
+[report]
+# Output formats: Html, Xml, Json, Stdout, Lcov
+out = ["Html", "Xml", "Stdout"]
+
+# Output directory
+output-dir = "coverage"
+
+[run]
+# Timeout for individual test runs
+timeout = "120s"
+
+# Ignore test failures and continue
+ignore-tests = false
+
+# Follow symbolic links
+follow-symlinks = false
+
+# No exclude/include for now - will use defaults
+
+# Only run coverage for library crate (removed lib/bin options due to config format)
+
+[advanced]
+# Don't clean up temporary files (useful for debugging)
+# debug = true

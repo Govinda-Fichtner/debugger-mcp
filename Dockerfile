@@ -14,26 +14,28 @@ COPY Cargo.toml Cargo.lock ./
 # Copy source code
 COPY src ./src
 
-# Build release binary with static linking
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# Build release binary with static linking for native architecture
+# Supports both x86_64 and aarch64 (ARM64)
+RUN cargo build --release
 
 # Stage 2: Create minimal runtime image
 FROM alpine:3.21
 
 # Install runtime dependencies
 # Python and debugpy are needed for Python debugging support
+# --break-system-packages is required for Alpine 3.21+ (PEP 668)
 RUN apk add --no-cache \
     python3 \
     py3-pip \
-    && pip3 install --no-cache-dir debugpy \
+    && pip3 install --no-cache-dir --break-system-packages debugpy \
     && rm -rf /root/.cache
 
 # Create non-root user
 RUN addgroup -g 1000 mcpuser && \
     adduser -D -u 1000 -G mcpuser mcpuser
 
-# Copy binary from builder
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/debugger_mcp /usr/local/bin/debugger_mcp
+# Copy binary from builder (native architecture)
+COPY --from=builder /app/target/release/debugger_mcp /usr/local/bin/debugger_mcp
 
 # Set ownership
 RUN chown mcpuser:mcpuser /usr/local/bin/debugger_mcp

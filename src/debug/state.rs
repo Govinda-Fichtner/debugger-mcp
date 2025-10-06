@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DebugState {
     NotStarted,
     Initializing,
@@ -74,6 +74,82 @@ impl SessionState {
     pub fn add_thread(&mut self, thread_id: i32) {
         if !self.threads.contains(&thread_id) {
             self.threads.push(thread_id);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_state_new() {
+        let state = SessionState::new();
+        assert!(matches!(state.state, DebugState::NotStarted));
+        assert!(state.breakpoints.is_empty());
+        assert!(state.threads.is_empty());
+    }
+
+    #[test]
+    fn test_set_state() {
+        let mut state = SessionState::new();
+        state.set_state(DebugState::Running);
+        assert!(matches!(state.state, DebugState::Running));
+    }
+
+    #[test]
+    fn test_add_breakpoint() {
+        let mut state = SessionState::new();
+        state.add_breakpoint("test.py".to_string(), 10);
+        
+        let bps = state.get_breakpoints("test.py");
+        assert_eq!(bps.len(), 1);
+        assert_eq!(bps[0].line, 10);
+        assert!(!bps[0].verified);
+    }
+
+    #[test]
+    fn test_update_breakpoint() {
+        let mut state = SessionState::new();
+        state.add_breakpoint("test.py".to_string(), 10);
+        state.update_breakpoint("test.py", 10, 1, true);
+        
+        let bps = state.get_breakpoints("test.py");
+        assert_eq!(bps[0].id, Some(1));
+        assert!(bps[0].verified);
+    }
+
+    #[test]
+    fn test_add_thread() {
+        let mut state = SessionState::new();
+        state.add_thread(1);
+        state.add_thread(2);
+        state.add_thread(1); // Duplicate should not be added
+        
+        assert_eq!(state.threads.len(), 2);
+        assert!(state.threads.contains(&1));
+        assert!(state.threads.contains(&2));
+    }
+
+    #[test]
+    fn test_get_breakpoints_empty() {
+        let state = SessionState::new();
+        let bps = state.get_breakpoints("nonexistent.py");
+        assert!(bps.is_empty());
+    }
+
+    #[test]
+    fn test_debug_state_stopped() {
+        let state = DebugState::Stopped {
+            thread_id: 1,
+            reason: "breakpoint".to_string(),
+        };
+        
+        if let DebugState::Stopped { thread_id, reason } = state {
+            assert_eq!(thread_id, 1);
+            assert_eq!(reason, "breakpoint");
+        } else {
+            panic!("Expected Stopped state");
         }
     }
 }

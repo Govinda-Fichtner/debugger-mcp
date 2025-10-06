@@ -1,4 +1,5 @@
 pub mod transport;
+pub mod transport_trait;
 pub mod protocol;
 pub mod resources;
 pub mod tools;

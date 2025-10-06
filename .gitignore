@@ -3,3 +3,5 @@
 # Hive Mind session data
 /.hive-mind/
 /.claude-flow/
+coverage/
+target/tarpaulin/

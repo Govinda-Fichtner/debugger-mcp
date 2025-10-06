@@ -5,7 +5,7 @@
 # Rust build artifacts
 target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock - needed for reproducible builds in Docker
 
 # IDE
 .vscode/

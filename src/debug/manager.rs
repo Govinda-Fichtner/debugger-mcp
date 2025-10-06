@@ -88,3 +88,66 @@ impl SessionManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_session_manager_new() {
+        let manager = SessionManager::new();
+        let sessions = manager.list_sessions().await;
+        assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_sessions_empty() {
+        let manager = SessionManager::new();
+        let sessions = manager.list_sessions().await;
+        assert_eq!(sessions.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_session_not_found() {
+        let manager = SessionManager::new();
+        let result = manager.get_session("nonexistent").await;
+        assert!(result.is_err());
+
+        match result {
+            Err(Error::SessionNotFound(id)) => {
+                assert_eq!(id, "nonexistent");
+            }
+            _ => panic!("Expected SessionNotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_remove_session_not_found() {
+        let manager = SessionManager::new();
+        let result = manager.remove_session("nonexistent").await;
+        assert!(result.is_err());
+
+        match result {
+            Err(Error::SessionNotFound(id)) => {
+                assert_eq!(id, "nonexistent");
+            }
+            _ => panic!("Expected SessionNotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_session_unknown_language() {
+        let manager = SessionManager::new();
+        let result = manager
+            .create_session("ruby", "test.rb".to_string(), vec![], None)
+            .await;
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::AdapterNotFound(lang)) => {
+                assert_eq!(lang, "ruby");
+            }
+            _ => panic!("Expected AdapterNotFound error"),
+        }
+    }
+}

@@ -269,3 +269,164 @@ impl ToolsHandler {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::debug::SessionManager;
+
+    #[test]
+    fn test_debugger_start_args_deserialization() {
+        let json = json!({
+            "language": "python",
+            "program": "/path/to/script.py",
+            "args": ["arg1", "arg2"],
+            "cwd": "/working/dir"
+        });
+
+        let args: DebuggerStartArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.language, "python");
+        assert_eq!(args.program, "/path/to/script.py");
+        assert_eq!(args.args.len(), 2);
+        assert_eq!(args.cwd, Some("/working/dir".to_string()));
+    }
+
+    #[test]
+    fn test_debugger_start_args_without_cwd() {
+        let json = json!({
+            "language": "python",
+            "program": "test.py",
+            "args": []
+        });
+
+        let args: DebuggerStartArgs = serde_json::from_value(json).unwrap();
+        assert!(args.cwd.is_none());
+        assert!(args.args.is_empty());
+    }
+
+    #[test]
+    fn test_set_breakpoint_args_deserialization() {
+        let json = json!({
+            "sessionId": "session-123",
+            "sourcePath": "/path/to/file.py",
+            "line": 42
+        });
+
+        let args: SetBreakpointArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.session_id, "session-123");
+        assert_eq!(args.source_path, "/path/to/file.py");
+        assert_eq!(args.line, 42);
+    }
+
+    #[test]
+    fn test_continue_args_deserialization() {
+        let json = json!({"sessionId": "test-session"});
+        let args: ContinueArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.session_id, "test-session");
+    }
+
+    #[test]
+    fn test_stack_trace_args_deserialization() {
+        let json = json!({"sessionId": "trace-session"});
+        let args: StackTraceArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.session_id, "trace-session");
+    }
+
+    #[test]
+    fn test_evaluate_args_deserialization() {
+        let json = json!({
+            "sessionId": "eval-session",
+            "expression": "x + y",
+            "frameId": 5
+        });
+
+        let args: EvaluateArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.session_id, "eval-session");
+        assert_eq!(args.expression, "x + y");
+        assert_eq!(args.frame_id, Some(5));
+    }
+
+    #[test]
+    fn test_evaluate_args_without_frame_id() {
+        let json = json!({
+            "sessionId": "eval-session",
+            "expression": "x + y"
+        });
+
+        let args: EvaluateArgs = serde_json::from_value(json).unwrap();
+        assert!(args.frame_id.is_none());
+    }
+
+    #[test]
+    fn test_disconnect_args_deserialization() {
+        let json = json!({"sessionId": "disconnect-session"});
+        let args: DisconnectArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.session_id, "disconnect-session");
+    }
+
+    #[test]
+    fn test_list_tools() {
+        let tools = ToolsHandler::list_tools();
+        assert_eq!(tools.len(), 6);
+
+        // Verify tool names
+        let tool_names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+
+        assert!(tool_names.contains(&"debugger_start"));
+        assert!(tool_names.contains(&"debugger_set_breakpoint"));
+        assert!(tool_names.contains(&"debugger_continue"));
+        assert!(tool_names.contains(&"debugger_stack_trace"));
+        assert!(tool_names.contains(&"debugger_evaluate"));
+        assert!(tool_names.contains(&"debugger_disconnect"));
+    }
+
+    #[test]
+    fn test_list_tools_schema_validation() {
+        let tools = ToolsHandler::list_tools();
+
+        // Check first tool structure
+        let start_tool = &tools[0];
+        assert_eq!(start_tool["name"], "debugger_start");
+        assert!(start_tool["description"].is_string());
+        assert!(start_tool["inputSchema"]["type"].is_string());
+        assert!(start_tool["inputSchema"]["properties"].is_object());
+        assert!(start_tool["inputSchema"]["required"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_tools_handler_new() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+        // Just verify it constructs without panic
+        assert!(true);
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_unknown_method() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        let result = handler.handle_tool("unknown_tool", json!({})).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(Error::MethodNotFound(name)) => {
+                assert_eq!(name, "unknown_tool");
+            }
+            _ => panic!("Expected MethodNotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_invalid_arguments() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Invalid JSON for debugger_start
+        let result = handler.handle_tool("debugger_start", json!({"invalid": "data"})).await;
+        assert!(result.is_err());
+    }
+}

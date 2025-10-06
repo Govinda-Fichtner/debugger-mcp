@@ -36,3 +36,61 @@ impl PythonAdapter {
         launch
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_command() {
+        assert_eq!(PythonAdapter::command(), "python");
+    }
+
+    #[test]
+    fn test_args() {
+        let args = PythonAdapter::args();
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[0], "-m");
+        assert_eq!(args[1], "debugpy.adapter");
+    }
+
+    #[test]
+    fn test_adapter_id() {
+        assert_eq!(PythonAdapter::adapter_id(), "debugpy");
+    }
+
+    #[test]
+    fn test_launch_args_without_cwd() {
+        let program = "/path/to/script.py";
+        let args = vec!["arg1".to_string(), "arg2".to_string()];
+        let launch = PythonAdapter::launch_args(program, &args, None);
+
+        assert_eq!(launch["request"], "launch");
+        assert_eq!(launch["type"], "python");
+        assert_eq!(launch["program"], program);
+        assert_eq!(launch["args"], json!(args));
+        assert_eq!(launch["console"], "integratedTerminal");
+        assert_eq!(launch["stopOnEntry"], false);
+        assert!(launch["cwd"].is_null());
+    }
+
+    #[test]
+    fn test_launch_args_with_cwd() {
+        let program = "/path/to/script.py";
+        let args = vec!["arg1".to_string()];
+        let cwd = Some("/working/dir");
+        let launch = PythonAdapter::launch_args(program, &args, cwd);
+
+        assert_eq!(launch["cwd"], "/working/dir");
+        assert_eq!(launch["program"], program);
+    }
+
+    #[test]
+    fn test_launch_args_empty_args() {
+        let program = "test.py";
+        let args: Vec<String> = vec![];
+        let launch = PythonAdapter::launch_args(program, &args, None);
+
+        assert_eq!(launch["args"], json!([]));
+    }
+}
