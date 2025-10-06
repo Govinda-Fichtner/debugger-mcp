@@ -417,7 +417,12 @@ impl DapClient {
     /// 3. Send launch (triggers 'initialized' event)
     /// 4. Wait for 'initialized' signal, then send configurationDone from main context
     /// 5. Wait for launch response
-    pub async fn initialize_and_launch(&self, adapter_id: &str, launch_args: Value) -> Result<()> {
+    pub async fn initialize_and_launch(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+        adapter_type: Option<&str>,
+    ) -> Result<()> {
         // Step 1: Send initialize request and get capabilities
         info!("Sending initialize request to adapter");
         let capabilities = self.initialize(adapter_id).await?;
@@ -425,6 +430,20 @@ impl DapClient {
                capabilities.supports_configuration_done_request);
 
         let config_done_supported = capabilities.supports_configuration_done_request.unwrap_or(false);
+
+        // Check if we need Ruby stopOnEntry workaround
+        // Ruby debuggers (rdbg) in socket mode don't honor --stop-at-load properly.
+        // Workaround: After 'initialized' event, send explicit 'pause' request.
+        // See: docs/RUBY_STOPENTRY_FIX.md
+        let is_ruby = adapter_type == Some("ruby");
+        let stop_on_entry = launch_args.get("stopOnEntry")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let needs_ruby_workaround = is_ruby && stop_on_entry;
+
+        if needs_ruby_workaround {
+            info!("🔧 Ruby stopOnEntry workaround will be applied");
+        }
 
         // Step 2: Register 'initialized' event handler BEFORE sending launch
         // This handler will be invoked DURING launch processing
@@ -455,6 +474,41 @@ impl DapClient {
             match tokio::time::timeout(tokio::time::Duration::from_secs(5), init_rx).await {
                 Ok(Ok(())) => {
                     info!("✅ Received 'initialized' event signal");
+
+                    // Ruby stopOnEntry workaround
+                    if needs_ruby_workaround {
+                        info!("🔧 Applying Ruby stopOnEntry workaround: sending pause request");
+                        info!("   (rdbg in socket mode doesn't honor --stop-at-load properly)");
+
+                        // Send pause request to force program to stop
+                        match self.pause(None).await {
+                            Ok(_) => {
+                                info!("✅ Pause request sent successfully");
+
+                                // Wait for 'stopped' event (with 2s timeout)
+                                info!("⏳ Waiting for 'stopped' event (2s timeout)...");
+                                match self.wait_for_event(
+                                    "stopped",
+                                    tokio::time::Duration::from_secs(2)
+                                ).await {
+                                    Ok(_) => {
+                                        info!("✅ Received 'stopped' event - program paused at entry");
+                                    }
+                                    Err(e) => {
+                                        warn!("⚠️  Error/timeout waiting for 'stopped' event: {}", e);
+                                        warn!("   Continuing anyway - configurationDone might still work");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("⚠️  Pause request failed: {}", e);
+                                warn!("   This might happen if:");
+                                warn!("   1. Debugger doesn't support pause request");
+                                warn!("   2. Program already terminated");
+                                warn!("   Continuing anyway - configurationDone might still work");
+                            }
+                        }
+                    }
                 }
                 Ok(Err(_)) => {
                     error!("❌ 'initialized' event signal was cancelled");
@@ -559,6 +613,33 @@ impl DapClient {
             return Err(Error::Dap(format!("Continue failed: {:?}", response.message)));
         }
 
+        Ok(())
+    }
+
+    /// Pause program execution
+    ///
+    /// Sends a DAP 'pause' request to the debugger to pause execution.
+    /// This is used as a workaround for Ruby debuggers that don't honor
+    /// stopOnEntry properly in socket mode.
+    ///
+    /// # Arguments
+    /// * `thread_id` - Optional thread ID to pause (defaults to 1 if None)
+    ///
+    /// # Returns
+    /// * `Ok(())` if pause successful
+    /// * `Err` if pause request failed
+    pub async fn pause(&self, thread_id: Option<i32>) -> Result<()> {
+        let tid = thread_id.unwrap_or(1);
+        let args = serde_json::json!({ "threadId": tid });
+
+        info!("📤 Sending pause request (threadId: {})", tid);
+        let response = self.send_request("pause", Some(args)).await?;
+
+        if !response.success {
+            return Err(Error::Dap(format!("Pause failed: {:?}", response.message)));
+        }
+
+        info!("✅ Pause request successful");
         Ok(())
     }
 
@@ -703,11 +784,18 @@ impl DapClient {
         &self,
         adapter_id: &str,
         launch_args: Value,
+        adapter_type: Option<&str>,
     ) -> Result<()> {
         let timeout = std::time::Duration::from_secs(7);
         info!("⏱️  initialize_and_launch_with_timeout: Starting with 7s timeout");
+        if let Some(atype) = adapter_type {
+            info!("   Adapter type: {}", atype);
+        }
 
-        tokio::time::timeout(timeout, self.initialize_and_launch(adapter_id, launch_args))
+        tokio::time::timeout(
+            timeout,
+            self.initialize_and_launch(adapter_id, launch_args, adapter_type)
+        )
             .await
             .map_err(|_| Error::Dap(format!("Initialize and launch timed out after {:?}", timeout)))?
     }

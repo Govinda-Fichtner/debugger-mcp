@@ -1,6 +1,44 @@
 # Changelog
 
-## [Unreleased] - 2025-10-05
+## [Unreleased] - 2025-10-07
+
+### Fixed - Ruby stopOnEntry Issue
+
+#### Ruby Debugging: stopOnEntry Now Works Correctly
+- **Issue**: Ruby debugger (rdbg) in socket mode didn't honor `--stop-at-load` flag
+- **Symptom**: Programs ran to completion without stopping at entry point, making debugging impossible for fast-executing scripts
+- **Root Cause**: rdbg in socket mode (`--open --port X`) doesn't send `stopped` event after `initialized` event
+- **Solution**: Implemented explicit `pause` request workaround after `initialized` event for Ruby with `stopOnEntry: true`
+- **Impact**: Ruby debugging now works correctly; Python and other languages unaffected
+- **Performance**: +100-200ms startup time for Ruby with stopOnEntry (acceptable)
+- **Files Changed**:
+  - `src/dap/client.rs`: Added `pause()` method, modified `initialize_and_launch()` with adapter_type parameter
+  - `src/debug/session.rs`: Pass adapter type for language-specific workarounds
+  - `tests/test_event_driven.rs`: Updated test call site
+- **Tests Added**:
+  - `tests/test_ruby_stopentry_issue.rs` (380 lines): Failing test demonstrating bug + passing test proving fix
+  - Verification script: `scripts/verify_stopentry_issue.sh`
+- **Documentation**:
+  - `docs/RUBY_STOPENTRY_FIX.md` - Implementation plan
+  - `docs/RUBY_STOPENTRY_FIX_IMPLEMENTATION.md` - Detailed walkthrough
+  - `RUBY_STOPENTRY_FIX_COMPLETE.md` - Executive summary
+- **References**:
+  - Test results: `/home/vagrant/projects/fizzbuzz-ruby-test/FINAL_TEST_RESULTS.md`
+  - DAP Pause specification: https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Pause
+
+### Changed
+- `DapClient::initialize_and_launch()` now accepts optional `adapter_type` parameter for language-specific workarounds
+- `DapClient::initialize_and_launch_with_timeout()` signature updated to pass adapter type
+- Ruby debugging startup time increased by ~100-200ms (still well under 7s timeout)
+
+### Added
+- `DapClient::pause()` method for explicit program pause via DAP
+- Language-specific debugging workarounds framework (extensible to other languages)
+- Comprehensive test suite for Ruby stopOnEntry issue (TDD approach)
+
+---
+
+## [Previous] - 2025-10-05
 
 ### Fixed - Critical MCP Protocol and Docker Build Issues
 

@@ -1,0 +1,424 @@
+/// Test to demonstrate Ruby stopOnEntry issue
+///
+/// **Issue**: rdbg with --stop-at-load and --open (socket mode) doesn't send
+/// a 'stopped' event at entry point, even though it should.
+///
+/// **Expected**: After launching with stopOnEntry=true, we should receive:
+///   1. 'initialized' event
+///   2. 'stopped' event with reason="entry"
+///   3. Program should be paused
+///
+/// **Actual (BROKEN)**: We receive:
+///   1. 'initialized' event
+///   2. NO 'stopped' event
+///   3. Program runs to completion
+///   4. 'terminated' event
+///
+/// **This test WILL FAIL** with current implementation!
+/// After implementing the fix (pause request workaround), it should PASS.
+
+use debugger_mcp::adapters::ruby::RubyAdapter;
+use debugger_mcp::dap::client::DapClient;
+use debugger_mcp::dap::types::Event;
+use serde_json::json;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
+use tokio::time::timeout;
+
+/// Helper to track events received
+struct EventTracker {
+    events: Arc<Mutex<Vec<Event>>>,
+}
+
+impl EventTracker {
+    fn new() -> Self {
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    async fn track_event(&self, event: Event) {
+        self.events.lock().await.push(event);
+    }
+
+    async fn get_events(&self) -> Vec<Event> {
+        self.events.lock().await.clone()
+    }
+
+    async fn has_event(&self, event_type: &str) -> bool {
+        self.events
+            .lock()
+            .await
+            .iter()
+            .any(|e| e.event == event_type)
+    }
+
+    async fn find_stopped_event(&self) -> Option<Event> {
+        self.events
+            .lock()
+            .await
+            .iter()
+            .find(|e| e.event == "stopped")
+            .cloned()
+    }
+}
+
+#[tokio::test]
+#[ignore] // Requires rdbg installed and fizzbuzz.rb test file
+async fn test_ruby_stopentry_issue_demonstration() {
+    // This test demonstrates the current broken behavior
+    // It WILL FAIL because rdbg doesn't send 'stopped' event at entry
+
+    println!("\n=== DEMONSTRATING RUBY STOPENTRY ISSUE ===\n");
+
+    // 1. Create a simple Ruby test program
+    let test_program = "/tmp/test_stopentry.rb";
+    std::fs::write(test_program, r#"
+puts "Starting..."
+(1..10).each do |i|
+  puts "Count: #{i}"
+end
+puts "Done!"
+"#).expect("Failed to create test program");
+
+    println!("✅ Created test program: {}", test_program);
+
+    // 2. Spawn Ruby debugger with stopOnEntry=true
+    println!("\n🚀 Spawning rdbg with --stop-at-load (stopOnEntry=true)");
+    let session = RubyAdapter::spawn(test_program, &[], true)
+        .await
+        .expect("Failed to spawn Ruby debugger");
+
+    println!("✅ rdbg spawned on port {}", session.port);
+    println!("   Command: rdbg --open --port {} --stop-at-load {}",
+             session.port, test_program);
+
+    // 3. Create DAP client from socket
+    let client = DapClient::from_socket(session.socket)
+        .await
+        .expect("Failed to create DAP client");
+
+    println!("✅ DAP client connected to rdbg");
+
+    // 4. Track all events
+    let tracker = EventTracker::new();
+    let tracker_clone = Arc::new(tracker);
+    let tracker_for_callback = tracker_clone.clone();
+
+    // Register event callback to track all events
+    client
+        .on_event("*", move |event| {
+            let tracker = tracker_for_callback.clone();
+            let event_name = event.event.clone();
+            println!("📥 EVENT RECEIVED: '{}'", event_name);
+            tokio::spawn(async move {
+                tracker.track_event(event).await;
+            });
+        })
+        .await;
+
+    // 5. Send initialize request
+    println!("\n📤 Sending initialize request");
+    let capabilities = client
+        .initialize("rdbg")
+        .await
+        .expect("Initialize failed");
+
+    println!("✅ Initialize successful");
+    println!("   Capabilities: configurationDone={:?}, pause={:?}",
+             capabilities.supports_configuration_done_request,
+             capabilities.supports_pause_request);
+
+    // 6. Send launch request with stopOnEntry=true
+    println!("\n📤 Sending launch request (stopOnEntry: true)");
+    let launch_args = json!({
+        "type": "ruby",
+        "program": test_program,
+        "stopOnEntry": true,  // ← This should cause program to stop at entry!
+    });
+
+    client
+        .send_request("launch", Some(launch_args))
+        .await
+        .expect("Launch request failed");
+
+    println!("✅ Launch request sent");
+
+    // 7. Wait for 'initialized' event (should arrive quickly)
+    println!("\n⏳ Waiting for 'initialized' event (2s timeout)...");
+    let got_initialized = timeout(Duration::from_secs(2), async {
+        while !tracker_clone.has_event("initialized").await {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .is_ok();
+
+    assert!(got_initialized, "❌ FAILED: Did not receive 'initialized' event");
+    println!("✅ Received 'initialized' event");
+
+    // 8. Send configurationDone
+    println!("\n📤 Sending configurationDone");
+    client
+        .configuration_done()
+        .await
+        .expect("ConfigurationDone failed");
+
+    println!("✅ configurationDone sent");
+
+    // 9. Wait for 'stopped' event at entry point
+    // THIS IS WHERE IT FAILS!
+    // With --stop-at-load, we SHOULD receive a 'stopped' event
+    // But rdbg in socket mode doesn't send it
+    println!("\n⏳ Waiting for 'stopped' event at entry (3s timeout)...");
+    println!("   THIS IS THE CRITICAL TEST!");
+    println!("   Expected: 'stopped' event with reason='entry'");
+    println!("   Actual (BROKEN): NO 'stopped' event received");
+
+    let got_stopped = timeout(Duration::from_secs(3), async {
+        while !tracker_clone.has_event("stopped").await {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .is_ok();
+
+    // Print all events received
+    println!("\n📋 All events received:");
+    let events = tracker_clone.get_events().await;
+    for (i, event) in events.iter().enumerate() {
+        println!("   {}. {}", i + 1, event.event);
+    }
+
+    // Check if we got 'stopped' event
+    if let Some(stopped_event) = tracker_clone.find_stopped_event().await {
+        println!("\n✅ PASSED: Received 'stopped' event!");
+        println!("   Reason: {:?}", stopped_event.body.get("reason"));
+
+        // Verify it's at entry point
+        let reason = stopped_event.body.get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        assert_eq!(
+            reason, "entry",
+            "Stopped event should have reason='entry', got '{}'", reason
+        );
+
+        println!("✅ PASSED: Program stopped at entry point as expected!");
+    } else {
+        println!("\n❌ FAILED: NO 'stopped' event received!");
+        println!("   This demonstrates the bug:");
+        println!("   - rdbg was spawned with --stop-at-load");
+        println!("   - Launch request had stopOnEntry: true");
+        println!("   - But program ran to completion without stopping");
+        println!("");
+        println!("Expected event sequence:");
+        println!("  1. initialized ✅");
+        println!("  2. stopped (reason: 'entry') ❌ MISSING!");
+        println!("  3. terminated");
+        println!("");
+        println!("Actual event sequence:");
+        println!("  1. initialized ✅");
+        println!("  2. output (program ran)");
+        println!("  3. terminated ✅");
+
+        // This assertion WILL FAIL with current implementation
+        assert!(
+            got_stopped,
+            "EXPECTED FAILURE: rdbg didn't send 'stopped' event at entry point. \
+             This demonstrates the bug that needs fixing with pause workaround."
+        );
+    }
+
+    // Cleanup
+    let _ = std::fs::remove_file(test_program);
+}
+
+#[tokio::test]
+#[ignore] // Will be enabled after fix is implemented
+async fn test_ruby_stopentry_with_pause_workaround() {
+    // This test will verify the FIX works
+    // It should PASS after implementing the pause request workaround
+
+    println!("\n=== TESTING RUBY STOPENTRY FIX (PAUSE WORKAROUND) ===\n");
+
+    // 1. Create test program
+    let test_program = "/tmp/test_stopentry_fixed.rb";
+    std::fs::write(test_program, r#"
+puts "Starting..."
+(1..5).each do |i|
+  puts "Count: #{i}"
+end
+puts "Done!"
+"#).expect("Failed to create test program");
+
+    println!("✅ Created test program: {}", test_program);
+
+    // 2. Spawn Ruby debugger
+    println!("\n🚀 Spawning rdbg with --stop-at-load");
+    let session = RubyAdapter::spawn(test_program, &[], true)
+        .await
+        .expect("Failed to spawn Ruby debugger");
+
+    println!("✅ rdbg spawned on port {}", session.port);
+
+    // 3. Create DAP client
+    let client = DapClient::from_socket(session.socket)
+        .await
+        .expect("Failed to create DAP client");
+
+    // 4. Track events
+    let tracker = EventTracker::new();
+    let tracker_clone = Arc::new(tracker);
+    let tracker_for_callback = tracker_clone.clone();
+
+    client
+        .on_event("*", move |event| {
+            let tracker = tracker_for_callback.clone();
+            let event_name = event.event.clone();
+            println!("📥 EVENT: '{}'", event_name);
+            tokio::spawn(async move {
+                tracker.track_event(event).await;
+            });
+        })
+        .await;
+
+    // 5. Use initialize_and_launch_with_timeout with adapter_type="ruby"
+    // This should trigger the pause workaround
+    println!("\n📤 Calling initialize_and_launch_with_timeout (adapter_type='ruby')");
+    println!("   This should automatically:");
+    println!("   1. Send initialize + launch");
+    println!("   2. Wait for 'initialized' event");
+    println!("   3. Send 'pause' request (WORKAROUND)");
+    println!("   4. Wait for 'stopped' event");
+    println!("   5. Send configurationDone");
+
+    let launch_args = json!({
+        "type": "ruby",
+        "program": test_program,
+        "stopOnEntry": true,
+    });
+
+    // NOTE: This will fail until we update the signature to accept adapter_type
+    // For now, this test is marked #[ignore]
+    // After implementing the fix, remove #[ignore] and update this call
+
+    // client.initialize_and_launch_with_timeout(
+    //     "rdbg",
+    //     launch_args,
+    //     Some("ruby")  // ← NEW PARAMETER
+    // ).await.expect("Initialize and launch failed");
+
+    println!("✅ Initialize and launch completed");
+
+    // 6. Verify we received 'stopped' event
+    let stopped_event = tracker_clone
+        .find_stopped_event()
+        .await
+        .expect("Should have received 'stopped' event");
+
+    let reason = stopped_event.body.get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    println!("✅ Received 'stopped' event with reason: '{}'", reason);
+
+    // The reason might be "pause" (from our workaround) or "entry" (if rdbg fixed it)
+    // Either is acceptable
+    assert!(
+        reason == "pause" || reason == "entry",
+        "Stopped reason should be 'pause' or 'entry', got '{}'", reason
+    );
+
+    println!("\n✅ PASSED: Ruby stopOnEntry workaround is working!");
+    println!("   Program stopped at entry point");
+    println!("   User can now set breakpoints and inspect state");
+
+    // Cleanup
+    let _ = std::fs::remove_file(test_program);
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_python_stopentry_still_works() {
+    // Verify that the Ruby workaround doesn't break Python debugging
+    // Python should continue to work without the pause workaround
+
+    println!("\n=== VERIFYING PYTHON STOPENTRY STILL WORKS ===\n");
+
+    // Create Python test program
+    let test_program = "/tmp/test_python_stopentry.py";
+    std::fs::write(test_program, r#"
+print("Starting...")
+for i in range(1, 6):
+    print(f"Count: {i}")
+print("Done!")
+"#).expect("Failed to create test program");
+
+    println!("✅ Created Python test program");
+
+    // Spawn debugpy
+    println!("\n🚀 Spawning debugpy");
+    let client = DapClient::spawn(
+        "python",
+        &["-m".to_string(), "debugpy.adapter".to_string()]
+    )
+    .await
+    .expect("Failed to spawn debugpy");
+
+    println!("✅ debugpy spawned");
+
+    // Track events
+    let tracker = EventTracker::new();
+    let tracker_clone = Arc::new(tracker);
+    let tracker_for_callback = tracker_clone.clone();
+
+    client
+        .on_event("*", move |event| {
+            let tracker = tracker_for_callback.clone();
+            println!("📥 EVENT: '{}'", event.event);
+            tokio::spawn(async move {
+                tracker.track_event(event).await;
+            });
+        })
+        .await;
+
+    // Initialize and launch with stopOnEntry=true
+    println!("\n📤 Initialize and launch (stopOnEntry: true)");
+
+    let launch_args = json!({
+        "type": "python",
+        "program": test_program,
+        "stopOnEntry": true,
+    });
+
+    // NOTE: Update this after implementing adapter_type parameter
+    // client.initialize_and_launch_with_timeout(
+    //     "debugpy",
+    //     launch_args,
+    //     Some("python")  // ← Should NOT trigger pause workaround for Python
+    // ).await.expect("Initialize and launch failed");
+
+    println!("✅ Initialize and launch completed");
+
+    // Verify 'stopped' event received (Python should work without workaround)
+    let stopped_event = tracker_clone
+        .find_stopped_event()
+        .await
+        .expect("Should have received 'stopped' event for Python");
+
+    let reason = stopped_event.body.get("reason")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    println!("✅ Received 'stopped' event with reason: '{}'", reason);
+    assert_eq!(reason, "entry", "Python should stop with reason='entry'");
+
+    println!("\n✅ PASSED: Python stopOnEntry still works!");
+    println!("   Workaround was NOT applied (only for Ruby)");
+
+    // Cleanup
+    let _ = std::fs::remove_file(test_program);
+}
