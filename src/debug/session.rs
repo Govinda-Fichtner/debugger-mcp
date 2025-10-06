@@ -46,6 +46,90 @@ impl DebugSession {
 
         let client = self.client.read().await;
 
+        // Register event handlers BEFORE launching to capture all state changes
+        info!("📡 Registering DAP event handlers for session state tracking");
+
+        // Handler for 'stopped' events (breakpoints, steps, entry)
+        let session_state = self.state.clone();
+        client.on_event("stopped", move |event| {
+            info!("📍 Received 'stopped' event: {:?}", event);
+
+            if let Some(body) = &event.body {
+                let thread_id = body.get("threadId")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32)
+                    .unwrap_or(1);
+
+                let reason = body.get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                info!("   Thread: {}, Reason: {}", thread_id, reason);
+
+                // Update session state
+                let state_clone = session_state.clone();
+                tokio::spawn(async move {
+                    let mut state = state_clone.write().await;
+                    state.set_state(DebugState::Stopped { thread_id, reason: reason.clone() });
+                    info!("✅ Session state updated to Stopped (reason: {})", reason);
+                });
+            }
+        }).await;
+
+        // Handler for 'continued' events
+        let session_state = self.state.clone();
+        client.on_event("continued", move |event| {
+            info!("▶️  Received 'continued' event: {:?}", event);
+
+            let state_clone = session_state.clone();
+            tokio::spawn(async move {
+                let mut state = state_clone.write().await;
+                state.set_state(DebugState::Running);
+                info!("✅ Session state updated to Running");
+            });
+        }).await;
+
+        // Handler for 'terminated' events
+        let session_state = self.state.clone();
+        client.on_event("terminated", move |event| {
+            info!("🛑 Received 'terminated' event: {:?}", event);
+
+            let state_clone = session_state.clone();
+            tokio::spawn(async move {
+                let mut state = state_clone.write().await;
+                state.set_state(DebugState::Terminated);
+                info!("✅ Session state updated to Terminated");
+            });
+        }).await;
+
+        // Handler for 'exited' events
+        let session_state = self.state.clone();
+        client.on_event("exited", move |event| {
+            info!("🚪 Received 'exited' event: {:?}", event);
+
+            let state_clone = session_state.clone();
+            tokio::spawn(async move {
+                let mut state = state_clone.write().await;
+                state.set_state(DebugState::Terminated);
+                info!("✅ Session state updated to Terminated (exited)");
+            });
+        }).await;
+
+        // Handler for 'thread' events (track threads)
+        let session_state = self.state.clone();
+        client.on_event("thread", move |event| {
+            if let Some(body) = &event.body {
+                if let Some(thread_id) = body.get("threadId").and_then(|v| v.as_i64()) {
+                    let state_clone = session_state.clone();
+                    tokio::spawn(async move {
+                        let mut state = state_clone.write().await;
+                        state.add_thread(thread_id as i32);
+                    });
+                }
+            }
+        }).await;
+
         // Use the DapClient's event-driven initialize_and_launch method
         // This properly handles the 'initialized' event and configurationDone sequence
         client.initialize_and_launch(adapter_id, launch_args).await?;
