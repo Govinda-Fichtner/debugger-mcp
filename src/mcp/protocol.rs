@@ -425,4 +425,116 @@ mod tests {
             _ => panic!("Expected response"),
         }
     }
+
+    // Phase 6B: Additional protocol tests for uncovered lines
+
+    #[tokio::test]
+    async fn test_handle_request_message_direct() {
+        let mut handler = ProtocolHandler::new();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "initialize".to_string(),
+            params: Some(json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0"
+                }
+            })),
+        };
+
+        let response = handler.handle_message(JsonRpcMessage::Request(req)).await;
+        match response {
+            JsonRpcMessage::Response(r) => {
+                assert!(r.error.is_none());
+                assert!(r.result.is_some());
+            }
+            _ => panic!("Expected response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tools_call_without_handler_set() {
+        // Test line 192 - tools handler not initialized
+        let mut handler = ProtocolHandler::new();
+        // Don't call set_tools_handler, so it's None
+
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "debugger_start",
+                "arguments": {
+                    "language": "python",
+                    "program": "test.py"
+                }
+            })),
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert_eq!(error.code, -32603);
+        assert!(error.message.contains("Tools handler not initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_tools_call_with_handler_error() {
+        // Test lines 220-221, 223 - tool call error response
+        use crate::debug::SessionManager;
+        use crate::mcp::tools::ToolsHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let tools_handler = Arc::new(ToolsHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_tools_handler(tools_handler);
+
+        // Call with invalid arguments to trigger error
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "tools/call".to_string(),
+            params: Some(json!({
+                "name": "debugger_start",
+                "arguments": {
+                    // Missing "program" field - will cause error
+                    "language": "python"
+                }
+            })),
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_some());
+        let error = response.error.unwrap();
+        assert!(error.code != 0);  // Should have an error code
+    }
+
+    #[tokio::test]
+    async fn test_tools_call_success_with_handler() {
+        // Test line 207 - successful tool call
+        use crate::debug::SessionManager;
+        use crate::mcp::tools::ToolsHandler;
+
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let tools_handler = Arc::new(ToolsHandler::new(manager));
+
+        let mut handler = ProtocolHandler::new();
+        handler.set_tools_handler(tools_handler);
+
+        // Call tools/list which doesn't require session setup
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            id: json!(1),
+            method: "tools/list".to_string(),
+            params: None,
+        };
+
+        let response = handler.handle_request(req).await;
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+    }
 }

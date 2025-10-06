@@ -429,4 +429,199 @@ mod tests {
         let result = handler.handle_tool("debugger_start", json!({"invalid": "data"})).await;
         assert!(result.is_err());
     }
+
+    // Phase 6: Error path tests for missing required fields and invalid types
+
+    #[test]
+    fn test_debugger_start_missing_language() {
+        let json = json!({
+            "program": "/path/to/script.py"
+        });
+
+        let result = serde_json::from_value::<DebuggerStartArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_debugger_start_missing_program() {
+        let json = json!({
+            "language": "python"
+        });
+
+        let result = serde_json::from_value::<DebuggerStartArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_debugger_start_invalid_args_type() {
+        let json = json!({
+            "language": "python",
+            "program": "test.py",
+            "args": "not an array"  // Should be array, not string
+        });
+
+        let result = serde_json::from_value::<DebuggerStartArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_breakpoint_missing_session_id() {
+        let json = json!({
+            "sourcePath": "/path/to/file.py",
+            "line": 42
+        });
+
+        let result = serde_json::from_value::<SetBreakpointArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_breakpoint_missing_source_path() {
+        let json = json!({
+            "sessionId": "session-123",
+            "line": 42
+        });
+
+        let result = serde_json::from_value::<SetBreakpointArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_breakpoint_missing_line() {
+        let json = json!({
+            "sessionId": "session-123",
+            "sourcePath": "/path/to/file.py"
+        });
+
+        let result = serde_json::from_value::<SetBreakpointArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_breakpoint_invalid_line_type() {
+        let json = json!({
+            "sessionId": "session-123",
+            "sourcePath": "/path/to/file.py",
+            "line": "not a number"  // Should be integer
+        });
+
+        let result = serde_json::from_value::<SetBreakpointArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_continue_args_missing_session_id() {
+        let json = json!({});
+
+        let result = serde_json::from_value::<ContinueArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stack_trace_args_missing_session_id() {
+        let json = json!({});
+
+        let result = serde_json::from_value::<StackTraceArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_missing_session_id() {
+        let json = json!({
+            "expression": "x + y"
+        });
+
+        let result = serde_json::from_value::<EvaluateArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_missing_expression() {
+        let json = json!({
+            "sessionId": "eval-session"
+        });
+
+        let result = serde_json::from_value::<EvaluateArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_invalid_frame_id_type() {
+        let json = json!({
+            "sessionId": "eval-session",
+            "expression": "x + y",
+            "frameId": "not a number"  // Should be integer
+        });
+
+        let result = serde_json::from_value::<EvaluateArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_disconnect_missing_session_id() {
+        let json = json!({});
+
+        let result = serde_json::from_value::<DisconnectArgs>(json);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_debugger_start_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_start", json!({"language": "python"})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_set_breakpoint_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_set_breakpoint", json!({"sessionId": "test"})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_continue_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_continue", json!({})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_stack_trace_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_stack_trace", json!({})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_evaluate_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_evaluate", json!({"sessionId": "test"})).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tool_disconnect_invalid_json() {
+        let manager = Arc::new(RwLock::new(SessionManager::new()));
+        let handler = ToolsHandler::new(manager);
+
+        // Missing required fields
+        let result = handler.handle_tool("debugger_disconnect", json!({})).await;
+        assert!(result.is_err());
+    }
 }

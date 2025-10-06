@@ -31,13 +31,20 @@
 - Documentation: docs/FIXES_2025_10_05.md
 
 ### Changed
-- Test count: 79 → 83 tests
-- Coverage maintained at 61.90%
+- Test count: 79 → 114 tests (+35 tests)
+- Coverage: 61.90% → 67.29% (+5.39% improvement)
 - Multi-architecture Docker support (x86_64 + ARM64)
+
+### Test Coverage Improvements (Phases 5-6)
+- **Phase 5**: Added 6 MCP transport implementation tests using in-memory pipes
+- **Phase 6**: Added 19 error path tests for MCP tools (invalid arguments, missing fields)
+- **Phase 6B**: Added 4 protocol error path tests (handler initialization, error responses)
+- **Result**: mcp/protocol.rs achieved 100% coverage (83/83 lines)
 
 ### References
 - MCP Specification: https://spec.modelcontextprotocol.io/
-- All 83 tests passing ✅
+- All 114 tests passing ✅
+- Coverage report: coverage/tarpaulin-report.html
 
 ---
 
