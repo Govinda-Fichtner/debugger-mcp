@@ -167,10 +167,16 @@ impl DebugSession {
         // Clear pending breakpoints
         self.pending_breakpoints.write().await.clear();
 
-        {
-            let mut state = self.state.write().await;
-            state.set_state(DebugState::Running);
-        }
+        // DON'T manually set state to Running here!
+        // The DAP event handlers will update the state based on actual events:
+        // - 'stopped' event (if stopOnEntry=true) → Stopped state
+        // - 'continued' event → Running state
+        // - 'terminated'/'exited' events → Terminated state
+        //
+        // Setting Running here causes a race condition where we overwrite
+        // the Stopped state from the 'stopped' event handler.
+        //
+        // See: https://github.com/ruvnet/debugger_mcp/issues/stopOnEntry-race-condition
 
         Ok(())
     }
