@@ -319,6 +319,20 @@ impl DapClient {
         Ok(response)
     }
 
+    /// Send a request with a timeout (aggressive timeout wrapper)
+    pub async fn send_request_with_timeout(
+        &self,
+        command: &str,
+        arguments: Option<Value>,
+        timeout: std::time::Duration,
+    ) -> Result<Response> {
+        info!("⏱️  send_request_with_timeout: '{}' with timeout {:?}", command, timeout);
+
+        tokio::time::timeout(timeout, self.send_request(command, arguments))
+            .await
+            .map_err(|_| Error::Dap(format!("Request '{}' timed out after {:?}", command, timeout)))?
+    }
+
     /// Send a request with a callback for the response
     pub async fn send_request_async<F>(&self, command: &str, arguments: Option<Value>, callback: F) -> Result<i32>
     where
@@ -637,12 +651,65 @@ impl DapClient {
 
     pub async fn disconnect(&self) -> Result<()> {
         let response = self.send_request("disconnect", None).await?;
-        
+
         if !response.success {
             warn!("Disconnect failed: {:?}", response.message);
         }
 
         Ok(())
+    }
+
+    // === Timeout Wrappers (Aggressive Timeouts) ===
+
+    /// Initialize with 2 second timeout
+    /// DAP init takes ~100ms normally, 2s = 20x safety margin
+    pub async fn initialize_with_timeout(&self, adapter_id: &str) -> Result<Capabilities> {
+        let timeout = std::time::Duration::from_secs(2);
+        info!("⏱️  initialize_with_timeout: Starting with 2s timeout");
+
+        tokio::time::timeout(timeout, self.initialize(adapter_id))
+            .await
+            .map_err(|_| Error::Dap(format!("Initialize timed out after {:?}", timeout)))?
+    }
+
+    /// Launch with 5 second timeout
+    /// Launch is more complex and may involve file loading
+    pub async fn launch_with_timeout(&self, args: Value) -> Result<()> {
+        let timeout = std::time::Duration::from_secs(5);
+        info!("⏱️  launch_with_timeout: Starting with 5s timeout");
+
+        tokio::time::timeout(timeout, self.launch(args))
+            .await
+            .map_err(|_| Error::Dap(format!("Launch timed out after {:?}", timeout)))?
+    }
+
+    /// Disconnect with 2 second timeout (force cleanup)
+    /// If disconnect hangs, we want to fail fast and let process cleanup handle it
+    pub async fn disconnect_with_timeout(&self) -> Result<()> {
+        let timeout = std::time::Duration::from_secs(2);
+        info!("⏱️  disconnect_with_timeout: Starting with 2s timeout");
+
+        tokio::time::timeout(timeout, self.disconnect())
+            .await
+            .map_err(|_| {
+                warn!("Disconnect timed out after {:?}, proceeding anyway", timeout);
+                Error::Dap(format!("Disconnect timed out after {:?}", timeout))
+            })?
+    }
+
+    /// Initialize and launch with combined timeout (2s + 5s = 7s total)
+    /// This wraps the entire sequence with aggressive timeouts
+    pub async fn initialize_and_launch_with_timeout(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+    ) -> Result<()> {
+        let timeout = std::time::Duration::from_secs(7);
+        info!("⏱️  initialize_and_launch_with_timeout: Starting with 7s timeout");
+
+        tokio::time::timeout(timeout, self.initialize_and_launch(adapter_id, launch_args))
+            .await
+            .map_err(|_| Error::Dap(format!("Initialize and launch timed out after {:?}", timeout)))?
     }
 }
 

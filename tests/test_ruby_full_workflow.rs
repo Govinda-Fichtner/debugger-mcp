@@ -1,0 +1,436 @@
+/// Workflow-level integration tests for Ruby debugging
+///
+/// These tests verify the HIGH-LEVEL debugging workflow that uses
+/// SessionManager and DebugSession - the actual APIs that Claude Code uses.
+///
+/// **Why these tests are critical**:
+/// The low-level socket tests (test_ruby_socket_adapter.rs) only test DapClient directly.
+/// They DON'T test the full workflow through SessionManager, which is where bugs occurred:
+/// - State machine transitions (Initializing → Running → Stopped)
+/// - Async initialization flow
+/// - Timeout handling
+/// - Event coordination
+///
+/// See docs/TEST_COVERAGE_GAP_ANALYSIS.md for detailed explanation.
+
+use debugger_mcp::debug::manager::SessionManager;
+use debugger_mcp::debug::session::SessionState;
+use std::time::Duration;
+use std::io::Write;
+use tokio::time::sleep;
+
+/// Test 1: Full session lifecycle (the test that would have caught the bugs!)
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_full_session_lifecycle() {
+    // Create a test Ruby script
+    let test_script = "/tmp/test_workflow_lifecycle.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "x = 10").unwrap();
+    writeln!(file, "y = 20").unwrap();
+    writeln!(file, "puts x + y").unwrap();
+    drop(file);
+
+    // 1. Create SessionManager (like real MCP server)
+    let manager = SessionManager::new();
+
+    // 2. Start session (like Claude Code does)
+    let session_id = manager
+        .start_session(
+            "ruby",
+            test_script,
+            vec![],
+            Some("/tmp"),
+            true, // stop_on_entry
+        )
+        .await
+        .expect("Failed to start session");
+
+    // 3. Wait for initialization to complete
+    // THIS is where the "stuck in Initializing" bug occurred!
+    let mut attempts = 0;
+    loop {
+        let state = manager.get_session_state(&session_id).await.unwrap();
+
+        if state == SessionState::Stopped {
+            // Success - reached stopped state
+            break;
+        } else if state == SessionState::Initializing && attempts > 20 {
+            // Still initializing after 2 seconds = BUG
+            panic!("Session stuck in Initializing state after 2s - THIS IS THE BUG!");
+        }
+
+        attempts += 1;
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // 4. Verify we can interact with the session
+    let threads = manager.get_threads(&session_id).await.unwrap();
+    assert!(!threads.is_empty(), "Should have at least one thread");
+
+    // 5. Continue execution
+    manager.continue_execution(&session_id).await.unwrap();
+
+    // Wait for termination
+    sleep(Duration::from_millis(500)).await;
+
+    // 6. Disconnect cleanly
+    manager.stop_session(&session_id).await.unwrap();
+
+    // Cleanup
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 2: State transitions (Initializing → Stopped → Running → Exited)
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_state_transitions() {
+    let test_script = "/tmp/test_workflow_states.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "sleep 0.1").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    // Start with stop_on_entry=true
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    // Should quickly transition from Initializing to Stopped
+    let mut state = manager.get_session_state(&session_id).await.unwrap();
+    let mut transitions = vec![state.clone()];
+
+    // Track state transitions over 1 second
+    for _ in 0..10 {
+        sleep(Duration::from_millis(100)).await;
+        let new_state = manager.get_session_state(&session_id).await.unwrap();
+        if new_state != state {
+            transitions.push(new_state.clone());
+            state = new_state;
+        }
+    }
+
+    // Verify expected transitions occurred
+    assert!(
+        transitions.contains(&SessionState::Stopped),
+        "Should reach Stopped state. Transitions: {:?}",
+        transitions
+    );
+
+    // Continue to completion
+    manager.continue_execution(&session_id).await.unwrap();
+    sleep(Duration::from_millis(300)).await;
+
+    // Should end up in Running or Exited
+    let final_state = manager.get_session_state(&session_id).await.unwrap();
+    assert!(
+        final_state == SessionState::Running || final_state == SessionState::Exited,
+        "Final state should be Running or Exited, got {:?}",
+        final_state
+    );
+
+    manager.stop_session(&session_id).await.unwrap();
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 3: Breakpoint workflow (set breakpoint, continue, hit, inspect)
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_breakpoint_workflow() {
+    let test_script = "/tmp/test_workflow_breakpoint.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "x = 1").unwrap();
+    writeln!(file, "y = 2  # Breakpoint here").unwrap();
+    writeln!(file, "z = 3").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    // Wait for stopped state
+    for _ in 0..20 {
+        let state = manager.get_session_state(&session_id).await.unwrap();
+        if state == SessionState::Stopped {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // Set breakpoint on line 2
+    manager
+        .set_breakpoints(&session_id, test_script, vec![2])
+        .await
+        .unwrap();
+
+    // Continue - should hit breakpoint
+    manager.continue_execution(&session_id).await.unwrap();
+
+    // Wait for breakpoint hit
+    sleep(Duration::from_millis(300)).await;
+
+    let state = manager.get_session_state(&session_id).await.unwrap();
+    assert_eq!(
+        state,
+        SessionState::Stopped,
+        "Should stop at breakpoint"
+    );
+
+    // Get stack trace
+    let threads = manager.get_threads(&session_id).await.unwrap();
+    assert!(!threads.is_empty(), "Should have threads");
+
+    let thread_id = threads[0].id;
+    let stack = manager.get_stack_trace(&session_id, thread_id).await.unwrap();
+    assert!(!stack.is_empty(), "Should have stack frames");
+
+    // Clean up
+    manager.stop_session(&session_id).await.unwrap();
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 4: Variable evaluation
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_variable_evaluation() {
+    let test_script = "/tmp/test_workflow_eval.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "magic_number = 42").unwrap();
+    writeln!(file, "sleep 0.1").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    // Wait for stopped
+    for _ in 0..20 {
+        let state = manager.get_session_state(&session_id).await.unwrap();
+        if state == SessionState::Stopped {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // Step to execute variable assignment
+    manager.step_over(&session_id, 1).await.unwrap();
+    sleep(Duration::from_millis(200)).await;
+
+    // Evaluate variable
+    let result = manager
+        .evaluate_expression(&session_id, 1, "magic_number")
+        .await
+        .unwrap();
+
+    assert!(
+        result.contains("42"),
+        "Should evaluate to 42, got: {}",
+        result
+    );
+
+    manager.stop_session(&session_id).await.unwrap();
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 5: Disconnect timeout verification
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_disconnect_timeout() {
+    let test_script = "/tmp/test_workflow_disconnect.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "sleep 10").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), false)
+        .await
+        .unwrap();
+
+    // Wait a bit for it to start running
+    sleep(Duration::from_millis(200)).await;
+
+    // Disconnect should complete within timeout (2s)
+    let start = std::time::Instant::now();
+    manager.stop_session(&session_id).await.unwrap();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "Disconnect should complete within 3s (2s timeout + 1s buffer), took {:?}",
+        elapsed
+    );
+
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 6: Multiple concurrent sessions
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_multiple_sessions() {
+    let test_script1 = "/tmp/test_workflow_multi1.rb";
+    let test_script2 = "/tmp/test_workflow_multi2.rb";
+
+    let mut file1 = std::fs::File::create(test_script1).unwrap();
+    writeln!(file1, "puts 'Session 1'").unwrap();
+    drop(file1);
+
+    let mut file2 = std::fs::File::create(test_script2).unwrap();
+    writeln!(file2, "puts 'Session 2'").unwrap();
+    drop(file2);
+
+    let manager = SessionManager::new();
+
+    // Start two sessions concurrently
+    let session_id1 = manager
+        .start_session("ruby", test_script1, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    let session_id2 = manager
+        .start_session("ruby", test_script2, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    assert_ne!(session_id1, session_id2, "Session IDs should be unique");
+
+    // Both should reach stopped state
+    for _ in 0..20 {
+        let state1 = manager.get_session_state(&session_id1).await.unwrap();
+        let state2 = manager.get_session_state(&session_id2).await.unwrap();
+
+        if state1 == SessionState::Stopped && state2 == SessionState::Stopped {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // Clean up both
+    manager.stop_session(&session_id1).await.unwrap();
+    manager.stop_session(&session_id2).await.unwrap();
+
+    std::fs::remove_file(test_script1).ok();
+    std::fs::remove_file(test_script2).ok();
+}
+
+/// Test 7: Step commands (stepIn, stepOver, stepOut)
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_step_commands() {
+    let test_script = "/tmp/test_workflow_steps.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "def helper").unwrap();
+    writeln!(file, "  x = 1").unwrap();
+    writeln!(file, "end").unwrap();
+    writeln!(file, "").unwrap();
+    writeln!(file, "helper").unwrap();
+    writeln!(file, "puts 'done'").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    // Wait for stopped
+    for _ in 0..20 {
+        let state = manager.get_session_state(&session_id).await.unwrap();
+        if state == SessionState::Stopped {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    // Step over should work
+    manager.step_over(&session_id, 1).await.unwrap();
+    sleep(Duration::from_millis(200)).await;
+
+    let state = manager.get_session_state(&session_id).await.unwrap();
+    assert_eq!(
+        state,
+        SessionState::Stopped,
+        "Should stop after step over"
+    );
+
+    // Step into should work
+    manager.step_in(&session_id, 1).await.unwrap();
+    sleep(Duration::from_millis(200)).await;
+
+    let state = manager.get_session_state(&session_id).await.unwrap();
+    assert_eq!(state, SessionState::Stopped, "Should stop after step in");
+
+    manager.stop_session(&session_id).await.unwrap();
+    std::fs::remove_file(test_script).ok();
+}
+
+/// Test 8: Error handling - invalid program
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_invalid_program() {
+    let manager = SessionManager::new();
+
+    let result = manager
+        .start_session(
+            "ruby",
+            "/nonexistent/script.rb",
+            vec![],
+            Some("/tmp"),
+            true,
+        )
+        .await;
+
+    assert!(result.is_err(), "Should fail for nonexistent script");
+}
+
+/// Test 9: Performance - session startup time
+#[tokio::test]
+#[ignore] // Requires rdbg
+async fn test_ruby_session_startup_performance() {
+    let test_script = "/tmp/test_workflow_perf.rb";
+    let mut file = std::fs::File::create(test_script).unwrap();
+    writeln!(file, "x = 1").unwrap();
+    drop(file);
+
+    let manager = SessionManager::new();
+
+    let start = std::time::Instant::now();
+
+    let session_id = manager
+        .start_session("ruby", test_script, vec![], Some("/tmp"), true)
+        .await
+        .unwrap();
+
+    // Wait for stopped state
+    for _ in 0..30 {
+        let state = manager.get_session_state(&session_id).await.unwrap();
+        if state == SessionState::Stopped {
+            break;
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    let elapsed = start.elapsed();
+
+    // Should reach stopped state within 3 seconds
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "Session startup took too long: {:?}",
+        elapsed
+    );
+
+    println!("Session startup time: {:?}", elapsed);
+
+    manager.stop_session(&session_id).await.unwrap();
+    std::fs::remove_file(test_script).ok();
+}

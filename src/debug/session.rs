@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use tracing::info;
+use tracing::{info, warn};
 
 pub struct DebugSession {
     pub id: String,
@@ -130,9 +130,10 @@ impl DebugSession {
             }
         }).await;
 
-        // Use the DapClient's event-driven initialize_and_launch method
+        // Use the DapClient's event-driven initialize_and_launch method with timeout
         // This properly handles the 'initialized' event and configurationDone sequence
-        client.initialize_and_launch(adapter_id, launch_args).await?;
+        // Timeout: 7s (2s for init + 5s for launch, as per TIMEOUT_IMPLEMENTATION.md)
+        client.initialize_and_launch_with_timeout(adapter_id, launch_args).await?;
 
         // Apply pending breakpoints after initialization
         info!("🔧 Applying pending breakpoints after initialization");
@@ -364,7 +365,16 @@ impl DebugSession {
 
     pub async fn disconnect(&self) -> Result<()> {
         let client = self.client.read().await;
-        client.disconnect().await?;
+
+        // Use disconnect with 2s timeout (force cleanup if hangs)
+        // If timeout occurs, we still update state to Terminated
+        match client.disconnect_with_timeout().await {
+            Ok(_) => info!("✅ Disconnect completed successfully"),
+            Err(e) => {
+                warn!("⚠️  Disconnect timeout or error: {}, proceeding with cleanup", e);
+                // Continue anyway - state will be set to Terminated
+            }
+        }
 
         let mut state = self.state.write().await;
         state.set_state(DebugState::Terminated);
