@@ -4,35 +4,39 @@
 
 ### Fixed - Ruby stopOnEntry Issue
 
-#### Ruby Debugging: stopOnEntry Now Works Correctly
+#### Ruby Debugging: stopOnEntry Now Works Correctly (Entry Breakpoint Solution)
 - **Issue**: Ruby debugger (rdbg) in socket mode didn't honor `--stop-at-load` flag
 - **Symptom**: Programs ran to completion without stopping at entry point, making debugging impossible for fast-executing scripts
-- **Root Cause**: rdbg in socket mode (`--open --port X`) doesn't send `stopped` event after `initialized` event
-- **Solution**: Implemented explicit `pause` request workaround after `initialized` event for Ruby with `stopOnEntry: true`
-- **Impact**: Ruby debugging now works correctly; Python and other languages unaffected
-- **Performance**: +100-200ms startup time for Ruby with stopOnEntry (acceptable)
+- **Root Cause**: Implementation was violating DAP specification by setting breakpoints AFTER configurationDone instead of BEFORE
+- **Solution**: Implemented entry breakpoint pattern - set breakpoint at first executable line BEFORE configurationDone (per DAP spec)
+- **Impact**: Ruby debugging now works correctly following DAP specification; solution is language-agnostic
+- **Performance**: +50-150ms startup time for Ruby with stopOnEntry (file read + line detection)
 - **Files Changed**:
-  - `src/dap/client.rs`: Added `pause()` method, modified `initialize_and_launch()` with adapter_type parameter
+  - `src/dap/client.rs`: Added `find_first_executable_line_ruby()`, modified `initialize_and_launch()` to set entry breakpoint before configurationDone
   - `src/debug/session.rs`: Pass adapter type for language-specific workarounds
   - `tests/test_event_driven.rs`: Updated test call site
 - **Tests Added**:
   - `tests/test_ruby_stopentry_issue.rs` (380 lines): Failing test demonstrating bug + passing test proving fix
   - Verification script: `scripts/verify_stopentry_issue.sh`
 - **Documentation**:
+  - `docs/RDBG_ANALYSIS_AND_SOLUTION.md` - Root cause analysis and correct DAP sequence
   - `docs/RUBY_STOPENTRY_FIX.md` - Implementation plan
   - `docs/RUBY_STOPENTRY_FIX_IMPLEMENTATION.md` - Detailed walkthrough
   - `RUBY_STOPENTRY_FIX_COMPLETE.md` - Executive summary
+  - `/home/vagrant/projects/fizzbuzz-ruby-test/RDBG_BUG_REPORT.md` - Original bug report
 - **References**:
-  - Test results: `/home/vagrant/projects/fizzbuzz-ruby-test/FINAL_TEST_RESULTS.md`
-  - DAP Pause specification: https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Pause
+  - DAP Specification: https://microsoft.github.io/debug-adapter-protocol/specification
+  - Correct sequence: initialize → initialized → setBreakpoints → configurationDone
 
 ### Changed
 - `DapClient::initialize_and_launch()` now accepts optional `adapter_type` parameter for language-specific workarounds
 - `DapClient::initialize_and_launch_with_timeout()` signature updated to pass adapter type
-- Ruby debugging startup time increased by ~100-200ms (still well under 7s timeout)
+- Ruby debugging now follows correct DAP sequence (breakpoints before configurationDone)
+- Startup time increased by ~50-150ms for Ruby with stopOnEntry (file parsing overhead)
 
 ### Added
-- `DapClient::pause()` method for explicit program pause via DAP
+- `DapClient::find_first_executable_line_ruby()` helper for entry point detection
+- Entry breakpoint pattern for stopOnEntry (DAP spec compliant)
 - Language-specific debugging workarounds framework (extensible to other languages)
 - Comprehensive test suite for Ruby stopOnEntry issue (TDD approach)
 

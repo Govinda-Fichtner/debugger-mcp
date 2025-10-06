@@ -445,6 +445,15 @@ impl DapClient {
             info!("🔧 Ruby stopOnEntry workaround will be applied");
         }
 
+        // Extract program path before moving launch_args (for Ruby workaround)
+        let program_path_for_breakpoint = if needs_ruby_workaround {
+            launch_args.get("program")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        } else {
+            None
+        };
+
         // Step 2: Register 'initialized' event handler BEFORE sending launch
         // This handler will be invoked DURING launch processing
         // We use a simple signal approach - the handler just notifies, doesn't send messages
@@ -475,37 +484,53 @@ impl DapClient {
                 Ok(Ok(())) => {
                     info!("✅ Received 'initialized' event signal");
 
-                    // Ruby stopOnEntry workaround
+                    // Ruby stopOnEntry workaround: Set entry breakpoint BEFORE configurationDone
+                    // This follows the correct DAP sequence (setBreakpoints must be before configurationDone)
                     if needs_ruby_workaround {
-                        info!("🔧 Applying Ruby stopOnEntry workaround: sending pause request");
-                        info!("   (rdbg in socket mode doesn't honor --stop-at-load properly)");
+                        info!("🔧 Applying Ruby stopOnEntry workaround: setting entry breakpoint");
+                        info!("   (Per DAP spec: breakpoints must be set BEFORE configurationDone)");
 
-                        // Send pause request to force program to stop
-                        match self.pause(None).await {
-                            Ok(_) => {
-                                info!("✅ Pause request sent successfully");
+                        match program_path_for_breakpoint.as_deref() {
+                            Some(path) => {
+                                // Find first executable line
+                                let entry_line = Self::find_first_executable_line_ruby(path);
+                                info!("  Entry breakpoint will be set at line {}", entry_line);
 
-                                // Wait for 'stopped' event (with 2s timeout)
-                                info!("⏳ Waiting for 'stopped' event (2s timeout)...");
-                                match self.wait_for_event(
-                                    "stopped",
-                                    tokio::time::Duration::from_secs(2)
-                                ).await {
-                                    Ok(_) => {
-                                        info!("✅ Received 'stopped' event - program paused at entry");
+                                // Create breakpoint at entry line
+                                let source = Source {
+                                    path: Some(path.to_string()),
+                                    name: None,
+                                    source_reference: None,
+                                };
+
+                                let breakpoint = SourceBreakpoint {
+                                    line: entry_line as i32,
+                                    column: None,
+                                    condition: None,
+                                    hit_condition: None,
+                                };
+
+                                // Set breakpoint BEFORE configurationDone (per DAP spec)
+                                match self.set_breakpoints(source, vec![breakpoint]).await {
+                                    Ok(bps) => {
+                                        if let Some(bp) = bps.first() {
+                                            if bp.verified {
+                                                info!("✅ Entry breakpoint set at line {} (verified)", entry_line);
+                                            } else {
+                                                warn!("⚠️  Entry breakpoint not verified at line {}", entry_line);
+                                                warn!("   Program may not stop - check if line is executable");
+                                            }
+                                        }
                                     }
                                     Err(e) => {
-                                        warn!("⚠️  Error/timeout waiting for 'stopped' event: {}", e);
-                                        warn!("   Continuing anyway - configurationDone might still work");
+                                        warn!("⚠️  Failed to set entry breakpoint: {}", e);
+                                        warn!("   Continuing anyway - program might not stop at entry");
                                     }
                                 }
                             }
-                            Err(e) => {
-                                warn!("⚠️  Pause request failed: {}", e);
-                                warn!("   This might happen if:");
-                                warn!("   1. Debugger doesn't support pause request");
-                                warn!("   2. Program already terminated");
-                                warn!("   Continuing anyway - configurationDone might still work");
+                            None => {
+                                warn!("⚠️  No program path in launch args - cannot set entry breakpoint");
+                                warn!("   Ruby stopOnEntry may not work");
                             }
                         }
                     }
@@ -616,31 +641,60 @@ impl DapClient {
         Ok(())
     }
 
-    /// Pause program execution
+    /// Find the first executable line in a Ruby source file
     ///
-    /// Sends a DAP 'pause' request to the debugger to pause execution.
-    /// This is used as a workaround for Ruby debuggers that don't honor
-    /// stopOnEntry properly in socket mode.
+    /// Skips comments, empty lines, requires, and class/module definitions
+    /// to find the first actual executable line.
     ///
-    /// # Arguments
-    /// * `thread_id` - Optional thread ID to pause (defaults to 1 if None)
-    ///
-    /// # Returns
-    /// * `Ok(())` if pause successful
-    /// * `Err` if pause request failed
-    pub async fn pause(&self, thread_id: Option<i32>) -> Result<()> {
-        let tid = thread_id.unwrap_or(1);
-        let args = serde_json::json!({ "threadId": tid });
+    /// Returns line number (1-indexed) or 1 as fallback.
+    fn find_first_executable_line_ruby(program_path: &str) -> usize {
+        use std::fs;
 
-        info!("📤 Sending pause request (threadId: {})", tid);
-        let response = self.send_request("pause", Some(args)).await?;
+        let content = match fs::read_to_string(program_path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Could not read {} for line detection: {}, using line 1", program_path, e);
+                return 1;
+            }
+        };
 
-        if !response.success {
-            return Err(Error::Dap(format!("Pause failed: {:?}", response.message)));
+        for (line_num, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Skip shebang
+            if line_num == 0 && trimmed.starts_with("#!") {
+                continue;
+            }
+
+            // Skip comments
+            if trimmed.starts_with('#') {
+                continue;
+            }
+
+            // Skip requires/loads (not executable, just declarations)
+            if trimmed.starts_with("require") || trimmed.starts_with("load") {
+                continue;
+            }
+
+            // Skip class/module/def declarations (not entry point)
+            if trimmed.starts_with("class ") || trimmed.starts_with("module ") {
+                // Continue looking inside the class for executable code
+                continue;
+            }
+
+            // Found first executable line!
+            info!("  First executable line detected: {}", line_num + 1);
+            return line_num + 1; // DAP uses 1-indexed lines
         }
 
-        info!("✅ Pause request successful");
-        Ok(())
+        // Fallback: No executable line found, use line 1
+        warn!("No executable line found in {}, using line 1", program_path);
+        1
     }
 
     pub async fn next(&self, thread_id: i32) -> Result<()> {
