@@ -1,5 +1,6 @@
 use crate::{Error, Result};
 use crate::adapters::python::PythonAdapter;
+use crate::adapters::ruby::RubyAdapter;
 use crate::dap::client::DapClient;
 use super::session::DebugSession;
 use std::collections::HashMap;
@@ -38,6 +39,18 @@ impl SessionManager {
                 let adapter_args = PythonAdapter::args();
                 let adapter_id = PythonAdapter::adapter_id();
                 let launch_args = PythonAdapter::launch_args_with_options(
+                    &program,
+                    &args,
+                    cwd.as_deref(),
+                    stop_on_entry,
+                );
+                (cmd, adapter_args, adapter_id, launch_args)
+            }
+            "ruby" => {
+                let cmd = RubyAdapter::command();
+                let adapter_args = RubyAdapter::args_with_options(stop_on_entry);
+                let adapter_id = RubyAdapter::adapter_id();
+                let launch_args = RubyAdapter::launch_args_with_options(
                     &program,
                     &args,
                     cwd.as_deref(),
@@ -153,14 +166,15 @@ mod tests {
     #[tokio::test]
     async fn test_create_session_unknown_language() {
         let manager = SessionManager::new();
+        // Use a truly unsupported language (ruby is now supported!)
         let result = manager
-            .create_session("ruby", "test.rb".to_string(), vec![], None, false)
+            .create_session("javascript", "test.js".to_string(), vec![], None, false)
             .await;
 
         assert!(result.is_err());
         match result {
             Err(Error::AdapterNotFound(lang)) => {
-                assert_eq!(lang, "ruby");
+                assert_eq!(lang, "javascript");
             }
             _ => panic!("Expected AdapterNotFound error"),
         }

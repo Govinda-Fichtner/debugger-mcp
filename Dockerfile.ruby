@@ -1,9 +1,4 @@
 # Multi-stage build for lean production image
-# This is the multi-language variant supporting both Python and Ruby debugging
-# For language-specific images, see:
-#   - Dockerfile.python (Python-only, ~120 MB)
-#   - Dockerfile.ruby (Ruby-only, ~100 MB)
-
 # Stage 1: Build the Rust binary
 FROM rust:1.83-alpine AS builder
 
@@ -23,21 +18,17 @@ COPY src ./src
 # Supports both x86_64 and aarch64 (ARM64)
 RUN cargo build --release
 
-# Stage 2: Create runtime image with multiple language support
+# Stage 2: Create minimal runtime image
 FROM alpine:3.21
 
-# Install runtime dependencies for both Python and Ruby debugging
-# Python: python3, py3-pip, debugpy
-# Ruby: ruby, ruby-dev, ruby-bundler, debug gem
+# Install runtime dependencies
+# Ruby and debug gem are needed for Ruby debugging support
 RUN apk add --no-cache \
-    python3 \
-    py3-pip \
     ruby \
     ruby-dev \
     ruby-bundler \
-    && pip3 install --no-cache-dir --break-system-packages debugpy \
     && gem install debug --no-document \
-    && rm -rf /root/.cache /root/.gem/ruby/*/cache
+    && rm -rf /root/.gem/ruby/*/cache
 
 # Create non-root user
 RUN addgroup -g 1000 mcpuser && \
@@ -59,8 +50,8 @@ WORKDIR /workspace
 CMD ["debugger_mcp", "serve"]
 
 # Metadata
-LABEL org.opencontainers.image.title="debugger-mcp"
-LABEL org.opencontainers.image.description="DAP MCP Server - Multi-Language Debugging Support (Python, Ruby)"
+LABEL org.opencontainers.image.title="debugger-mcp-ruby"
+LABEL org.opencontainers.image.description="DAP MCP Server - Ruby Debugging Support"
 LABEL org.opencontainers.image.source="https://github.com/Govinda-Fichtner/debugger-mcp"
 LABEL org.opencontainers.image.version="0.1.0"
-LABEL org.opencontainers.image.variant="multi-lang"
+LABEL org.opencontainers.image.variant="ruby"
