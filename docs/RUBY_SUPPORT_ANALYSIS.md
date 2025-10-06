@@ -148,16 +148,17 @@ Command::new("python3")
 ```rust
 Command::new("rdbg")
     .args([
-        "--command",  // Use stdio for DAP communication
-        "--nonstop",  // Optional: only if stopOnEntry is false
-        program
+        "--stop-at-load",  // Or --nonstop if stopOnEntry is false
+        program,           // Program path
+        // ...program args
     ])
 ```
 
-**Why `--command` instead of `--open`**:
-- `--command`: Uses stdin/stdout for DAP protocol (like debugpy)
-- `--open`: Creates TCP/UNIX socket (requires separate connection)
-- Our DAP client uses stdin/stdout, so `--command` is required
+**Why direct program path instead of `--command` or `--open`**:
+- rdbg uses stdin/stdout for DAP by default (no flags needed)
+- `--command`: For external commands like `rdbg -c bundle exec rake test` (NOT for programs)
+- `--open`: Creates TCP/UNIX socket for remote debugging (NOT for stdio)
+- We pass the program path directly: `rdbg [flags] program.rb [args]`
 
 **Bundle Support** (Future Enhancement):
 ```rust
