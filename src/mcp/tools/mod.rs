@@ -198,133 +198,198 @@ impl ToolsHandler {
         vec![
             json!({
                 "name": "debugger_start",
-                "description": "Start a debugging session for a program",
+                "title": "Start Debugging Session",
+                "description": "Starts a new debugging session for a program. RETURNS IMMEDIATELY with a sessionId while initialization happens asynchronously in the background.\n\nIMPORTANT WORKFLOW:\n1. Call this tool first to create a session\n2. Poll debugger_session_state until state transitions from 'Initializing'→'Running' or 'Stopped'\n3. Once ready, set breakpoints with debugger_set_breakpoint\n4. Control execution with debugger_continue\n\nTIMING: Returns in <100ms. Background initialization takes 200-500ms.\n\nTIP: Use stopOnEntry: true to pause at the program's entry point, allowing breakpoints to be set before any code executes.\n\nSEE ALSO: debugger_session_state (required next step), debugger://workflows (complete examples), debugger-docs://getting-started",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "language": {
                             "type": "string",
-                            "description": "Programming language (e.g., 'python')"
+                            "description": "Programming language (e.g., 'python', 'ruby')"
                         },
                         "program": {
                             "type": "string",
-                            "description": "Path to the program to debug"
+                            "description": "Absolute or relative path to the program file to debug"
                         },
                         "args": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Command-line arguments for the program"
+                            "description": "Command-line arguments passed to the program (optional, defaults to empty array)"
                         },
                         "cwd": {
                             "type": "string",
-                            "description": "Working directory for the program"
+                            "description": "Working directory for the program execution (optional, defaults to program's directory)"
                         },
                         "stopOnEntry": {
                             "type": "boolean",
-                            "description": "Stop at the first line of the program"
+                            "description": "If true, pauses execution at the program's first line (recommended for setting early breakpoints)"
                         }
                     },
                     "required": ["language", "program"]
+                },
+                "annotations": {
+                    "async": true,
+                    "returnsTiming": "< 100ms",
+                    "completionTiming": "200-500ms (background)",
+                    "workflow": "initialization",
+                    "requiredFollowUp": ["debugger_session_state"],
+                    "category": "session-management",
+                    "priority": 1.0
                 }
             }),
             json!({
                 "name": "debugger_session_state",
-                "description": "Get the current state of a debugging session",
+                "title": "Check Session State",
+                "description": "Retrieves the current state of a debugging session. Essential for tracking async initialization progress.\n\nWORKFLOW USAGE:\n- After debugger_start: Poll this until state is 'Running' or 'Stopped' (not 'Initializing')\n- Before setting breakpoints: Verify state is 'Stopped' (with stopOnEntry) or 'Running'\n- After operations: Check state to verify success or detect failures\n\nSTATES:\n- NotStarted: Session created but not yet initialized\n- Initializing: DAP adapter starting (wait for this to complete)\n- Launching: Program starting\n- Running: Program executing (can set breakpoints)\n- Stopped: Hit breakpoint or paused (details.reason shows why)\n- Terminated: Program exited normally\n- Failed: Error occurred (details.error shows message)\n\nTIMING: Returns immediately (<10ms)\n\nTIP: When state is 'Stopped', check details.reason to understand why (e.g., 'entry', 'breakpoint', 'step')\n\nSEE ALSO: debugger://state-machine (complete state diagram), debugger-docs://guide/async-initialization",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID returned from debugger_start"
                         }
                     },
                     "required": ["sessionId"]
+                },
+                "annotations": {
+                    "async": false,
+                    "returnsTiming": "< 10ms",
+                    "workflow": "state-checking",
+                    "category": "session-management",
+                    "pollable": true,
+                    "priority": 0.9
                 }
             }),
             json!({
                 "name": "debugger_set_breakpoint",
-                "description": "Set a breakpoint in a source file",
+                "title": "Set Breakpoint",
+                "description": "Sets a breakpoint at a specific line in a source file. The debugger will pause execution when this line is about to execute.\n\nWORKFLOW:\n1. Ensure session state is 'Stopped' (recommended) or 'Running'\n2. Call this tool with the source file path and line number\n3. Check the 'verified' field in response (true = breakpoint accepted)\n4. Use debugger_continue to resume execution until breakpoint is hit\n\nTIMING: Returns in 5-20ms\n\nIMPORTANT: Use stopOnEntry: true when starting the session to pause before code execution, giving you time to set breakpoints.\n\nTIP: The sourcePath must match the path used by the debugger. For best results, use absolute paths.\n\nRETURNS:\n- verified: true if breakpoint was successfully set and recognized by the debugger\n- sourcePath: echo of the source file path\n- line: echo of the line number\n\nSEE ALSO: debugger_continue (to hit the breakpoint), debugger://workflows (breakpoint examples)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID from debugger_start"
                         },
                         "sourcePath": {
                             "type": "string",
-                            "description": "Path to the source file"
+                            "description": "Absolute or relative path to the source file (must match debugger's path resolution)"
                         },
                         "line": {
                             "type": "integer",
-                            "description": "Line number (1-indexed)"
+                            "description": "Line number where breakpoint should be set (1-indexed, i.e., first line is 1)"
                         }
                     },
                     "required": ["sessionId", "sourcePath", "line"]
+                },
+                "annotations": {
+                    "async": false,
+                    "returnsTiming": "5-20ms",
+                    "workflow": "breakpoint-management",
+                    "category": "debugging",
+                    "requiresState": ["Running", "Stopped"],
+                    "priority": 0.8
                 }
             }),
             json!({
                 "name": "debugger_continue",
-                "description": "Continue execution after a breakpoint",
+                "title": "Continue Execution",
+                "description": "Resumes program execution after being paused (e.g., at a breakpoint or entry point). Execution continues until the next breakpoint, exception, or program termination.\n\nWORKFLOW:\n1. Session must be in 'Stopped' state (verify with debugger_session_state)\n2. Call this tool to resume execution\n3. Poll debugger_session_state to detect when execution stops again\n4. When state returns to 'Stopped', check details.reason:\n   - 'breakpoint': Hit a breakpoint (use debugger_stack_trace to inspect)\n   - 'exception': Uncaught exception occurred\n   - 'pause': Manual pause requested\n   - 'step': Completed a step operation\n\nTIMING: Returns in <10ms (but program continues running asynchronously)\n\nTIP: After calling continue, immediately poll debugger_session_state in a loop to detect when the program stops again.\n\nRETURNS: {\"status\": \"continued\"}\n\nSEE ALSO: debugger_stack_trace (inspect state when stopped), debugger://workflows (execution control patterns)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID from debugger_start"
                         }
                     },
                     "required": ["sessionId"]
+                },
+                "annotations": {
+                    "async": true,
+                    "returnsTiming": "< 10ms",
+                    "completionTiming": "unknown (until next stop)",
+                    "workflow": "execution-control",
+                    "category": "debugging",
+                    "requiresState": ["Stopped"],
+                    "priority": 0.7
                 }
             }),
             json!({
                 "name": "debugger_stack_trace",
-                "description": "Get the current call stack",
+                "title": "Get Stack Trace",
+                "description": "Retrieves the current call stack when execution is paused. Shows the sequence of function calls that led to the current execution point.\n\nWORKFLOW:\n1. Session must be in 'Stopped' state (e.g., at a breakpoint)\n2. Call this tool to get stack frames\n3. Examine frames to understand execution context\n4. Use frame IDs with debugger_evaluate to inspect variables\n\nTIMING: Returns in 10-50ms depending on stack depth\n\nRETURNS: Array of stack frames, each containing:\n- id: Frame ID (use with debugger_evaluate)\n- name: Function/method name\n- source: {path: \"file path\", name: \"filename\"}\n- line: Current line number in this frame\n- column: Column number (if available)\n\nTIP: The first frame (index 0) is the current execution point. Higher indices are caller frames.\n\nCOMMON USE CASES:\n- Inspect where a breakpoint was hit\n- Understand call hierarchy\n- Get frame IDs for variable evaluation\n- Diagnose unexpected execution paths\n\nSEE ALSO: debugger_evaluate (inspect variables in frames), debugger://workflows (stack inspection examples)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID from debugger_start"
                         }
                     },
                     "required": ["sessionId"]
+                },
+                "annotations": {
+                    "async": false,
+                    "returnsTiming": "10-50ms",
+                    "workflow": "inspection",
+                    "category": "debugging",
+                    "requiresState": ["Stopped"],
+                    "priority": 0.6
                 }
             }),
             json!({
                 "name": "debugger_evaluate",
-                "description": "Evaluate an expression in the debug context",
+                "title": "Evaluate Expression",
+                "description": "Evaluates an expression in the context of the paused program. Can access variables, call functions, and perform computations using the program's current state.\n\nWORKFLOW:\n1. Session must be in 'Stopped' state\n2. Optionally get stack frames with debugger_stack_trace to find frame IDs\n3. Call this tool with an expression to evaluate\n4. Examine the result value\n\nTIMING: Returns in 20-200ms depending on expression complexity\n\nEXPRESSION EXAMPLES:\n- Variable access: \"x\", \"obj.property\", \"array[0]\"\n- Arithmetic: \"x + y\", \"count * 2\"\n- Comparisons: \"x > 10\", \"status == 'ready'\"\n- Function calls: \"len(array)\", \"obj.method()\"\n- Complex: \"[item for item in list if item > 0]\" (Python)\n\nframeId PARAMETER:\n- Omit (or null): Evaluate in current frame (top of stack)\n- Provide frame ID: Evaluate in specific frame (from debugger_stack_trace)\n\nRETURNS: {\"result\": \"string representation of evaluation result\"}\n\nTIP: Use this to inspect variable values, test conditions, and understand program state without modifying source code.\n\nSEE ALSO: debugger_stack_trace (get frame IDs), debugger://workflows (expression evaluation examples)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID from debugger_start"
                         },
                         "expression": {
                             "type": "string",
-                            "description": "Expression to evaluate"
+                            "description": "Expression to evaluate (syntax depends on programming language being debugged)"
                         },
                         "frameId": {
                             "type": "integer",
-                            "description": "Stack frame ID (optional)"
+                            "description": "Stack frame ID from debugger_stack_trace (optional, defaults to current frame)"
                         }
                     },
                     "required": ["sessionId", "expression"]
+                },
+                "annotations": {
+                    "async": false,
+                    "returnsTiming": "20-200ms",
+                    "workflow": "inspection",
+                    "category": "debugging",
+                    "requiresState": ["Stopped"],
+                    "priority": 0.5
                 }
             }),
             json!({
                 "name": "debugger_disconnect",
-                "description": "Disconnect from a debugging session",
+                "title": "Disconnect Session",
+                "description": "Terminates a debugging session and cleans up all associated resources. The debugged program will be stopped if still running.\n\nWORKFLOW:\n1. Call this when debugging is complete\n2. Session and all breakpoints are removed\n3. Debugged program is terminated gracefully\n\nTIMING: Returns in 50-200ms (includes cleanup time)\n\nIMPORTANT: Always disconnect when finished to free resources. The session cannot be resumed after disconnection.\n\nRETURNS: {\"status\": \"disconnected\"}\n\nTIP: If the program is still running, it will be terminated. If you want to let the program finish naturally, you can skip calling this tool, but resources will not be cleaned up immediately.\n\nSEE ALSO: debugger://workflows (complete debugging workflows showing disconnect)",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "sessionId": {
                             "type": "string",
-                            "description": "Debug session ID"
+                            "description": "Session ID from debugger_start"
                         }
                     },
                     "required": ["sessionId"]
+                },
+                "annotations": {
+                    "async": false,
+                    "returnsTiming": "50-200ms",
+                    "workflow": "cleanup",
+                    "category": "session-management",
+                    "destructive": true,
+                    "priority": 0.4
                 }
             }),
         ]

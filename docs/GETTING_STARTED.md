@@ -1,613 +1,340 @@
-# Getting Started - DAP MCP Server Implementation
+# Getting Started with Debugger MCP
 
-## Quick Start
+**Target Audience:** AI Agents (like Claude) interacting with the Debugger MCP Server
 
-### 1. Initialize Project
-
-```bash
-# Create new Rust library
-cargo new --lib debugger_mcp
-cd debugger_mcp
-
-# Add dependencies
-cargo add clap --features derive
-cargo add tokio --features full
-cargo add serde --features derive
-cargo add serde_json
-cargo add anyhow
-cargo add thiserror
-cargo add tracing
-cargo add tracing-subscriber --features env-filter,json
-cargo add flume
-cargo add async-trait
-cargo add uuid --features v4,serde
-
-# Dev dependencies
-cargo add --dev tokio-test
-cargo add --dev tempfile
-cargo add --dev assert_matches
-```
-
-### 2. Create Initial Structure
-
-```bash
-# Source structure
-mkdir -p src/{mcp,debug,dap,adapters,process}
-mkdir -p src/mcp/{resources,tools}
-mkdir -p tests/{integration,fixtures}
-
-# Create module files
-touch src/mcp/mod.rs src/mcp/transport.rs src/mcp/protocol.rs
-touch src/debug/mod.rs src/debug/session.rs src/debug/state.rs
-touch src/dap/mod.rs src/dap/client.rs src/dap/transport.rs
-touch src/adapters/mod.rs src/adapters/python.rs
-touch src/process/mod.rs
-touch src/error.rs
-
-# Test files
-touch tests/integration/mod.rs
-touch tests/integration/fizzbuzz_test.rs
-touch tests/fixtures/fizzbuzz.py
-```
-
-### 3. Write First Test
-
-```rust
-// tests/integration/fizzbuzz_test.rs
-
-use debugger_mcp::*;
-
-#[tokio::test]
-async fn test_server_starts() {
-    // This test will fail initially - that's TDD!
-    let server = McpServer::new().await.unwrap();
-    assert!(server.is_running());
-}
-```
-
-### 4. Run Tests (Expect Failure)
-
-```bash
-cargo test
-# ❌ Compilation error - McpServer doesn't exist yet
-```
-
-### 5. Make It Compile
-
-```rust
-// src/lib.rs
-pub mod mcp;
-pub mod debug;
-pub mod dap;
-pub mod adapters;
-pub mod process;
-pub mod error;
-
-pub use mcp::McpServer;
-
-// src/mcp/mod.rs
-pub struct McpServer;
-
-impl McpServer {
-    pub async fn new() -> anyhow::Result<Self> {
-        Ok(Self)
-    }
-
-    pub fn is_running(&self) -> bool {
-        true
-    }
-}
-```
-
-### 6. Run Tests Again
-
-```bash
-cargo test
-# ✅ Test passes!
-```
-
-**You're now in the TDD cycle! Continue building feature by feature.**
+**Estimated Reading Time:** 5 minutes
 
 ---
 
-## CLI Development
+## What is the Debugger MCP?
 
-### Create CLI Binary
+The Debugger MCP (Model Context Protocol) server provides debugging capabilities for programs through a standardized interface. It acts as a bridge between AI agents and Debug Adapter Protocol (DAP) debuggers, allowing programmatic debugging of Python, Ruby, and other supported languages.
 
-```rust
-// src/main.rs
-use clap::{Parser, Subcommand};
+### Key Concepts
 
-#[derive(Parser)]
-#[command(name = "debugger_mcp")]
-#[command(about = "DAP-based MCP debugging server")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Start the MCP server (STDIO transport)
-    Serve {
-        #[arg(short, long)]
-        verbose: bool,
-    },
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Serve { verbose } => {
-            if verbose {
-                println!("Starting MCP server in verbose mode...");
-            }
-            debugger_mcp::serve().await?;
-        }
-    }
-
-    Ok(())
-}
-
-// src/lib.rs
-pub async fn serve() -> anyhow::Result<()> {
-    println!("MCP server started. Listening on STDIO...");
-    // TODO: Implement actual server loop
-    Ok(())
-}
-```
-
-### Test CLI
-
-```bash
-cargo run -- serve
-# MCP server started. Listening on STDIO...
-
-cargo run -- serve --verbose
-# Starting MCP server in verbose mode...
-# MCP server started. Listening on STDIO...
-
-cargo run -- --help
-# DAP-based MCP debugging server
-#
-# Usage: debugger_mcp <COMMAND>
-#
-# Commands:
-#   serve  Start the MCP server (STDIO transport)
-#   help   Print this message or the help of the given subcommand(s)
-```
+1. **Asynchronous Operations**: Many operations return immediately while work continues in the background
+2. **Session-Based**: Each debugging workflow starts by creating a session
+3. **State Machine**: Sessions progress through well-defined states (Initializing → Running → Stopped → etc.)
+4. **Polling Pattern**: You must poll `debugger_session_state` to detect state changes
 
 ---
 
-## TDD Workflow Example
+## Your First Debugging Session
 
-### Feature: Set Python Breakpoint
+Here's the simplest possible debugging workflow:
 
-#### Step 1: Write Integration Test
+### Step 1: Start a Session
 
-```rust
-// tests/integration/fizzbuzz_test.rs
+```json
+Tool: debugger_start
+Parameters: {
+  "language": "python",
+  "program": "/path/to/script.py",
+  "stopOnEntry": true
+}
 
-#[tokio::test]
-async fn test_set_breakpoint_python() {
-    // Start server
-    let mut client = TestMcpClient::new().await;
-
-    // Start debugger
-    let session_id = client.call_tool("debugger_start", json!({
-        "mode": "launch",
-        "language": "python",
-        "program": "tests/fixtures/fizzbuzz.py"
-    })).await.unwrap();
-
-    // Set breakpoint
-    let response = client.call_tool("debugger_set_breakpoint", json!({
-        "sessionId": session_id,
-        "source": "tests/fixtures/fizzbuzz.py",
-        "line": 3
-    })).await.unwrap();
-
-    assert_eq!(response["verified"], true);
-    assert_eq!(response["line"], 3);
+Response: {
+  "sessionId": "abc-123-def",
+  "status": "started"
 }
 ```
 
-**Run**: `cargo test test_set_breakpoint_python`
-**Result**: ❌ Fails (not implemented)
+**Important:** This returns immediately (< 100ms) but initialization continues in the background.
 
-#### Step 2: Write Unit Test for Tool
+### Step 2: Wait for Initialization
 
-```rust
-// src/mcp/tools/breakpoint.rs
+```json
+Tool: debugger_session_state
+Parameters: {
+  "sessionId": "abc-123-def"
+}
 
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_set_breakpoint_tool() {
-        let manager = SessionManager::new_test();
-        let tool = SetBreakpointTool::new(manager);
-
-        let params = json!({
-            "sessionId": "test-session",
-            "source": "/path/to/file.py",
-            "line": 10
-        });
-
-        let result = tool.handle(params).await.unwrap();
-        assert_eq!(result["verified"], true);
-    }
+Response: {
+  "sessionId": "abc-123-def",
+  "state": "Initializing",  // Keep polling!
+  "details": {}
 }
 ```
 
-**Run**: `cargo test test_set_breakpoint_tool`
-**Result**: ❌ Fails (not implemented)
+**Poll every 50-100ms until state changes to "Stopped"** (typically takes 200-500ms total).
 
-#### Step 3: Implement Tool
-
-```rust
-// src/mcp/tools/breakpoint.rs
-
-use async_trait::async_trait;
-use serde_json::{json, Value};
-use crate::error::Error;
-
-pub struct SetBreakpointTool {
-    session_manager: Arc<SessionManager>,
-}
-
-#[async_trait]
-impl ToolHandler for SetBreakpointTool {
-    async fn handle(&self, params: Value) -> Result<Value, Error> {
-        let session_id = params["sessionId"]
-            .as_str()
-            .ok_or(Error::MissingParam("sessionId"))?;
-
-        let source = params["source"]
-            .as_str()
-            .ok_or(Error::MissingParam("source"))?;
-
-        let line = params["line"]
-            .as_u64()
-            .ok_or(Error::MissingParam("line"))? as i64;
-
-        let session = self.session_manager
-            .get_session(session_id)
-            .await?;
-
-        let bp = session.write().await
-            .set_breakpoint(source, line)
-            .await?;
-
-        Ok(json!({
-            "id": bp.id,
-            "verified": bp.verified,
-            "line": bp.line
-        }))
-    }
+```json
+Response (after waiting): {
+  "sessionId": "abc-123-def",
+  "state": "Stopped",
+  "details": {
+    "threadId": 1,
+    "reason": "entry"  // Stopped at program entry
+  }
 }
 ```
 
-**Run**: `cargo test test_set_breakpoint_tool`
-**Result**: ✅ Passes (if underlying components implemented)
+### Step 3: Set a Breakpoint
 
-#### Step 4: Implement Session.set_breakpoint
+Now that execution is paused, set a breakpoint:
 
-```rust
-// src/debug/session.rs
+```json
+Tool: debugger_set_breakpoint
+Parameters: {
+  "sessionId": "abc-123-def",
+  "sourcePath": "/path/to/script.py",
+  "line": 42
+}
 
-impl DebugSession {
-    pub async fn set_breakpoint(
-        &mut self,
-        source: &str,
-        line: i64
-    ) -> Result<Breakpoint, Error> {
-        // Use DAP client to set breakpoint
-        let bp_response = self.dap_client
-            .set_breakpoints(source, &[SourceBreakpoint {
-                line,
-                column: None,
-                condition: None,
-                hit_condition: None,
-                log_message: None,
-            }])
-            .await?;
-
-        let bp = bp_response.breakpoints[0].clone();
-
-        // Store in session state
-        self.breakpoints.push(bp.clone());
-
-        Ok(bp)
-    }
+Response: {
+  "verified": true,  // Breakpoint was accepted!
+  "sourcePath": "/path/to/script.py",
+  "line": 42
 }
 ```
 
-#### Step 5: Run All Tests
+### Step 4: Continue Execution
 
-```bash
-cargo test
-# ✅ All tests pass!
-```
-
----
-
-## Test Fixtures
-
-### Python FizzBuzz (tests/fixtures/fizzbuzz.py)
-
-```python
-def fizzbuzz(n):
-    if n % 15 == 0:
-        return "FizzBuzz"
-    elif n % 3 == 0:
-        return "Fizz"
-    elif n % 5 == 0:
-        return "Buzz"
-    else:
-        return str(n)
-
-def main():
-    results = []
-    for i in range(1, 16):
-        result = fizzbuzz(i)
-        results.append(result)
-    print("Results:", results)
-
-if __name__ == "__main__":
-    main()
-```
-
-### Test MCP Client Helper
-
-```rust
-// tests/integration/helpers.rs
-
-use serde_json::Value;
-use tokio::process::{Command, Child};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-pub struct TestMcpClient {
-    process: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    seq: u64,
+```json
+Tool: debugger_continue
+Parameters: {
+  "sessionId": "abc-123-def"
 }
 
-impl TestMcpClient {
-    pub async fn new() -> Self {
-        let mut process = Command::new("cargo")
-            .args(&["run", "--", "serve"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+Response: {
+  "status": "continued"
+}
+```
 
-        let stdin = process.stdin.take().unwrap();
-        let stdout = BufReader::new(process.stdout.take().unwrap());
+**Again, poll `debugger_session_state`** to detect when the breakpoint is hit.
 
-        Self {
-            process,
-            stdin,
-            stdout,
-            seq: 1,
-        }
-    }
+### Step 5: Inspect When Stopped
 
-    pub async fn call_tool(
-        &mut self,
-        tool: &str,
-        params: Value
-    ) -> anyhow::Result<Value> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": self.seq,
-            "method": "tools/call",
-            "params": {
-                "name": tool,
-                "arguments": params
-            }
-        });
-
-        self.seq += 1;
-
-        // Send request
-        let request_str = serde_json::to_string(&request)?;
-        self.stdin.write_all(request_str.as_bytes()).await?;
-        self.stdin.write_all(b"\n").await?;
-        self.stdin.flush().await?;
-
-        // Read response
-        let mut line = String::new();
-        self.stdout.read_line(&mut line).await?;
-
-        let response: Value = serde_json::from_str(&line)?;
-
-        if let Some(error) = response.get("error") {
-            anyhow::bail!("MCP error: {}", error);
-        }
-
-        Ok(response["result"].clone())
-    }
+```json
+Tool: debugger_stack_trace
+Parameters: {
+  "sessionId": "abc-123-def"
 }
 
-impl Drop for TestMcpClient {
-    fn drop(&mut self) {
-        let _ = self.process.kill();
+Response: {
+  "stackFrames": [
+    {
+      "id": 0,
+      "name": "my_function",
+      "source": {"path": "/path/to/script.py"},
+      "line": 42,
+      "column": 5
     }
+  ]
+}
+```
+
+```json
+Tool: debugger_evaluate
+Parameters: {
+  "sessionId": "abc-123-def",
+  "expression": "variable_name"
+}
+
+Response: {
+  "result": "42"
+}
+```
+
+### Step 6: Clean Up
+
+```json
+Tool: debugger_disconnect
+Parameters: {
+  "sessionId": "abc-123-def"
+}
+
+Response: {
+  "status": "disconnected"
 }
 ```
 
 ---
 
-## Development Checklist
+## Key Patterns You Must Follow
 
-### Phase 1: Foundation (Days 1-2)
+### 1. Always Use stopOnEntry for Breakpoints
 
-- [ ] `cargo new --lib debugger_mcp`
-- [ ] Add all dependencies
-- [ ] Create directory structure
-- [ ] Implement CLI skeleton with clap
-- [ ] Write first test (server starts)
-- [ ] Make test pass
-- [ ] Set up logging
+❌ **Wrong:**
+```
+Start session with stopOnEntry: false
+Try to set breakpoint
+Breakpoint is missed because program already ran past that line
+```
 
-### Phase 2: MCP Protocol (Days 3-5)
+✅ **Correct:**
+```
+Start session with stopOnEntry: true
+Wait for state "Stopped" with reason "entry"
+Set breakpoints while paused
+Continue execution
+```
 
-- [ ] Implement STDIO transport (read/write JSON-RPC)
-- [ ] Write tests for transport
-- [ ] Implement MCP initialize request
-- [ ] Implement tool routing
-- [ ] Write integration test with TestMcpClient
-- [ ] Make integration test pass
+### 2. Always Poll for State Changes
 
-### Phase 3: DAP Client (Days 6-10)
+❌ **Wrong:**
+```
+Call debugger_start
+Immediately call debugger_set_breakpoint
+Fails because session not ready yet
+```
 
-- [ ] Research debugpy protocol
-- [ ] Implement DAP wire protocol
-- [ ] Write tests for wire protocol
-- [ ] Implement process spawning
-- [ ] Test spawning debugpy manually
-- [ ] Implement DAP initialize sequence
-- [ ] Write integration test for DAP client
+✅ **Correct:**
+```
+Call debugger_start
+Loop: call debugger_session_state every 50-100ms
+Wait until state is NOT "Initializing"
+Then proceed with next operation
+```
 
-### Phase 4: Session Management (Days 11-14)
+### 3. Check State Before Operations
 
-- [ ] Implement SessionManager
-- [ ] Implement DebugSession state machine
-- [ ] Write state machine tests
-- [ ] Connect MCP tools to sessions
-- [ ] Write tool unit tests
+Different operations require different states:
 
-### Phase 5: Core Tools (Days 15-18)
+| Operation | Required State |
+|-----------|---------------|
+| `debugger_set_breakpoint` | Running or Stopped (Stopped recommended) |
+| `debugger_continue` | Stopped |
+| `debugger_stack_trace` | Stopped |
+| `debugger_evaluate` | Stopped |
 
-- [ ] Implement `debugger_start`
-- [ ] Implement `debugger_set_breakpoint`
-- [ ] Implement `debugger_continue`
-- [ ] Implement `debugger_evaluate`
-- [ ] Write unit tests for each tool
-- [ ] Write integration tests
-
-### Phase 6: FizzBuzz Test (Days 19-21)
-
-- [ ] Create fizzbuzz.py fixture
-- [ ] Write complete FizzBuzz integration test
-- [ ] Run test, fix bugs
-- [ ] Verify with manual Claude Desktop testing
-- [ ] Document findings
+**Always call `debugger_session_state` first to verify!**
 
 ---
 
-## Debugging Tips
+## Common Mistakes
 
-### Enable Verbose Logging
+### Mistake 1: Not Waiting for Initialization
 
-```bash
-RUST_LOG=debug cargo run -- serve --verbose
+```javascript
+// BAD: No polling!
+let session = debugger_start(...)
+debugger_set_breakpoint(session.sessionId, ...)  // FAILS!
 ```
 
-### Test Individual Components
-
-```bash
-# Test only MCP transport
-cargo test --lib mcp::transport
-
-# Test only DAP client
-cargo test --lib dap::client
-
-# Test only integration
-cargo test --test integration
-```
-
-### Manual STDIO Testing
-
-```bash
-# Start server
-cargo run -- serve
-
-# In another terminal, send JSON-RPC:
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize"}' | cargo run -- serve
-```
-
-### Debug Python Debugger Issues
-
-```bash
-# Test debugpy standalone
-python -m debugpy --listen 5678 --wait-for-client tests/fixtures/fizzbuzz.py
-
-# In another terminal:
-nc localhost 5678
-# Send DAP initialize request manually
-```
-
----
-
-## Common Issues & Solutions
-
-### Issue: "debugpy not found"
-
-**Solution**:
-```bash
-pip install debugpy
-```
-
-### Issue: "Process spawning fails"
-
-**Solution**: Check that Python is in PATH
-```bash
-which python
-python --version
-```
-
-### Issue: "Tests hang"
-
-**Solution**: Add timeouts
-```rust
-#[tokio::test(flavor = "multi_thread")]
-async fn test_with_timeout() {
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        actual_test()
-    ).await.unwrap();
+```javascript
+// GOOD: Poll until ready
+let session = debugger_start(...)
+while (true) {
+  let state = debugger_session_state(session.sessionId)
+  if (state.state === "Stopped" && state.details.reason === "entry") break
+  await sleep(50ms)
 }
+debugger_set_breakpoint(session.sessionId, ...)  // SUCCESS!
 ```
 
-### Issue: "DAP protocol errors"
+### Mistake 2: Forgetting stopOnEntry
 
-**Solution**: Enable DAP logging
-```bash
-cargo run -- serve --log-dap
+```javascript
+// BAD: Can't set early breakpoints
+debugger_start({
+  language: "python",
+  program: "script.py",
+  stopOnEntry: false  // Program will run immediately!
+})
+```
+
+```javascript
+// GOOD: Pauses at entry
+debugger_start({
+  language: "python",
+  program: "script.py",
+  stopOnEntry: true  // Gives you time to set breakpoints
+})
+```
+
+### Mistake 3: Not Polling After Continue
+
+```javascript
+// BAD: No way to know when stopped!
+debugger_continue(sessionId)
+debugger_stack_trace(sessionId)  // Might fail if still running!
+```
+
+```javascript
+// GOOD: Poll to detect stop
+debugger_continue(sessionId)
+while (true) {
+  let state = debugger_session_state(sessionId)
+  if (state.state === "Stopped") break
+  await sleep(50ms)
+}
+debugger_stack_trace(sessionId)  // SUCCESS!
 ```
 
 ---
 
-## Resources
+## Understanding the Resources
 
-### Documentation
-- Main proposal: `docs/DAP_MCP_SERVER_PROPOSAL.md`
-- Components: `docs/architecture/COMPONENTS.md`
-- MVP plan: `docs/MVP_IMPLEMENTATION_PLAN.md`
+The debugger MCP provides several resources to help you:
 
-### External References
-- [DAP Specification](https://microsoft.github.io/debug-adapter-protocol/)
-- [debugpy Documentation](https://github.com/microsoft/debugpy)
-- [Clap Documentation](https://docs.rs/clap/)
-- [Tokio Tutorial](https://tokio.rs/tokio/tutorial)
+### Interactive Resources (JSON)
+- `debugger://workflows` - Complete step-by-step workflows with timing info
+- `debugger://state-machine` - Full state diagram with all transitions
+- `debugger://error-handling` - Error codes and recovery strategies
 
-### Example Code
-- [nvim-dap](https://github.com/mfussenegger/nvim-dap) - Neovim DAP client
-- [vscode-debugadapter-node](https://github.com/microsoft/vscode-debugadapter-node) - Official DAP SDK
+### Documentation Resources (Markdown)
+- `debugger-docs://getting-started` - This guide
+- `debugger-docs://guide/async-initialization` - Deep dive on async behavior
+- `debugger-docs://troubleshooting` - Common problems and solutions
+
+**Access these via MCP resources/read!**
+
+---
+
+## Quick Reference: Typical Workflow
+
+```
+1. debugger_start (stopOnEntry: true)
+   ↓ returns immediately
+2. Poll debugger_session_state
+   ↓ until state = "Stopped", reason = "entry"
+3. debugger_set_breakpoint (while stopped)
+   ↓ check verified: true
+4. debugger_continue
+   ↓ returns immediately
+5. Poll debugger_session_state
+   ↓ until state = "Stopped", reason = "breakpoint"
+6. debugger_stack_trace (inspect context)
+7. debugger_evaluate (inspect variables)
+8. debugger_continue (or debugger_disconnect if done)
+```
+
+**Total time:** ~1-2 seconds for typical workflow
 
 ---
 
 ## Next Steps
 
-1. **Set up project**: Follow "Quick Start" section above
-2. **Read MVP plan**: `docs/MVP_IMPLEMENTATION_PLAN.md`
-3. **Start coding**: Begin with first test (server starts)
-4. **Follow TDD**: Red → Green → Refactor
-5. **Run FizzBuzz test**: Week 3 goal
+- **Try it yourself:** Use this guide to debug a simple "Hello World" program
+- **Explore workflows:** Read `debugger://workflows` for more complex scenarios
+- **Understand state machine:** Read `debugger://state-machine` to see all possible states
+- **Troubleshooting:** If something goes wrong, check `debugger://error-handling`
 
-**Happy coding!** 🦀🚀
+---
+
+## Prerequisites
+
+### For Python Debugging
+```bash
+pip install debugpy
+```
+
+### For Ruby Debugging
+```bash
+gem install debug
+```
+
+The debugger MCP will automatically detect and use the appropriate DAP adapter for your language.
+
+---
+
+## Support
+
+- **Workflow Examples:** `debugger://workflows`
+- **State Reference:** `debugger://state-machine`
+- **Error Help:** `debugger://error-handling`
+- **Troubleshooting:** `debugger-docs://troubleshooting`
+- **Advanced Topics:** `debugger-docs://guide/async-initialization`
+
+**Ready to debug? Start with the workflow above and experiment!**
