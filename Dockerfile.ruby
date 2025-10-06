@@ -23,11 +23,15 @@ FROM alpine:3.21
 
 # Install runtime dependencies
 # Ruby and debug gem are needed for Ruby debugging support
+# make and g++ are required to build the debug gem's native extensions
 RUN apk add --no-cache \
     ruby \
     ruby-dev \
     ruby-bundler \
+    make \
+    g++ \
     && gem install debug --no-document \
+    && apk del make g++ \
     && rm -rf /root/.gem/ruby/*/cache
 
 # Create non-root user
