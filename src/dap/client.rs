@@ -422,21 +422,30 @@ impl DapClient {
         }).await;
 
         // Step 3: Send launch request (doesn't wait for response yet)
-        info!("Sending launch request");
+        info!("Sending launch request with args: {:?}", launch_args);
         let launch_seq = self.send_request_nowait("launch", Some(launch_args)).await?;
-        debug!("Launch request sent with seq {}", launch_seq);
+        info!("Launch request sent with seq {}", launch_seq);
 
         // Step 4: Wait for 'initialized' event signal
         if config_done_supported {
+            info!("Waiting for 'initialized' event (timeout: 5s)...");
             match tokio::time::timeout(tokio::time::Duration::from_secs(5), init_rx).await {
                 Ok(Ok(())) => {
-                    info!("Received 'initialized' event signal");
+                    info!("✅ Received 'initialized' event signal");
                 }
                 Ok(Err(_)) => {
+                    error!("❌ 'initialized' event signal was cancelled");
                     return Err(Error::Dap("'initialized' event signal was cancelled".to_string()));
                 }
                 Err(_) => {
-                    return Err(Error::Dap("Timeout waiting for 'initialized' event (5s)".to_string()));
+                    error!("❌ Timeout waiting for 'initialized' event (5s)");
+                    error!("   This usually means:");
+                    error!("   1. The program path is invalid or not found");
+                    error!("   2. The Python environment doesn't have the target program");
+                    error!("   3. The program has a syntax error preventing launch");
+                    error!("   4. debugpy couldn't start the target program");
+                    error!("   Check that the program path exists and is executable");
+                    return Err(Error::Dap("Timeout waiting for 'initialized' event (5s). Program may not exist or has errors.".to_string()));
                 }
             }
 
