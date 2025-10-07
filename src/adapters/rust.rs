@@ -84,13 +84,11 @@ impl RustAdapter {
 
     /// Get CodeLLDB args for STDIO mode
     ///
-    /// Returns: ["--port", "0"]
-    /// Port 0 means STDIO mode (not TCP socket)
+    /// Returns: [] (empty)
+    /// CodeLLDB uses STDIO by default when no --port argument is provided.
+    /// The --port flag is for TCP mode only.
     pub fn args() -> Vec<String> {
-        vec![
-            "--port".to_string(),
-            "0".to_string(),  // STDIO mode
-        ]
+        vec![]  // Empty = STDIO mode (default)
     }
 
     /// Adapter ID for CodeLLDB

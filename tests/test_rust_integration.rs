@@ -32,11 +32,11 @@ fn test_rust_adapter_id() {
     assert_eq!(RustAdapter::adapter_id(), "codelldb");
 }
 
-/// Test that CodeLLDB args use STDIO mode (--port 0)
+/// Test that CodeLLDB args use STDIO mode (empty args)
 #[test]
 fn test_rust_adapter_args() {
     let args = RustAdapter::args();
-    assert_eq!(args, vec!["--port", "0"], "CodeLLDB should use STDIO mode (--port 0)");
+    assert_eq!(args, Vec::<String>::new(), "CodeLLDB should use STDIO mode (no args = default)");
 }
 
 /// Test that launch args use binary path (not source) and include stopOnEntry
