@@ -4,7 +4,8 @@ use crate::dap::socket_helper;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use std::time::Duration;
-use tracing::info;
+use tracing::{error, info};
+use super::logging::DebugAdapterLogger;
 
 /// Node.js vscode-js-debug adapter configuration
 ///
@@ -154,6 +155,111 @@ impl NodeJsAdapter {
     /// Adapter ID for Node.js
     pub fn adapter_id() -> &'static str {
         "nodejs"
+    }
+}
+
+// ============================================================================
+// DebugAdapterLogger Trait Implementation
+// ============================================================================
+
+impl DebugAdapterLogger for NodeJsAdapter {
+    fn language_name(&self) -> &str {
+        "Node.js"
+    }
+
+    fn language_emoji(&self) -> &str {
+        "🟢"
+    }
+
+    fn transport_type(&self) -> &str {
+        "TCP Socket (Multi-Session)"
+    }
+
+    fn adapter_id(&self) -> &str {
+        "vscode-js-debug"
+    }
+
+    fn command_line(&self) -> String {
+        // DAP server path varies by installation, show template
+        "node <dapDebugServer.js> --server=<PORT>".to_string()
+    }
+
+    fn requires_workaround(&self) -> bool {
+        true
+    }
+
+    fn workaround_reason(&self) -> Option<&str> {
+        Some("vscode-js-debug uses parent-child session architecture - parent doesn't send stopped events")
+    }
+
+    fn log_spawn_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [NODEJS] Failed to spawn vscode-js-debug: {}", error);
+        error!("   Command template: {}", self.command_line());
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. vscode-js-debug not installed:");
+        error!("      → npm install -g @vscode/js-debug");
+        error!("      → Or install via VS Code extension");
+        error!("   2. DAP server path incorrect or not found");
+        error!("   3. Node.js not in PATH → which node");
+        error!("   4. Node.js version too old (need >= 14.x)");
+        error!("   5. Port already in use (rare with dynamic allocation)");
+        error!("   ");
+        error!("   Troubleshooting:");
+        error!("   $ node --version");
+        error!("   Expected: v14.0.0 or higher");
+        error!("   ");
+        error!("   Find DAP server:");
+        error!("   $ find ~/.vscode -name dapDebugServer.js 2>/dev/null");
+        error!("   $ find /usr/local/lib -name dapDebugServer.js 2>/dev/null");
+    }
+
+    fn log_connection_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [NODEJS] Socket connection failed: {}", error);
+        error!("   Transport: TCP Socket");
+        error!("   Timeout: 2 seconds");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. vscode-js-debug process crashed on startup");
+        error!("   2. Port blocked by firewall");
+        error!("   3. DAP server failed to listen on --server flag");
+        error!("   4. Incompatible vscode-js-debug version");
+        error!("   ");
+        error!("   Troubleshooting:");
+        error!("   Check if vscode-js-debug process is still running:");
+        error!("   $ ps aux | grep dapDebugServer");
+        error!("   ");
+        error!("   Test DAP server manually:");
+        error!("   $ node <path-to-dapDebugServer.js> --server=9229");
+        error!("   Should output: Debug server listening at ws://...");
+    }
+
+    fn log_init_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [NODEJS] DAP initialization failed: {}", error);
+        error!("   Socket connected but DAP protocol handshake failed");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. Incompatible vscode-js-debug version");
+        error!("   2. Multi-session handshake failed");
+        error!("   3. Program path doesn't exist or has errors");
+        error!("   4. Required Node.js modules not installed");
+        error!("   5. DAP protocol version mismatch");
+        error!("   ");
+        error!("   Note: vscode-js-debug uses a parent-child session architecture.");
+        error!("   The parent session coordinates, child sessions do actual debugging.");
+        error!("   ");
+        error!("   Verify program can run:");
+        error!("   $ node <program_path>");
+    }
+}
+
+/// Helper to log Node.js-specific connection success with port information
+impl NodeJsDebugSession {
+    pub fn log_connection_success_with_details(&self) {
+        info!("✅ [NODEJS] Connected to vscode-js-debug on port {}", self.port);
+        info!("   Socket: localhost:{}", self.port);
+        info!("   Process ID: {:?}", self.process.id());
+        info!("   Architecture: Parent session (child sessions spawned dynamically)");
     }
 }
 

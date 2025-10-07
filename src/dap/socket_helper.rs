@@ -56,8 +56,7 @@ mod tests {
     #[test]
     fn test_find_free_port() {
         let port = find_free_port().unwrap();
-        assert!(port > 0);
-        assert!(port < 65536);
+        assert!(port > 0); // Port should be non-zero (u16 max is 65535 anyway)
     }
 
     #[test]

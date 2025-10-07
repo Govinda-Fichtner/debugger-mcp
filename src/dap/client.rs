@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 type ResponseSender = oneshot::Sender<Response>;
 type EventNotifier = Arc<Notify>;
 type EventCallback = Arc<dyn Fn(Event) + Send + Sync>;
+type ChildSessionSpawnCallback = Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
 
 /// DAP Client with event-driven architecture
 pub struct DapClient {
@@ -25,6 +26,8 @@ pub struct DapClient {
     event_notifiers: Arc<RwLock<HashMap<String, EventNotifier>>>,
     // New: Event callbacks (can have multiple callbacks per event)
     event_callbacks: Arc<RwLock<HashMap<String, Vec<EventCallback>>>>,
+    // Callback for child session spawning (Node.js multi-session)
+    child_session_spawn_callback: Arc<RwLock<Option<ChildSessionSpawnCallback>>>,
     // Channel for sending write requests to avoid lock contention
     write_tx: mpsc::UnboundedSender<Message>,
     _child: Option<Child>,
@@ -74,6 +77,7 @@ impl DapClient {
 
         let event_notifiers = Arc::new(RwLock::new(HashMap::new()));
         let event_callbacks = Arc::new(RwLock::new(HashMap::new()));
+        let child_session_spawn_callback = Arc::new(RwLock::new(None));
 
         let client = Self {
             transport: transport.clone(),
@@ -82,6 +86,7 @@ impl DapClient {
             event_tx,
             event_notifiers: event_notifiers.clone(),
             event_callbacks: event_callbacks.clone(),
+            child_session_spawn_callback: child_session_spawn_callback.clone(),
             write_tx: write_tx.clone(),
             _child: child,
         };
@@ -92,6 +97,7 @@ impl DapClient {
             pending_requests.clone(),
             event_notifiers.clone(),
             event_callbacks.clone(),
+            child_session_spawn_callback.clone(),
             event_rx,
         ));
 
@@ -110,6 +116,7 @@ impl DapClient {
         pending_requests: Arc<RwLock<HashMap<i32, ResponseSender>>>,
         event_notifiers: Arc<RwLock<HashMap<String, EventNotifier>>>,
         event_callbacks: Arc<RwLock<HashMap<String, Vec<EventCallback>>>>,
+        child_session_spawn_callback: Arc<RwLock<Option<ChildSessionSpawnCallback>>>,
         mut _event_rx: mpsc::UnboundedReceiver<Event>,
     ) {
         loop {
@@ -192,8 +199,38 @@ impl DapClient {
                     // vscode-js-debug sends reverse requests like 'startDebugging' or 'attachedChildSession'
                     // We need to respond to these requests or the adapter will hang
 
-                    // For now, send a generic success response
-                    // In the future, we could handle specific reverse requests differently
+                    // Handle startDebugging - extract __pendingTargetId and spawn child
+                    if req.command == "startDebugging" {
+                        info!("   🎯 startDebugging request detected - extracting __pendingTargetId");
+                        if let Some(args) = &req.arguments {
+                            if let Some(config) = args.get("configuration") {
+                                if let Some(target_id) = config.get("__pendingTargetId") {
+                                    if let Some(target_id_str) = target_id.as_str() {
+                                        info!("   ✅ Found __pendingTargetId: {}", target_id_str);
+
+                                        // Invoke callback to spawn child session
+                                        let callback_guard = child_session_spawn_callback.read().await;
+                                        if let Some(callback) = callback_guard.as_ref() {
+                                            info!("   📞 Invoking child session spawn callback with target_id: {}", target_id_str);
+                                            let fut = callback(target_id_str.to_string());
+                                            drop(callback_guard);
+                                            tokio::spawn(fut);
+                                        } else {
+                                            warn!("   ⚠️  No child session spawn callback registered");
+                                        }
+                                    } else {
+                                        warn!("   ⚠️  __pendingTargetId is not a string: {:?}", target_id);
+                                    }
+                                } else {
+                                    warn!("   ⚠️  No __pendingTargetId in configuration");
+                                }
+                            } else {
+                                warn!("   ⚠️  No configuration in startDebugging arguments");
+                            }
+                        }
+                    }
+
+                    // Send success response
                     let response = Response {
                         seq: 0, // Response seq (incremental, but not critical for reverse requests)
                         request_seq: req.seq,
@@ -267,6 +304,39 @@ impl DapClient {
     pub async fn remove_event_handlers(&self, event_name: &str) {
         let mut callbacks = self.event_callbacks.write().await;
         callbacks.remove(event_name);
+    }
+
+    /// Register a callback for child session spawning (multi-session debugging)
+    ///
+    /// This callback will be invoked when a reverse request (like `startDebugging`)
+    /// contains a child session port. The callback should spawn the child session
+    /// and connect to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `callback` - Async function that takes a port number and spawns a child session
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let session_arc = Arc::new(session);
+    /// let session_clone = session_arc.clone();
+    /// parent_client.on_child_session_spawn(move |target_id| {
+    ///     let session = session_clone.clone();
+    ///     Box::pin(async move {
+    ///         if let Err(e) = session.spawn_child_session(target_id).await {
+    ///             error!("Failed to spawn child session: {}", e);
+    ///         }
+    ///     })
+    /// }).await;
+    /// ```
+    pub async fn on_child_session_spawn<F>(&self, callback: F)
+    where
+        F: Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync + 'static,
+    {
+        let mut callback_guard = self.child_session_spawn_callback.write().await;
+        *callback_guard = Some(Arc::new(callback));
+        info!("✅ Child session spawn callback registered");
     }
 
     /// Wait for a specific DAP event with a timeout (legacy method)
@@ -457,28 +527,48 @@ impl DapClient {
 
         let config_done_supported = capabilities.supports_configuration_done_request.unwrap_or(false);
 
-        // Check if we need Ruby stopOnEntry workaround
-        // Ruby debuggers (rdbg) in socket mode don't honor --stop-at-load properly.
-        // Workaround: After 'initialized' event, send explicit 'pause' request.
-        // See: docs/RUBY_STOPENTRY_FIX.md
-        let is_ruby = adapter_type == Some("ruby");
+        // Check if we need stopOnEntry workaround (Ruby and Node.js)
+        // - Ruby (rdbg): Doesn't honor --stop-at-load in socket mode
+        // - Node.js (vscode-js-debug): Uses multi-session architecture, parent doesn't send stopped events
+        // Workaround: Set entry breakpoint at first executable line, then continue
+        // See: docs/RUBY_STOPENTRY_FIX.md, docs/NODEJS_STOPONENTRY_ANALYSIS.md
+
+        // Debug logging to trace workaround detection
+        info!("🔍 Workaround detection: adapter_type = {:?}", adapter_type);
+        info!("🔍 Launch args: {}", serde_json::to_string_pretty(&launch_args).unwrap_or_else(|_| "invalid json".to_string()));
+
+        let adapter_type_str = adapter_type.unwrap_or("");
+        let needs_entry_breakpoint = adapter_type_str == "ruby" || adapter_type_str == "nodejs";
         let stop_on_entry = launch_args.get("stopOnEntry")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let needs_ruby_workaround = is_ruby && stop_on_entry;
+        let needs_workaround = needs_entry_breakpoint && stop_on_entry;
 
-        if needs_ruby_workaround {
-            info!("🔧 Ruby stopOnEntry workaround will be applied");
+        info!("🔍 adapter_type_str = '{}', needs_entry_breakpoint = {}, stop_on_entry = {}, needs_workaround = {}",
+              adapter_type_str, needs_entry_breakpoint, stop_on_entry, needs_workaround);
+
+        if needs_workaround {
+            info!("🔧 {} stopOnEntry workaround will be applied (entry breakpoint)", adapter_type_str);
         }
 
-        // Extract program path before moving launch_args (for Ruby workaround)
-        let program_path_for_breakpoint = if needs_ruby_workaround {
+        // Extract program path before moving launch_args (for entry breakpoint workaround)
+        let program_path_for_breakpoint = if needs_workaround {
             launch_args.get("program")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         } else {
             None
         };
+
+        // Modify launch_args for entry breakpoint workaround:
+        // Change stopOnEntry to false so the program runs and hits our breakpoint
+        let mut launch_args = launch_args;
+        if needs_workaround {
+            if let Some(obj) = launch_args.as_object_mut() {
+                obj.insert("stopOnEntry".to_string(), serde_json::Value::Bool(false));
+                info!("🔧 Workaround: Changed stopOnEntry to false in launch args");
+            }
+        }
 
         // Step 2: Register 'initialized' event handler BEFORE sending launch
         // This handler will be invoked DURING launch processing
@@ -510,16 +600,20 @@ impl DapClient {
                 Ok(Ok(())) => {
                     info!("✅ Received 'initialized' event signal");
 
-                    // Ruby stopOnEntry workaround: Set entry breakpoint BEFORE configurationDone
+                    // Entry breakpoint workaround: Set breakpoint BEFORE configurationDone
                     // This follows the correct DAP sequence (setBreakpoints must be before configurationDone)
-                    if needs_ruby_workaround {
-                        info!("🔧 Applying Ruby stopOnEntry workaround: setting entry breakpoint");
+                    if needs_workaround {
+                        info!("🔧 Applying {} stopOnEntry workaround: setting entry breakpoint", adapter_type_str);
                         info!("   (Per DAP spec: breakpoints must be set BEFORE configurationDone)");
 
                         match program_path_for_breakpoint.as_deref() {
                             Some(path) => {
-                                // Find first executable line
-                                let entry_line = Self::find_first_executable_line_ruby(path);
+                                // Find first executable line based on language
+                                let entry_line = if adapter_type_str == "ruby" {
+                                    Self::find_first_executable_line_ruby(path)
+                                } else {
+                                    Self::find_first_executable_line_javascript(path)
+                                };
                                 info!("  Entry breakpoint will be set at line {}", entry_line);
 
                                 // Create breakpoint at entry line
@@ -556,7 +650,7 @@ impl DapClient {
                             }
                             None => {
                                 warn!("⚠️  No program path in launch args - cannot set entry breakpoint");
-                                warn!("   Ruby stopOnEntry may not work");
+                                warn!("   {} stopOnEntry may not work", adapter_type_str);
                             }
                         }
                     }
@@ -603,6 +697,7 @@ impl DapClient {
             event_tx: self.event_tx.clone(),
             event_notifiers: self.event_notifiers.clone(),
             event_callbacks: self.event_callbacks.clone(),
+            child_session_spawn_callback: self.child_session_spawn_callback.clone(),
             write_tx: self.write_tx.clone(),
             _child: None, // Don't clone the child process
         }
@@ -714,6 +809,100 @@ impl DapClient {
             }
 
             // Found first executable line!
+            info!("  First executable line detected: {}", line_num + 1);
+            return line_num + 1; // DAP uses 1-indexed lines
+        }
+
+        // Fallback: No executable line found, use line 1
+        warn!("No executable line found in {}, using line 1", program_path);
+        1
+    }
+
+    /// Find the first executable line in a JavaScript/TypeScript source file
+    ///
+    /// Skips comments, empty lines, imports, and type declarations
+    /// to find the first actual executable line.
+    ///
+    /// Returns line number (1-indexed) or 1 as fallback.
+    fn find_first_executable_line_javascript(program_path: &str) -> usize {
+        use std::fs;
+
+        let content = match fs::read_to_string(program_path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Could not read {} for line detection: {}, using line 1", program_path, e);
+                return 1;
+            }
+        };
+
+        let mut in_multiline_comment = false;
+
+        for (line_num, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+
+            // Handle multiline comments
+            if in_multiline_comment {
+                if trimmed.contains("*/") {
+                    in_multiline_comment = false;
+                }
+                continue;
+            }
+
+            if trimmed.contains("/*") {
+                in_multiline_comment = true;
+                continue;
+            }
+
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Skip shebang
+            if line_num == 0 && trimmed.starts_with("#!") {
+                continue;
+            }
+
+            // Skip single-line comments
+            if trimmed.starts_with("//") {
+                continue;
+            }
+
+            // Skip import/require statements (not executable, just declarations)
+            if trimmed.starts_with("import ") || trimmed.starts_with("export ")
+                || trimmed.starts_with("require(") || trimmed.starts_with("const ") && trimmed.contains("require(") {
+                continue;
+            }
+
+            // Skip type declarations (TypeScript)
+            if trimmed.starts_with("type ") || trimmed.starts_with("interface ") {
+                continue;
+            }
+
+            // Skip function declarations (look for first line OUTSIDE function)
+            if trimmed.starts_with("function ") || trimmed.starts_with("const ") && trimmed.contains("=>") {
+                // Skip function declarations - we want module-level code
+                continue;
+            }
+
+            // Skip class declarations
+            if trimmed.starts_with("class ") {
+                continue;
+            }
+
+            // Skip variable declarations without initialization
+            if (trimmed.starts_with("let ") || trimmed.starts_with("var ") || trimmed.starts_with("const "))
+                && !trimmed.contains('=') {
+                continue;
+            }
+
+            // Skip indented lines (likely inside function/class bodies)
+            // Module-level executable code should start at column 0
+            if line.starts_with(' ') || line.starts_with('\t') {
+                continue;
+            }
+
+            // Found first executable line at module level!
             info!("  First executable line detected: {}", line_num + 1);
             return line_num + 1; // DAP uses 1-indexed lines
         }
