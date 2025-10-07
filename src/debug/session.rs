@@ -776,7 +776,12 @@ impl DebugSession {
 
     pub async fn stack_trace(&self) -> Result<Vec<crate::dap::types::StackFrame>> {
         let state = self.state.read().await;
-        let thread_id = state.threads.first().copied().unwrap_or(1);
+
+        // Get thread_id from the current Stopped state, or fallback to threads list
+        let thread_id = match &state.state {
+            DebugState::Stopped { thread_id, .. } => *thread_id,
+            _ => state.threads.first().copied().unwrap_or(1),
+        };
         drop(state);
 
         let client_arc = self.get_debug_client().await;
