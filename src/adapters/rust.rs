@@ -235,10 +235,15 @@ impl RustAdapter {
             // Match target type
             let matches = match target_type {
                 CargoTargetType::Binary => {
-                    kinds.iter().any(|k| k == "bin")
+                    // Regular binary (not test mode)
+                    let is_bin = kinds.iter().any(|k| k == "bin");
+                    let is_test_mode = artifact["profile"]["test"].as_bool().unwrap_or(false);
+                    is_bin && !is_test_mode
                 }
                 CargoTargetType::Test => {
-                    kinds.iter().any(|k| k == "test")
+                    // Test binary - check profile.test field
+                    // cargo test --no-run builds with kind=["bin"] but profile.test=true
+                    artifact["profile"]["test"].as_bool().unwrap_or(false)
                 }
                 CargoTargetType::Example(name) => {
                     if !kinds.iter().any(|k| k == "example") {
@@ -333,20 +338,24 @@ impl RustAdapter {
         // Build cargo command
         let mut cmd = Command::new("cargo");
         cmd.current_dir(cargo_root_path);
-        cmd.arg("build");
-        cmd.arg("--message-format=json");
 
-        // Add target-specific flags
+        // Add target-specific command and flags
         match target_type {
             CargoTargetType::Binary => {
-                // Default behavior - builds all binaries
+                // Build binaries
+                cmd.arg("build");
+                cmd.arg("--message-format=json");
             }
             CargoTargetType::Test => {
                 // Build tests without running them
                 cmd.arg("test");
                 cmd.arg("--no-run");
+                cmd.arg("--message-format=json");
             }
             CargoTargetType::Example(name) => {
+                // Build specific example
+                cmd.arg("build");
+                cmd.arg("--message-format=json");
                 cmd.arg("--example");
                 cmd.arg(name);
             }

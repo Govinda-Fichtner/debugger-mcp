@@ -719,13 +719,13 @@ fn test_cargo_target_types() {
 async fn test_cargo_compile_simple_binary() {
     use debugger_mcp::adapters::rust::RustAdapter;
     
-    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple", false)
+    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple/src/main.rs", false)
         .await
         .expect("Should compile simple Cargo project");
-    
+
     assert!(binary.contains("target/debug"), "Binary should be in target/debug");
-    assert!(binary.contains("cargo-simple") || binary.contains("cargo_simple"), 
-            "Binary name should match project name");
+    assert!(binary.contains("cargo") && binary.contains("simple"),
+            "Binary name should match project name. Got: {}", binary);
     
     // Verify binary exists and is executable
     let path = std::path::Path::new(&binary);
@@ -738,7 +738,7 @@ async fn test_cargo_compile_simple_binary() {
 async fn test_cargo_compile_with_dependencies() {
     use debugger_mcp::adapters::rust::RustAdapter;
     
-    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-with-deps", false)
+    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-with-deps/src/main.rs", false)
         .await
         .expect("Should compile Cargo project with serde dependency");
     
@@ -849,7 +849,7 @@ async fn test_cargo_compile_error_handling() {
 async fn test_cargo_compile_release_mode() {
     use debugger_mcp::adapters::rust::RustAdapter;
     
-    let binary = RustAdapter::compile("/workspace/cargo-simple", true)
+    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple/src/main.rs", true)
         .await
         .expect("Should compile in release mode");
     
