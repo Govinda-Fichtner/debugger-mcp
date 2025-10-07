@@ -273,6 +273,167 @@ async fn test_rust_stack_trace_uses_correct_thread_id() {
         .expect("Failed to disconnect");
 }
 
+/// Regression test for evaluate context bug
+///
+/// Bug: evaluate() was using context: "repl" which causes CodeLLDB to interpret
+/// expressions as LLDB commands instead of code expressions, resulting in:
+/// - Variables returning empty strings
+/// - Arithmetic expressions failing with "'1' is not a valid command"
+///
+/// This test ensures that variable and expression evaluation works correctly
+/// using context: "watch" for code expression evaluation.
+#[tokio::test]
+#[ignore] // Requires Docker with full debugging environment
+async fn test_rust_evaluate_uses_watch_context() {
+    let session_manager = Arc::new(RwLock::new(SessionManager::new()));
+    let tools_handler = ToolsHandler::new(session_manager.clone());
+
+    // Start debug session
+    let start_args = json!({
+        "language": "rust",
+        "program": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+        "stopOnEntry": true
+    });
+
+    let start_result = tools_handler
+        .handle_tool("debugger_start", start_args)
+        .await
+        .expect("Failed to start session");
+
+    let session_id = start_result["sessionId"]
+        .as_str()
+        .expect("No sessionId in response");
+
+    // Set breakpoint at line 9
+    let bp_args = json!({
+        "sessionId": session_id,
+        "sourcePath": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+        "line": 9
+    });
+
+    tools_handler
+        .handle_tool("debugger_set_breakpoint", bp_args)
+        .await
+        .expect("Failed to set breakpoint");
+
+    // Continue to breakpoint
+    let continue_args = json!({
+        "sessionId": session_id
+    });
+
+    tools_handler
+        .handle_tool("debugger_continue", continue_args)
+        .await
+        .expect("Failed to continue");
+
+    // Wait for breakpoint hit
+    let wait_args = json!({
+        "sessionId": session_id,
+        "timeout": 5000
+    });
+
+    let stop_result = tools_handler
+        .handle_tool("debugger_wait_for_stop", wait_args)
+        .await
+        .expect("Failed to wait for stop");
+
+    assert_eq!(stop_result["reason"], "breakpoint", "Should stop at breakpoint");
+
+    // Get stack trace to get frameId
+    let stack_trace_args = json!({
+        "sessionId": session_id
+    });
+
+    let stack_result = tools_handler
+        .handle_tool("debugger_stack_trace", stack_trace_args)
+        .await
+        .expect("Stack trace should succeed");
+
+    let frames = stack_result["frames"]
+        .as_array()
+        .expect("Stack trace should return frames array");
+
+    assert!(frames.len() > 0, "Should have at least one stack frame");
+
+    let frame_id = frames[0]["id"]
+        .as_i64()
+        .expect("Frame should have id");
+
+    // THIS IS THE REGRESSION TEST: evaluate should work with "watch" context
+    // Test 1: Evaluate a variable
+    let eval_var_args = json!({
+        "sessionId": session_id,
+        "expression": "n",
+        "frameId": frame_id
+    });
+
+    let eval_var_result = tools_handler
+        .handle_tool("debugger_evaluate", eval_var_args)
+        .await
+        .expect("Variable evaluation should succeed with 'watch' context");
+
+    let var_value = eval_var_result["result"]
+        .as_str()
+        .expect("Evaluation should return result string");
+
+    assert!(
+        !var_value.is_empty(),
+        "Variable 'n' should have non-empty value, got: '{}'",
+        var_value
+    );
+
+    // Verify the value is a number (should be 4 on first breakpoint hit)
+    let n_val: i32 = var_value.trim().parse()
+        .expect(&format!("Variable 'n' should be a number, got: '{}'", var_value));
+
+    assert_eq!(
+        n_val, 4,
+        "First breakpoint hit should be at n=4 (first number divisible by 4)"
+    );
+
+    // Test 2: Evaluate an arithmetic expression
+    let eval_expr_args = json!({
+        "sessionId": session_id,
+        "expression": "1 + 1",
+        "frameId": frame_id
+    });
+
+    let eval_expr_result = tools_handler
+        .handle_tool("debugger_evaluate", eval_expr_args)
+        .await
+        .expect("Arithmetic evaluation should succeed (not 'not a valid command' error)");
+
+    let expr_value = eval_expr_result["result"]
+        .as_str()
+        .expect("Evaluation should return result string");
+
+    assert!(
+        !expr_value.is_empty(),
+        "Expression '1 + 1' should have non-empty value"
+    );
+
+    // Verify the result is 2
+    let expr_val: i32 = expr_value.trim().parse()
+        .expect(&format!("Expression '1 + 1' should evaluate to number, got: '{}'", expr_value));
+
+    assert_eq!(expr_val, 2, "Expression '1 + 1' should evaluate to 2");
+
+    println!(
+        "✅ Evaluation verified: n={}, 1+1={} (using 'watch' context)",
+        var_value, expr_value
+    );
+
+    // Clean up
+    let disconnect_args = json!({
+        "sessionId": session_id
+    });
+
+    tools_handler
+        .handle_tool("debugger_disconnect", disconnect_args)
+        .await
+        .expect("Failed to disconnect");
+}
+
 /// Test full debugging workflow: FizzBuzz bug detection
 #[tokio::test]
 #[ignore] // Requires Docker with full debugging environment
