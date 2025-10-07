@@ -5,3 +5,5 @@
 /.claude-flow/
 coverage/
 target/tarpaulin/
+core.*
+tests/fixtures/target/

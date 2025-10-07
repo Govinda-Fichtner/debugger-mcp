@@ -85,10 +85,11 @@ impl RustAdapter {
     /// Get CodeLLDB args for STDIO mode
     ///
     /// Returns: [] (empty)
-    /// CodeLLDB uses STDIO by default when no --port argument is provided.
-    /// The --port flag is for TCP mode only.
+    /// CodeLLDB 1.11.0+ uses STDIO by default when run without --port argument.
+    /// --port is only for TCP mode. When stdio pipes are provided (via DapClient::spawn),
+    /// CodeLLDB automatically detects and uses STDIO for DAP communication.
     pub fn args() -> Vec<String> {
-        vec![]  // Empty = STDIO mode (default)
+        vec![]  // Empty = STDIO mode (default for v1.11.0+)
     }
 
     /// Adapter ID for CodeLLDB
@@ -354,9 +355,7 @@ mod tests {
     #[test]
     fn test_args() {
         let args = RustAdapter::args();
-        assert_eq!(args.len(), 2);
-        assert_eq!(args[0], "--port");
-        assert_eq!(args[1], "0");  // STDIO mode
+        assert_eq!(args.len(), 0);  // Empty for STDIO mode (v1.11.0+)
     }
 
     #[test]
