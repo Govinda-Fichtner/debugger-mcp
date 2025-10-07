@@ -37,7 +37,10 @@ impl SessionManager {
         cwd: Option<String>,
         stop_on_entry: bool,
     ) -> Result<String> {
-        let (command, adapter_args, adapter_id, launch_args) = match language {
+        // Type alias for STDIO adapter tuple: (command, args, adapter_id, launch_args, adapter_for_logging)
+        type StdioAdapterTuple<'a> = (String, Vec<String>, &'a str, serde_json::Value, Box<dyn DebugAdapterLogger + 'a>);
+
+        let (command, adapter_args, adapter_id, launch_args, adapter): StdioAdapterTuple = match language {
             "python" => {
                 // Create adapter instance for logging
                 let adapter = PythonAdapter;
@@ -58,7 +61,7 @@ impl SessionManager {
                 // Log transport initialization
                 adapter.log_transport_init();
 
-                (cmd, adapter_args, adapter_id, launch_args)
+                (cmd, adapter_args, adapter_id, launch_args, Box::new(adapter))
             }
             "ruby" => {
                 // Create adapter instance for logging
@@ -255,15 +258,13 @@ impl SessionManager {
                 // Log transport initialization
                 adapter.log_transport_init();
 
-                (cmd, adapter_args, adapter_id, launch_args)
+                (cmd, adapter_args, adapter_id, launch_args, Box::new(adapter))
             }
             _ => return Err(Error::AdapterNotFound(language.to_string())),
         };
 
         // Spawn DAP client (Python/Rust path - uses STDIO transport)
-        // Create adapter for error logging
-        let adapter = PythonAdapter;
-
+        // Adapter instance is passed from match arm above for language-specific logging
         adapter.log_spawn_attempt();
         let client = DapClient::spawn(&command, &adapter_args)
             .await
@@ -286,8 +287,8 @@ impl SessionManager {
             sessions.insert(session_id.clone(), session_arc.clone());
         }
 
-        // Python doesn't require workaround, but log for consistency
-        adapter.log_workaround_applied(); // Will do nothing since requires_workaround() returns false
+        // Log workaround if needed (Python/Rust don't require workarounds)
+        adapter.log_workaround_applied();
 
         // Initialize and launch in the background
         tokio::spawn(session_arc.initialize_and_launch_async(

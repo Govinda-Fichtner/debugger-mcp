@@ -52,9 +52,9 @@
 use serde_json::{json, Value};
 use super::logging::DebugAdapterLogger;
 use crate::{Result, Error};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::process::Command;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// Rust CodeLLDB adapter configuration
 pub struct RustAdapter;
