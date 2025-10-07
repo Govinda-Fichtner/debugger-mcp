@@ -206,27 +206,6 @@ impl DebugSession {
         }
     }
 
-    /// Get the parent client (for multi-session mode operations that must go to parent)
-    ///
-    /// Returns None for single-session mode.
-    async fn get_parent_client(&self) -> Option<Arc<RwLock<DapClient>>> {
-        match &self.session_mode {
-            SessionMode::Single { .. } => None,
-            SessionMode::MultiSession { parent_client, .. } => Some(parent_client.clone()),
-        }
-    }
-
-    /// Get the multi-session manager (if in multi-session mode)
-    fn get_multi_session_manager(&self) -> Option<&MultiSessionManager> {
-        match &self.session_mode {
-            SessionMode::Single { .. } => None,
-            SessionMode::MultiSession {
-                multi_session_manager,
-                ..
-            } => Some(multi_session_manager),
-        }
-    }
-
     /// Spawn a child session for multi-session debugging (Node.js vscode-js-debug)
     ///
     /// This method is called when vscode-js-debug sends a `startDebugging` reverse request

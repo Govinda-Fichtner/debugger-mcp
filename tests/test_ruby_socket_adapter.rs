@@ -365,7 +365,7 @@ async fn test_ruby_adapter_performance() {
     drop(file);
 
     let start = std::time::Instant::now();
-    let session = RubyAdapter::spawn(test_script, &[], true)
+    let _session = RubyAdapter::spawn(test_script, &[], true)
         .await
         .expect("Failed to spawn");
 
