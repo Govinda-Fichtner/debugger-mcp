@@ -1,5 +1,23 @@
 /// Multi-connection TCP listener for vscode-js-debug
 ///
+/// **STATUS**: UNUSED / DEPRECATED
+///
+/// This module was created for an earlier implementation approach where the
+/// MCP server would act as a TCP proxy accepting multiple connections.
+///
+/// **Current Implementation**: The MCP server spawns `vscode-js-debug` as a
+/// separate process with `--server` flag. Child sessions connect directly to
+/// vscode-js-debug's port (not our server). See `src/adapters/nodejs.rs`.
+///
+/// **Kept for**:
+/// - Historical reference of multi-connection approach
+/// - Potential future use if we switch to embedded vscode-js-debug
+/// - Demonstrates proper multi-connection TCP listener pattern
+///
+/// **TODO**: Remove in future refactoring if no use case emerges.
+///
+/// # Original Design (not currently used)
+///
 /// vscode-js-debug uses a multi-session architecture where:
 /// 1. Parent session connects first to the DAP server port
 /// 2. When parent sends `launch`, vscode-js-debug spawns child Node.js process

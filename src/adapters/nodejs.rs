@@ -1,3 +1,67 @@
+//! Node.js Debug Adapter (vscode-js-debug)
+//!
+//! # Version Compatibility
+//!
+//! **Tested with**: vscode-js-debug v1.105.0 (December 2024)
+//!
+//! **Compatible versions**: v1.90+ (multi-session architecture stable)
+//!
+//! ## Breaking Changes to Watch For
+//!
+//! ### v1.90.0+ (Current)
+//! - Multi-session via `startDebugging` reverse request
+//! - `__pendingTargetId` in launch configuration
+//! - Child connections to same port as parent
+//!
+//! ### Future Version Concerns
+//! - **Protocol changes**: If `startDebugging` format changes, update `spawn_child_session()`
+//! - **New reverse requests**: Monitor for new server-to-client requests
+//! - **Launch args**: Check if `__pendingTargetId` gets renamed or restructured
+//!
+//! ## Upgrade Testing Procedure
+//!
+//! When upgrading vscode-js-debug:
+//!
+//! 1. **Update Installation**:
+//!    ```bash
+//!    # Download latest release
+//!    wget https://github.com/microsoft/vscode-js-debug/releases/download/vX.Y.Z/js-debug-dap-vX.Y.Z.tar.gz
+//!    tar -xzf js-debug-dap-vX.Y.Z.tar.gz -C /usr/local/lib/
+//!    ```
+//!
+//! 2. **Run Integration Tests**:
+//!    ```bash
+//!    cargo test --test test_nodejs_integration -- --nocapture
+//!    ```
+//!
+//! 3. **Critical Test Cases**:
+//!    - ✅ `test_spawn_vscode_js_debug_server` - Server spawns and accepts connections
+//!    - ✅ `test_nodejs_stop_on_entry_native_support` - Entry breakpoint workaround
+//!    - ✅ `test_nodejs_fizzbuzz_debugging_workflow` - Full debugging cycle
+//!
+//! 4. **Manual Verification**:
+//!    ```bash
+//!    # Check reverse requests in logs
+//!    cargo run -- serve --verbose 2>&1 | grep "REVERSE REQUEST"
+//!    # Should see: 'startDebugging' with __pendingTargetId
+//!    ```
+//!
+//! 5. **Rollback Plan**:
+//!    - Keep old version in `/usr/local/lib/js-debug-v<old>/`
+//!    - Update `dap_server_path()` locations if needed
+//!
+//! ## Known Issues
+//!
+//! - **stopOnEntry doesn't work on parent** - Fixed via entry breakpoint on child
+//! - **No launch response for child** - Expected, use `send_request_nowait()`
+//! - **IPv6 connection issues** - Fixed by explicit 127.0.0.1 binding
+//!
+//! # See Also
+//!
+//! - `docs/NODEJS_ALL_TESTS_PASSING.md` - Implementation details
+//! - https://github.com/microsoft/vscode-js-debug - Upstream project
+//! - DAP spec: https://microsoft.github.io/debug-adapter-protocol/
+
 use serde_json::{json, Value};
 use crate::{Result, Error};
 use crate::dap::socket_helper;

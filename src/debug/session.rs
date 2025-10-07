@@ -1,3 +1,72 @@
+//! Debug Session Management
+//!
+//! This module implements debug session lifecycle and multi-session coordination.
+//!
+//! # Architecture Overview
+//!
+//! ## Single Session Mode (Python, Ruby)
+//!
+//! Simple 1:1 relationship between MCP session and DAP adapter:
+//!
+//! ```text
+//! DebugSession → DapClient → Adapter (debugpy/rdbg) → User Program
+//! ```
+//!
+//! All debugging operations (breakpoints, stepping, evaluation) go directly through
+//! the single DapClient. State changes from the adapter are immediately reflected
+//! in the session state.
+//!
+//! ## Multi-Session Mode (Node.js with vscode-js-debug)
+//!
+//! Complex parent-child architecture required by vscode-js-debug:
+//!
+//! ```text
+//! DebugSession (parent)
+//!   ↓
+//!   ├─→ Parent DapClient → vscode-js-debug (port 12345)
+//!   │                      ↓ [spawns via startDebugging]
+//!   └─→ Child DapClient ──→ vscode-js-debug (SAME port 12345)
+//!                          ↓ [launches with __pendingTargetId]
+//!                          User Program (actual debugging happens here)
+//! ```
+//!
+//! ### Why Multi-Session?
+//!
+//! vscode-js-debug uses a **parent-child session model** where:
+//! - **Parent**: Coordinates debugging, doesn't run user code
+//! - **Child**: Actually runs user code, sends stopped/continued events
+//!
+//! This enables advanced features like:
+//! - Debugging multiple processes (parent + spawned children)
+//! - Browser + Node.js debugging simultaneously
+//! - Worker threads / cluster debugging
+//!
+//! ### How Child Sessions Work
+//!
+//! 1. Parent sends `launch` → vscode-js-debug prepares to spawn child
+//! 2. vscode-js-debug sends **reverse request** `startDebugging` with `__pendingTargetId`
+//! 3. MCP server spawns child connection to SAME port
+//! 4. Child sends `initialize` + `launch` with `__pendingTargetId`
+//! 5. vscode-js-debug matches child to pending target
+//! 6. Child events forwarded to parent session state
+//!
+//! ### Event Forwarding
+//!
+//! Child session events (stopped, continued, breakpoint) are forwarded to parent
+//! session state so the user sees a unified debugging experience, not separate
+//! parent/child sessions.
+//!
+//! ### Entry Breakpoint Workaround
+//!
+//! `stopOnEntry: true` doesn't work on parent (parent doesn't run code).
+//! Solution: Set breakpoint at first executable line on child session.
+//!
+//! # See Also
+//!
+//! - `src/debug/multi_session.rs` - MultiSessionManager implementation
+//! - `src/dap/client.rs` - DapClient with reverse request handling
+//! - `docs/NODEJS_ALL_TESTS_PASSING.md` - Multi-session architecture details
+
 use crate::Result;
 use crate::dap::client::DapClient;
 use crate::dap::types::{Source, SourceBreakpoint};
@@ -87,12 +156,34 @@ impl DebugSession {
 
     /// Get the client to use for debugging operations
     ///
-    /// For single-session mode, returns the sole client.
-    /// For multi-session mode, returns the active child client if available,
-    /// otherwise falls back to the parent client.
+    /// # Parent vs Child Responsibilities (Multi-Session Mode)
     ///
-    /// This abstraction allows debugging operations to work transparently
-    /// regardless of session mode.
+    /// ## Parent Client (vscode-js-debug coordinator)
+    /// - **Coordinates** multi-session debugging
+    /// - Handles `launch` request (prepares child spawning)
+    /// - Sends reverse requests (`startDebugging`)
+    /// - **Does NOT run user code**
+    /// - **Does NOT send stopped/continued events**
+    /// - Use for: Initial launch coordination only
+    ///
+    /// ## Child Client (actual debugging)
+    /// - **Runs user code** via spawned process
+    /// - Sends `stopped` events (breakpoints, steps, entry)
+    /// - Sends `continued` events (resume execution)
+    /// - Sends `terminated` events (program exit)
+    /// - Handles all debugging operations (step, evaluate, stack trace)
+    /// - Use for: All debugging operations after child spawns
+    ///
+    /// ## Routing Logic
+    /// 1. **Before child spawns**: Use parent (no choice)
+    /// 2. **After child spawns**: Use child (where code runs)
+    /// 3. **No child available**: Fall back to parent (with warning)
+    ///
+    /// This method returns the **child client if available** (preferred for debugging),
+    /// otherwise falls back to parent client (only for initial launch).
+    ///
+    /// # Single Session Mode
+    /// Returns the sole client directly (Python, Ruby) - no routing needed.
     async fn get_debug_client(&self) -> Arc<RwLock<DapClient>> {
         match &self.session_mode {
             SessionMode::Single { client } => {
