@@ -159,6 +159,120 @@ async fn test_rust_session_with_program_args() {
     assert!(result.is_ok(), "Rust session with args failed: {:?}", result.err());
 }
 
+/// Regression test for stack trace thread ID bug
+///
+/// Bug: stack_trace() was using state.threads.first().unwrap_or(1) instead of
+/// extracting thread_id from DebugState::Stopped variant, causing "Invalid thread_id"
+/// errors when the actual thread ID (e.g., 127) differed from the fallback value (1).
+///
+/// This test ensures that after hitting a breakpoint, we can successfully retrieve
+/// the stack trace using the correct thread ID from the stopped event.
+#[tokio::test]
+#[ignore] // Requires Docker with full debugging environment
+async fn test_rust_stack_trace_uses_correct_thread_id() {
+    let session_manager = Arc::new(RwLock::new(SessionManager::new()));
+    let tools_handler = ToolsHandler::new(session_manager.clone());
+
+    // Start debug session
+    let start_args = json!({
+        "language": "rust",
+        "program": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+        "stopOnEntry": true
+    });
+
+    let start_result = tools_handler
+        .handle_tool("debugger_start", start_args)
+        .await
+        .expect("Failed to start session");
+
+    let session_id = start_result["sessionId"]
+        .as_str()
+        .expect("No sessionId in response");
+
+    // Set breakpoint at line 9
+    let bp_args = json!({
+        "sessionId": session_id,
+        "sourcePath": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+        "line": 9
+    });
+
+    tools_handler
+        .handle_tool("debugger_set_breakpoint", bp_args)
+        .await
+        .expect("Failed to set breakpoint");
+
+    // Continue to breakpoint
+    let continue_args = json!({
+        "sessionId": session_id
+    });
+
+    tools_handler
+        .handle_tool("debugger_continue", continue_args)
+        .await
+        .expect("Failed to continue");
+
+    // Wait for breakpoint hit
+    let wait_args = json!({
+        "sessionId": session_id,
+        "timeout": 5000
+    });
+
+    let stop_result = tools_handler
+        .handle_tool("debugger_wait_for_stop", wait_args)
+        .await
+        .expect("Failed to wait for stop");
+
+    assert_eq!(stop_result["reason"], "breakpoint", "Should stop at breakpoint");
+
+    let thread_id = stop_result["threadId"]
+        .as_i64()
+        .expect("Stop event should include threadId");
+
+    // THIS IS THE REGRESSION TEST: stack_trace should work after breakpoint
+    // Previously failed with "Invalid thread_id" because it used wrong thread ID
+    let stack_trace_args = json!({
+        "sessionId": session_id
+    });
+
+    let stack_result = tools_handler
+        .handle_tool("debugger_stack_trace", stack_trace_args)
+        .await
+        .expect("Stack trace should succeed with correct thread ID from Stopped state");
+
+    // Verify we got stack frames
+    let frames = stack_result["frames"]
+        .as_array()
+        .expect("Stack trace should return frames array");
+
+    assert!(
+        frames.len() > 0,
+        "Should have at least one stack frame when stopped at breakpoint"
+    );
+
+    // Verify the top frame is at our breakpoint location
+    let top_frame = &frames[0];
+    assert_eq!(
+        top_frame["line"], 9,
+        "Top frame should be at breakpoint line 9"
+    );
+
+    // Log thread ID for debugging (helps verify fix)
+    println!(
+        "✅ Stack trace retrieved successfully with thread_id {} (from Stopped state)",
+        thread_id
+    );
+
+    // Clean up
+    let disconnect_args = json!({
+        "sessionId": session_id
+    });
+
+    tools_handler
+        .handle_tool("debugger_disconnect", disconnect_args)
+        .await
+        .expect("Failed to disconnect");
+}
+
 /// Test full debugging workflow: FizzBuzz bug detection
 #[tokio::test]
 #[ignore] // Requires Docker with full debugging environment
