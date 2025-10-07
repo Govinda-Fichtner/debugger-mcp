@@ -999,7 +999,7 @@ impl DapClient {
         let args = EvaluateArguments {
             expression: expression.to_string(),
             frame_id,
-            context: Some("repl".to_string()),
+            context: Some("watch".to_string()),  // Use "watch" for code expression evaluation, not "repl" (LLDB commands)
         };
 
         let response = self.send_request("evaluate", Some(serde_json::to_value(args)?)).await?;
