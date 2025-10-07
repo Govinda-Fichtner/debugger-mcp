@@ -272,6 +272,36 @@ mod nodejs_integration_tests {
             })
             .await;
 
+        let events_clone = Arc::clone(&events);
+        client
+            .on_event("output", move |event| {
+                let events = events_clone.clone();
+                let category = event.body.as_ref()
+                    .and_then(|b| b.get("category"))
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("unknown");
+                let output = event.body.as_ref()
+                    .and_then(|b| b.get("output"))
+                    .and_then(|o| o.as_str())
+                    .unwrap_or("");
+                println!("📨 Event received: output ({}): {}", category, output.trim());
+                tokio::spawn(async move {
+                    events.lock().await.push(event);
+                });
+            })
+            .await;
+
+        let events_clone = Arc::clone(&events);
+        client
+            .on_event("process", move |event| {
+                let events = events_clone.clone();
+                println!("📨 Event received: process");
+                tokio::spawn(async move {
+                    events.lock().await.push(event);
+                });
+            })
+            .await;
+
         println!("✅ Event callbacks registered");
 
         // Give event processing task time to start
@@ -308,7 +338,7 @@ mod nodejs_integration_tests {
         assert!(got_initialized, "❌ FAILED: Did not receive 'initialized' event");
         println!("✅ Received 'initialized' event");
 
-        // 7. Send launch request with stopOnEntry: true
+        // 7. Send launch request with stopOnEntry: true (don't wait for response)
         println!("\n🚀 Launching with stopOnEntry: true");
         let launch_args = NodeJsAdapter::launch_config(
             test_program.to_str().unwrap(),
@@ -319,18 +349,17 @@ mod nodejs_integration_tests {
 
         println!("   Launch config: {}", serde_json::to_string_pretty(&launch_args).unwrap());
 
-        // Try using send_request directly (like Ruby test does)
+        // Send launch request without waiting for response
+        // The response will come AFTER configurationDone
         client
-            .send_request("launch", Some(launch_args))
+            .send_request_nowait("launch", Some(launch_args))
             .await
             .expect("Launch request failed");
 
-        println!("✅ Launch request sent");
+        println!("✅ Launch request sent (not waiting for response)");
 
-        // Give it a moment to process
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // 8. Send configurationDone to complete initialization
+        // 8. Send configurationDone immediately
+        // According to DAP protocol, launch response arrives after configurationDone
         println!("\n📤 Sending configurationDone");
         client
             .configuration_done()
@@ -338,6 +367,9 @@ mod nodejs_integration_tests {
             .expect("ConfigurationDone failed");
 
         println!("✅ Configuration done");
+
+        // Give time for launch response and reverse requests to arrive
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         // 9. Wait for 'stopped' event at entry
         println!("\n⏳ Waiting for 'stopped' event (up to 10 seconds)...");

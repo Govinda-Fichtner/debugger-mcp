@@ -185,8 +185,34 @@ impl DapClient {
                         info!("  No callbacks registered for event '{}'", event.event);
                     }
                 }
-                Message::Request(_) => {
-                    warn!("Received request from debug adapter (reverse requests not implemented)");
+                Message::Request(req) => {
+                    info!("🔄 REVERSE REQUEST received: '{}' (seq {})", req.command, req.seq);
+                    info!("   Arguments: {:?}", req.arguments);
+
+                    // vscode-js-debug sends reverse requests like 'startDebugging' or 'attachedChildSession'
+                    // We need to respond to these requests or the adapter will hang
+
+                    // For now, send a generic success response
+                    // In the future, we could handle specific reverse requests differently
+                    let response = Response {
+                        seq: 0, // Response seq (incremental, but not critical for reverse requests)
+                        request_seq: req.seq,
+                        success: true,
+                        command: req.command.clone(),
+                        message: None,
+                        body: None,
+                    };
+
+                    info!("   Sending success response to reverse request '{}'", req.command);
+
+                    // Send response back via transport (don't use write channel to avoid deadlock)
+                    let transport_clone = transport.clone();
+                    tokio::spawn(async move {
+                        let mut transport = transport_clone.lock().await;
+                        if let Err(e) = transport.write_message(&Message::Response(response)).await {
+                            error!("Failed to send reverse request response: {}", e);
+                        }
+                    });
                 }
             }
 
