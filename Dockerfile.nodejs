@@ -45,11 +45,13 @@ RUN cd /tmp && \
 # Create symlink for easier access
 RUN ln -s /usr/local/lib/vscode-js-debug/src/dapDebugServer.js /usr/local/bin/js-debug
 
-# Verify installation
+# Verify installation and print paths
 RUN echo "=== Node.js Debugger Installation ===" && \
-    node --version && \
-    npm --version && \
-    ls -la /usr/local/lib/vscode-js-debug/src/dapDebugServer.js
+    echo "Node.js version: $(node --version)" && \
+    echo "npm version: $(npm --version)" && \
+    echo "vscode-js-debug location: /usr/local/lib/vscode-js-debug/src/dapDebugServer.js" && \
+    ls -la /usr/local/lib/vscode-js-debug/src/dapDebugServer.js && \
+    echo "✅ vscode-js-debug v1.105.0 installed successfully"
 
 # Create non-root user
 RUN addgroup -g 1000 mcpuser && \

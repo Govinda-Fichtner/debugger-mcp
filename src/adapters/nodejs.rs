@@ -97,11 +97,13 @@ impl NodeJsAdapter {
     /// Get the path to dapDebugServer.js
     ///
     /// Checks multiple locations in order:
-    /// 1. /tmp/js-debug/src/dapDebugServer.js (for tests)
-    /// 2. /usr/local/lib/js-debug/src/dapDebugServer.js (production)
-    /// 3. ~/.vscode-js-debug/src/dapDebugServer.js (user install)
+    /// 1. /usr/local/lib/vscode-js-debug/src/dapDebugServer.js (Docker container)
+    /// 2. /tmp/js-debug/src/dapDebugServer.js (integration tests)
+    /// 3. /usr/local/lib/js-debug/src/dapDebugServer.js (alternative install)
+    /// 4. ~/.vscode-js-debug/src/dapDebugServer.js (user install)
     pub fn dap_server_path() -> Result<String> {
         let locations = vec![
+            "/usr/local/lib/vscode-js-debug/src/dapDebugServer.js",
             "/tmp/js-debug/src/dapDebugServer.js",
             "/usr/local/lib/js-debug/src/dapDebugServer.js",
             "~/.vscode-js-debug/src/dapDebugServer.js",
