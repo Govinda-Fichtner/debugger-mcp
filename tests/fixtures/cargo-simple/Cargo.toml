@@ -1,0 +1,6 @@
+[package]
+name = "cargo-simple"
+version = "0.1.0"
+edition = "2021"
+
+# No dependencies - minimal Cargo project

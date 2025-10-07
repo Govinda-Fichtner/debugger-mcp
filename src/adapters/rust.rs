@@ -52,12 +52,37 @@
 use serde_json::{json, Value};
 use super::logging::DebugAdapterLogger;
 use crate::{Result, Error};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Rust CodeLLDB adapter configuration
 pub struct RustAdapter;
+
+/// Rust project type detection result
+#[derive(Debug, Clone, PartialEq)]
+pub enum RustProjectType {
+    /// Single Rust source file (e.g., fizzbuzz.rs)
+    SingleFile(PathBuf),
+    /// Cargo project with manifest
+    CargoProject {
+        /// Cargo.toml root directory
+        root: PathBuf,
+        /// Path to Cargo.toml
+        manifest: PathBuf,
+    },
+}
+
+/// Cargo target type (binary, test, example)
+#[derive(Debug, Clone, PartialEq)]
+pub enum CargoTargetType {
+    /// Binary executable (from [[bin]] or src/main.rs)
+    Binary,
+    /// Test binary (from `cargo test --no-run`)
+    Test,
+    /// Example binary (from examples/)
+    Example(String),
+}
 
 impl RustAdapter {
     /// Get CodeLLDB command path
@@ -97,10 +122,318 @@ impl RustAdapter {
         "codelldb"
     }
 
+    /// Detect project type from source file path
+    ///
+    /// Walks up directory tree from source file to find Cargo.toml.
+    /// If found, returns CargoProject. Otherwise, returns SingleFile.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Path to .rs source file
+    ///
+    /// # Returns
+    ///
+    /// RustProjectType indicating single file or Cargo project
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Source file in Cargo project
+    /// let project = RustAdapter::detect_project_type("/workspace/cargo-simple/src/main.rs")?;
+    /// // Returns: CargoProject { root: "/workspace/cargo-simple", manifest: "/workspace/cargo-simple/Cargo.toml" }
+    ///
+    /// // Single file not in Cargo project
+    /// let project = RustAdapter::detect_project_type("/workspace/fizzbuzz.rs")?;
+    /// // Returns: SingleFile("/workspace/fizzbuzz.rs")
+    /// ```
+    pub fn detect_project_type(source_path: &str) -> Result<RustProjectType> {
+        let source = PathBuf::from(source_path);
+
+        // Validate source file exists
+        if !source.exists() {
+            return Err(Error::Compilation(format!(
+                "Source file not found: {}",
+                source_path
+            )));
+        }
+
+        debug!("🔍 [RUST] Detecting project type for: {}", source_path);
+
+        // Walk up directory tree to find Cargo.toml
+        let mut current = source.parent();
+        while let Some(dir) = current {
+            let manifest = dir.join("Cargo.toml");
+            if manifest.exists() {
+                info!("📦 [RUST] Found Cargo project: {}", dir.display());
+                info!("📦 [RUST] Manifest: {}", manifest.display());
+                return Ok(RustProjectType::CargoProject {
+                    root: dir.to_path_buf(),
+                    manifest,
+                });
+            }
+            current = dir.parent();
+        }
+
+        // No Cargo.toml found - single file
+        info!("📄 [RUST] Single file project: {}", source_path);
+        Ok(RustProjectType::SingleFile(source))
+    }
+
+    /// Parse Cargo JSON output to find executable path
+    ///
+    /// Cargo with `--message-format=json` emits JSON lines for each build artifact.
+    /// This function parses those lines to find the executable binary.
+    ///
+    /// # Arguments
+    ///
+    /// * `json_output` - Cargo JSON output (one JSON object per line)
+    /// * `target_type` - Type of target to find (Binary, Test, Example)
+    ///
+    /// # Returns
+    ///
+    /// Path to executable binary
+    ///
+    /// # Example JSON Output
+    ///
+    /// ```json
+    /// {"reason":"compiler-artifact","target":{"kind":["bin"],"name":"cargo-simple"},"executable":"/workspace/cargo-simple/target/debug/cargo-simple","fresh":false}
+    /// {"reason":"compiler-artifact","target":{"kind":["test"],"name":"integration_test"},"executable":"/workspace/cargo-simple/target/debug/deps/integration_test-abc123","fresh":false}
+    /// ```
+    pub fn parse_cargo_executable(
+        json_output: &str,
+        target_type: &CargoTargetType,
+    ) -> Result<String> {
+        debug!("🔍 [RUST] Parsing Cargo JSON for {:?} target", target_type);
+
+        for line in json_output.lines() {
+            // Skip empty lines
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            // Parse JSON line
+            let artifact: Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue, // Skip non-JSON lines (warnings, etc.)
+            };
+
+            // Only process compiler-artifact messages
+            if artifact["reason"] != "compiler-artifact" {
+                continue;
+            }
+
+            // Check if executable field exists
+            let Some(executable) = artifact["executable"].as_str() else {
+                continue;
+            };
+
+            // Get target kind
+            let Some(kinds) = artifact["target"]["kind"].as_array() else {
+                continue;
+            };
+
+            // Match target type
+            let matches = match target_type {
+                CargoTargetType::Binary => {
+                    kinds.iter().any(|k| k == "bin")
+                }
+                CargoTargetType::Test => {
+                    kinds.iter().any(|k| k == "test")
+                }
+                CargoTargetType::Example(name) => {
+                    if !kinds.iter().any(|k| k == "example") {
+                        false
+                    } else {
+                        // Check example name matches
+                        artifact["target"]["name"].as_str() == Some(name)
+                    }
+                }
+            };
+
+            if matches {
+                info!("✅ [RUST] Found executable: {}", executable);
+                return Ok(executable.to_string());
+            }
+        }
+
+        Err(Error::Compilation(format!(
+            "No executable found for target type: {:?}",
+            target_type
+        )))
+    }
+
+    /// Compile Cargo project
+    ///
+    /// Runs `cargo build` with JSON output and parses the executable path.
+    /// Supports binaries, tests, and examples.
+    ///
+    /// # Arguments
+    ///
+    /// * `cargo_root` - Path to Cargo project root (directory containing Cargo.toml)
+    /// * `target_type` - Type of target to build
+    /// * `release` - If true, compile with optimizations
+    ///
+    /// # Returns
+    ///
+    /// Path to compiled executable binary
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Build binary
+    /// let binary = RustAdapter::compile_cargo_project(
+    ///     "/workspace/cargo-simple",
+    ///     &CargoTargetType::Binary,
+    ///     false
+    /// ).await?;
+    ///
+    /// // Build test
+    /// let test_binary = RustAdapter::compile_cargo_project(
+    ///     "/workspace/cargo-simple",
+    ///     &CargoTargetType::Test,
+    ///     false
+    /// ).await?;
+    ///
+    /// // Build example
+    /// let example = RustAdapter::compile_cargo_project(
+    ///     "/workspace/cargo-example",
+    ///     &CargoTargetType::Example("demo".to_string()),
+    ///     false
+    /// ).await?;
+    /// ```
+    pub async fn compile_cargo_project(
+        cargo_root: &str,
+        target_type: &CargoTargetType,
+        release: bool,
+    ) -> Result<String> {
+        let cargo_root_path = Path::new(cargo_root);
+
+        // Validate Cargo root exists
+        if !cargo_root_path.exists() {
+            return Err(Error::Compilation(format!(
+                "Cargo root not found: {}",
+                cargo_root
+            )));
+        }
+
+        // Validate Cargo.toml exists
+        let manifest = cargo_root_path.join("Cargo.toml");
+        if !manifest.exists() {
+            return Err(Error::Compilation(format!(
+                "Cargo.toml not found in: {}",
+                cargo_root
+            )));
+        }
+
+        let build_type = if release { "release" } else { "debug" };
+        info!("🔨 [RUST] Building Cargo project: {}", cargo_root);
+        info!("🔨 [RUST] Target type: {:?}", target_type);
+        info!("🔨 [RUST] Build type: {}", build_type);
+
+        // Build cargo command
+        let mut cmd = Command::new("cargo");
+        cmd.current_dir(cargo_root_path);
+        cmd.arg("build");
+        cmd.arg("--message-format=json");
+
+        // Add target-specific flags
+        match target_type {
+            CargoTargetType::Binary => {
+                // Default behavior - builds all binaries
+            }
+            CargoTargetType::Test => {
+                // Build tests without running them
+                cmd.arg("test");
+                cmd.arg("--no-run");
+            }
+            CargoTargetType::Example(name) => {
+                cmd.arg("--example");
+                cmd.arg(name);
+            }
+        }
+
+        if release {
+            cmd.arg("--release");
+        }
+
+        debug!("🔨 [RUST] Running: cargo {:?}", cmd.as_std().get_args());
+
+        // Execute compilation
+        let output = cmd.output().await.map_err(|e| {
+            Error::Compilation(format!(
+                "Failed to execute cargo: {}. Is cargo installed?",
+                e
+            ))
+        })?;
+
+        // Check compilation result
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("❌ [RUST] Cargo build failed");
+            error!("❌ [RUST] stderr:\n{}", stderr);
+            return Err(Error::Compilation(format!(
+                "Cargo build failed:\n{}",
+                stderr
+            )));
+        }
+
+        // Parse JSON output to find executable
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let executable = Self::parse_cargo_executable(&stdout, target_type)?;
+
+        info!("✅ [RUST] Cargo build successful: {}", executable);
+
+        Ok(executable)
+    }
+
+    /// Compile Rust source (auto-detects single-file vs Cargo project)
+    ///
+    /// This is the main entry point for Rust compilation. It automatically detects
+    /// whether the source is part of a Cargo project and routes to the appropriate
+    /// compilation method.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_path` - Path to .rs source file
+    /// * `release` - If true, compile with optimizations
+    ///
+    /// # Returns
+    ///
+    /// Path to compiled executable binary
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// // Single file - uses rustc
+    /// let binary = RustAdapter::compile("/workspace/fizzbuzz.rs", false).await?;
+    ///
+    /// // Cargo project - uses cargo build
+    /// let binary = RustAdapter::compile("/workspace/cargo-simple/src/main.rs", false).await?;
+    /// ```
+    pub async fn compile(source_path: &str, release: bool) -> Result<String> {
+        // Detect project type
+        let project_type = Self::detect_project_type(source_path)?;
+
+        match project_type {
+            RustProjectType::SingleFile(_) => {
+                info!("📄 [RUST] Compiling single file with rustc");
+                Self::compile_single_file(source_path, release).await
+            }
+            RustProjectType::CargoProject { root, .. } => {
+                info!("📦 [RUST] Compiling Cargo project");
+                let root_str = root.to_str().ok_or_else(|| {
+                    Error::Compilation("Non-UTF8 Cargo root path".to_string())
+                })?;
+                // Default to building binary target
+                Self::compile_cargo_project(root_str, &CargoTargetType::Binary, release).await
+            }
+        }
+    }
+
     /// Compile Rust source file to binary
     ///
     /// This compiles a single Rust source file using rustc.
-    /// For Cargo projects, use `compile_cargo_project()` instead (future).
+    /// For Cargo projects, use `compile_cargo_project()` instead.
     ///
     /// # Arguments
     ///

@@ -233,9 +233,9 @@ impl SessionManager {
 
                 info!("🔨 [RUST] Compiling Rust source before debugging");
 
-                // Step 1: Compile the Rust source file
+                // Step 1: Compile the Rust source (auto-detects single-file vs Cargo project)
                 RustAdapter::log_compilation_start(&program, false);  // false = debug build
-                let binary_path = RustAdapter::compile_single_file(&program, false)
+                let binary_path = RustAdapter::compile(&program, false)
                     .await
                     .map_err(|e| {
                         RustAdapter::log_compilation_error(&e);
