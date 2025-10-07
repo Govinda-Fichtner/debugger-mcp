@@ -2,6 +2,7 @@ use crate::{Error, Result};
 use crate::adapters::python::PythonAdapter;
 use crate::adapters::ruby::RubyAdapter;
 use crate::adapters::nodejs::NodeJsAdapter;
+use crate::adapters::rust::RustAdapter;
 use crate::adapters::logging::DebugAdapterLogger;
 use crate::dap::client::DapClient;
 use super::session::DebugSession;
@@ -220,10 +221,46 @@ impl SessionManager {
 
                 return Ok(session_id);
             }
+            "rust" => {
+                // Create adapter instance for logging
+                let adapter = RustAdapter;
+
+                // Log adapter selection
+                adapter.log_selection();
+
+                info!("🔨 [RUST] Compiling Rust source before debugging");
+
+                // Step 1: Compile the Rust source file
+                RustAdapter::log_compilation_start(&program, false);  // false = debug build
+                let binary_path = RustAdapter::compile_single_file(&program, false)
+                    .await
+                    .map_err(|e| {
+                        RustAdapter::log_compilation_error(&e);
+                        e
+                    })?;
+
+                RustAdapter::log_compilation_success(&binary_path);
+
+                // Step 2: Prepare CodeLLDB adapter
+                let cmd = RustAdapter::command();
+                let adapter_args = RustAdapter::args();
+                let adapter_id = RustAdapter::adapter_id();
+                let launch_args = RustAdapter::launch_args(
+                    &binary_path,  // Use compiled binary path, not source
+                    &args,
+                    cwd.as_deref(),
+                    stop_on_entry,
+                );
+
+                // Log transport initialization
+                adapter.log_transport_init();
+
+                (cmd, adapter_args, adapter_id, launch_args)
+            }
             _ => return Err(Error::AdapterNotFound(language.to_string())),
         };
 
-        // Spawn DAP client (Python path - uses STDIO transport)
+        // Spawn DAP client (Python/Rust path - uses STDIO transport)
         // Create adapter for error logging
         let adapter = PythonAdapter;
 

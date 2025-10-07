@@ -32,6 +32,9 @@ pub enum Error {
     #[error("Timeout: {0}")]
     Timeout(String),
 
+    #[error("Compilation error: {0}")]
+    Compilation(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -45,6 +48,7 @@ impl Error {
             Error::Process(_) => -32004,
             Error::InvalidState(_) => -32005,
             Error::Timeout(_) => -32006,
+            Error::Compilation(_) => -32007,
             Error::InvalidRequest(_) => -32600,
             Error::MethodNotFound(_) => -32601,
             Error::Internal(_) => -32603,
