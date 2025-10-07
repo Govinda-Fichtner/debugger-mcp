@@ -3,29 +3,63 @@ use super::types::Message;
 use super::transport_trait::DapTransportTrait;
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::process::{ChildStdin, ChildStdout};
 use tracing::{debug, trace};
 
-/// DAP Transport using STDIO
-pub struct DapTransport {
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+/// DAP Transport - supports both STDIO and TCP socket
+pub enum DapTransport {
+    /// STDIO transport (used by Python/debugpy)
+    Stdio {
+        stdin: ChildStdin,
+        stdout: BufReader<ChildStdout>,
+    },
+    /// TCP socket transport (used by Ruby/rdbg)
+    Socket {
+        stream: BufReader<TcpStream>,
+    },
 }
 
 impl DapTransport {
+    /// Create a new STDIO transport (for Python/debugpy)
     pub fn new(stdin: ChildStdin, stdout: ChildStdout) -> Self {
-        Self {
+        Self::Stdio {
             stdin,
             stdout: BufReader::new(stdout),
         }
     }
 
+    /// Create a new TCP socket transport (for Ruby/rdbg)
+    pub fn new_socket(stream: TcpStream) -> Self {
+        Self::Socket {
+            stream: BufReader::new(stream),
+        }
+    }
+
     pub async fn read_message(&mut self) -> Result<Message> {
+        // Read from either stdio or socket
+        let (_headers, content) = match self {
+            Self::Stdio { stdout, .. } => Self::read_from_stream(stdout).await?,
+            Self::Socket { stream } => Self::read_from_stream(stream).await?,
+        };
+
+        debug!("DAP received: {}", content);
+
+        let msg: Message = serde_json::from_str(&content)
+            .map_err(|e| Error::Dap(format!("Failed to parse DAP message: {}", e)))?;
+
+        Ok(msg)
+    }
+
+    /// Helper to read DAP message from any async reader
+    async fn read_from_stream<R: AsyncBufReadExt + tokio::io::AsyncRead + Unpin>(
+        reader: &mut R
+    ) -> Result<(String, String)> {
         // Read Content-Length header
         let mut headers = String::new();
         loop {
             let mut line = String::new();
-            self.stdout.read_line(&mut line).await?;
+            reader.read_line(&mut line).await?;
 
             if line == "\r\n" || line == "\n" {
                 break;
@@ -46,30 +80,36 @@ impl DapTransport {
 
         // Read content
         let mut buffer = vec![0u8; content_length];
-        tokio::io::AsyncReadExt::read_exact(&mut self.stdout, &mut buffer).await?;
+        tokio::io::AsyncReadExt::read_exact(reader, &mut buffer).await?;
 
         let content = String::from_utf8(buffer)
             .map_err(|e| Error::Dap(format!("Invalid UTF-8: {}", e)))?;
 
-        debug!("DAP received: {}", content);
-
-        let msg: Message = serde_json::from_str(&content)
-            .map_err(|e| Error::Dap(format!("Failed to parse DAP message: {}", e)))?;
-        
-        Ok(msg)
+        Ok((headers, content))
     }
 
     pub async fn write_message(&mut self, msg: &Message) -> Result<()> {
         let content = serde_json::to_string(msg)
             .map_err(|e| Error::Dap(format!("Failed to serialize DAP message: {}", e)))?;
-        
+
         debug!("DAP sending: {}", content);
 
         let headers = format!("Content-Length: {}\r\n\r\n", content.len());
 
-        self.stdin.write_all(headers.as_bytes()).await?;
-        self.stdin.write_all(content.as_bytes()).await?;
-        self.stdin.flush().await?;
+        // Write to either stdio or socket
+        match self {
+            Self::Stdio { stdin, .. } => {
+                stdin.write_all(headers.as_bytes()).await?;
+                stdin.write_all(content.as_bytes()).await?;
+                stdin.flush().await?;
+            }
+            Self::Socket { stream } => {
+                let inner_stream = stream.get_mut();
+                inner_stream.write_all(headers.as_bytes()).await?;
+                inner_stream.write_all(content.as_bytes()).await?;
+                inner_stream.flush().await?;
+            }
+        }
 
         Ok(())
     }

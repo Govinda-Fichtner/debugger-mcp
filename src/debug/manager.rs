@@ -47,8 +47,9 @@ impl SessionManager {
                 (cmd, adapter_args, adapter_id, launch_args)
             }
             "ruby" => {
-                let cmd = RubyAdapter::command();
-                let adapter_args = RubyAdapter::args_with_options(&program, &args, stop_on_entry);
+                // Ruby uses socket-based communication, not stdio
+                // Spawn rdbg and connect to socket
+                let ruby_session = RubyAdapter::spawn(&program, &args, stop_on_entry).await?;
                 let adapter_id = RubyAdapter::adapter_id();
                 let launch_args = RubyAdapter::launch_args_with_options(
                     &program,
@@ -56,12 +57,33 @@ impl SessionManager {
                     cwd.as_deref(),
                     stop_on_entry,
                 );
-                (cmd, adapter_args, adapter_id, launch_args)
+
+                // Create DAP client from socket
+                let client = DapClient::from_socket(ruby_session.socket).await?;
+
+                // Create session
+                let session = DebugSession::new(language.to_string(), program.clone(), client).await?;
+                let session_id = session.id.clone();
+
+                // Store session immediately
+                let session_arc = Arc::new(session);
+                {
+                    let mut sessions = self.sessions.write().await;
+                    sessions.insert(session_id.clone(), session_arc.clone());
+                }
+
+                // Initialize and launch in the background
+                tokio::spawn(session_arc.initialize_and_launch_async(
+                    adapter_id.to_string(),
+                    launch_args,
+                ));
+
+                return Ok(session_id);
             }
             _ => return Err(Error::AdapterNotFound(language.to_string())),
         };
 
-        // Spawn DAP client
+        // Spawn DAP client (Python path)
         let client = DapClient::spawn(&command, &adapter_args).await?;
 
         // Create session

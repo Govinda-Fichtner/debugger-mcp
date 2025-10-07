@@ -1,20 +1,49 @@
 use serde_json::{json, Value};
+use crate::{Result, Error};
+use crate::dap::socket_helper;
+use tokio::net::TcpStream;
+use tokio::process::{Child, Command};
+use std::time::Duration;
+use tracing::info;
 
 /// Ruby rdbg (debug gem) adapter configuration
+///
+/// Unlike Python's debugpy which has a separate adapter server,
+/// rdbg runs the program directly and communicates via TCP socket.
 pub struct RubyAdapter;
+
+/// Result of spawning Ruby debugger (process + connected socket)
+pub struct RubyDebugSession {
+    pub process: Child,
+    pub socket: TcpStream,
+    pub port: u16,
+}
 
 impl RubyAdapter {
     pub fn command() -> String {
         "rdbg".to_string()
     }
 
-    pub fn args_with_options(program: &str, program_args: &[String], stop_on_entry: bool) -> Vec<String> {
-        // rdbg runs the program directly via stdio (unlike debugpy which is just an adapter server)
-        // Command format: rdbg [options] program.rb [program args]
-        let mut args = vec![];
+    /// Spawn rdbg with socket-based DAP communication
+    ///
+    /// This spawns `rdbg --open --port <PORT> program.rb` and connects to the socket.
+    /// Returns the process and connected TCP stream for DAP communication.
+    pub async fn spawn(
+        program: &str,
+        program_args: &[String],
+        stop_on_entry: bool,
+    ) -> Result<RubyDebugSession> {
+        // 1. Find free port
+        let port = socket_helper::find_free_port()?;
 
-        // Add --nonstop flag if we DON'T want to stop on entry
-        // Default rdbg behavior is to stop at program start with --stop-at-load
+        // 2. Build command args
+        let mut args = vec![
+            "--open".to_string(),
+            "--port".to_string(),
+            port.to_string(),
+        ];
+
+        // Add stop behavior flag
         if stop_on_entry {
             args.push("--stop-at-load".to_string());
         } else {
@@ -27,7 +56,27 @@ impl RubyAdapter {
         // Add program arguments
         args.extend(program_args.iter().cloned());
 
-        args
+        info!("Spawning rdbg on port {}: rdbg {:?}", port, args);
+
+        // 3. Spawn rdbg process
+        let child = Command::new("rdbg")
+            .args(&args)
+            .spawn()
+            .map_err(|e| Error::Process(format!("Failed to spawn rdbg: {}", e)))?;
+
+        // 4. Connect to socket (with 2 second timeout)
+        let socket = socket_helper::connect_with_retry(port, Duration::from_secs(2))
+            .await
+            .map_err(|e| Error::Process(format!(
+                "Failed to connect to rdbg on port {}: {}",
+                port, e
+            )))?;
+
+        Ok(RubyDebugSession {
+            process: child,
+            socket,
+            port,
+        })
     }
 
     pub fn adapter_id() -> &'static str {

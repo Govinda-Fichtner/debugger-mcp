@@ -31,6 +31,7 @@ pub struct DapClient {
 }
 
 impl DapClient {
+    /// Spawn a DAP adapter via stdio (for Python/debugpy)
     pub async fn spawn(command: &str, args: &[String]) -> Result<Self> {
         info!("Spawning DAP client: {} {:?}", command, args);
 
@@ -50,6 +51,14 @@ impl DapClient {
 
         let transport: Box<dyn DapTransportTrait> = Box::new(DapTransport::new(stdin, stdout));
         Self::new_with_transport(transport, Some(child)).await
+    }
+
+    /// Create DAP client from TCP socket (for Ruby/rdbg)
+    pub async fn from_socket(socket: tokio::net::TcpStream) -> Result<Self> {
+        info!("Creating DAP client from socket: {:?}", socket.peer_addr());
+
+        let transport: Box<dyn DapTransportTrait> = Box::new(DapTransport::new_socket(socket));
+        Self::new_with_transport(transport, None).await
     }
 
     /// Create a new DAP client with a custom transport (for testing)
