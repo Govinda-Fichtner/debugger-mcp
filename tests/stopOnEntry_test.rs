@@ -44,6 +44,7 @@ fn is_debugpy_available() -> bool {
 /// - State correctly shows "Stopped" immediately after start
 #[tokio::test(flavor = "multi_thread")]
 #[ignore] // Run with: cargo test stopOnEntry_test -- --ignored --nocapture
+#[allow(non_snake_case)]
 async fn test_stopOnEntry_sets_stopped_state() {
     if !is_debugpy_available() {
         println!("⚠️  Skipping: debugpy not installed");
@@ -135,6 +136,7 @@ async fn test_stopOnEntry_sets_stopped_state() {
 /// - wait_for_stop returns immediately with stopped state
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
+#[allow(non_snake_case)]
 async fn test_wait_for_stop_detects_stopOnEntry() {
     if !is_debugpy_available() {
         println!("⚠️  Skipping: debugpy not installed");
@@ -224,6 +226,7 @@ async fn test_wait_for_stop_detects_stopOnEntry() {
 /// - Continue reaches breakpoint
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
+#[allow(non_snake_case)]
 async fn test_breakpoint_works_with_stopOnEntry() {
     if !is_debugpy_available() {
         println!("⚠️  Skipping: debugpy not installed");
