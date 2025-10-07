@@ -298,14 +298,16 @@ impl DebugSession {
         // 5. Set entry breakpoint on child (stopOnEntry workaround for Node.js)
         //    The child session is what actually runs the user's code, so it needs
         //    the entry breakpoint, not the parent.
-        info!("   Setting entry breakpoint on child at line 1 of {}", self.program);
+        //    Use intelligent line detection to skip comments/imports.
+        let entry_line = crate::dap::client::DapClient::find_first_executable_line_javascript(&self.program);
+        info!("   Setting entry breakpoint on child at line {} of {}", entry_line, self.program);
         let source = crate::dap::types::Source {
             path: Some(self.program.clone()),
             name: None,
             source_reference: None,
         };
         let entry_bp = crate::dap::types::SourceBreakpoint {
-            line: 1,
+            line: entry_line as i32,
             column: None,
             condition: None,
             hit_condition: None,
@@ -313,7 +315,7 @@ impl DebugSession {
         match child_client.set_breakpoints(source.clone(), vec![entry_bp]).await {
             Ok(verified_bps) => {
                 if !verified_bps.is_empty() && verified_bps[0].verified {
-                    info!("   ✅ Entry breakpoint set and verified on child at line 1");
+                    info!("   ✅ Entry breakpoint set and verified on child at line {}", entry_line);
                 } else {
                     error!("   ❌ Entry breakpoint could not be verified on child");
                 }

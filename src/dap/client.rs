@@ -824,7 +824,7 @@ impl DapClient {
     /// to find the first actual executable line.
     ///
     /// Returns line number (1-indexed) or 1 as fallback.
-    fn find_first_executable_line_javascript(program_path: &str) -> usize {
+    pub fn find_first_executable_line_javascript(program_path: &str) -> usize {
         use std::fs;
 
         let content = match fs::read_to_string(program_path) {
