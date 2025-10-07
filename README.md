@@ -10,11 +10,11 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 ## Status
 
-🎉 **Phase: Multi-Language Support - Validated and Production-Ready** 🎉
+🎉 **Phase: Multi-Language Support - Production-Ready** 🎉
 
 - ✅ Comprehensive architecture proposal (135+ pages)
 - ✅ Technology stack selected (Rust, Tokio, Clap, DAP)
-- ✅ MVP implementation plan (Python → Ruby → multi-language)
+- ✅ MVP implementation plan (Python → Ruby → Node.js)
 - ✅ TDD strategy with FizzBuzz integration test
 - ✅ MCP server with STDIO transport (~400 LOC)
 - ✅ Complete DAP client with async correlation (~270 LOC)
@@ -22,18 +22,26 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 - ✅ 13 MCP tools implemented
 - ✅ **Python support** via debugpy - Fully validated
 - ✅ **Ruby support** via rdbg (debug gem) - Fully validated with entry breakpoint solution
-- ✅ Comprehensive integration tests (Python + Ruby) - All passing
-- ✅ Language-specific Docker images (Python, Ruby)
+- ✅ **Node.js support** via vscode-js-debug - Fully validated with multi-session architecture
+- ✅ Comprehensive integration tests (Python + Ruby + Node.js) - All passing
+- ✅ Language-specific Docker images (Python, Ruby, Node.js)
 - ✅ **End-to-end validation with Claude** - 100% success rate
+
+**📘 Important for Docker Users**: When using container-based debugging, always use **container paths** (`/workspace/...`) not host paths (`/home/.../projects/...`). See [Container Path Guide](docs/CONTAINER_PATH_GUIDE.md).
 
 ## Quick Links
 
+### Essential Guides
+- **[Container Path Guide](docs/CONTAINER_PATH_GUIDE.md)** - 🚨 Critical for Docker users
 - **[Docker Deployment Guide](docs/DOCKER.md)** - Running with Docker (recommended)
 - **[Getting Started](docs/GETTING_STARTED.md)** - Developer setup and first steps
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Technical Documentation
+- **[Node.js Multi-Session Architecture](docs/NODEJS_MULTI_SESSION_ARCHITECTURE.md)** - Understanding vscode-js-debug
+- **[Expression Syntax Guide](docs/EXPRESSION_SYNTAX_GUIDE.md)** - Language-specific evaluation syntax
 - **[Adding New Languages](docs/ADDING_NEW_LANGUAGE.md)** - Guide for adding language support
 - **[Main Architecture Proposal](docs/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design (68 pages)
-- **[MVP Implementation Plan](docs/MVP_IMPLEMENTATION_PLAN.md)** - Phase 1 development guide
-- **[MVP Implementation Status](docs/MVP_IMPLEMENTATION_STATUS.md)** - Current implementation status
 - **[Documentation Index](docs/README.md)** - All documentation
 
 ## Features
@@ -43,8 +51,8 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 | Language | Debugger | Status | Notes | Docker Image |
 |----------|----------|--------|-------|--------------|
 | **Python** | debugpy | ✅ **Validated** | Native stopOnEntry support | `Dockerfile.python` |
-| **Ruby** | rdbg (debug gem) | ✅ **Validated** | Entry breakpoint solution | `Dockerfile.ruby` |
-| Node.js | inspector protocol | ⏳ Planned | Built-in debugger | - |
+| **Ruby** | rdbg (debug gem) | ✅ **Validated** | Socket-based DAP | `Dockerfile.ruby` |
+| **Node.js** | vscode-js-debug | ✅ **Validated** | Multi-session architecture | `Dockerfile.nodejs` |
 | Go | delve | ⏳ Planned | Popular Go debugger | - |
 | Rust | CodeLLDB | ⏳ Planned | LLDB-based debugging | - |
 
@@ -105,26 +113,32 @@ docker run -i debugger-mcp:python
 # For Ruby projects (~100 MB)
 docker build -f Dockerfile.ruby -t debugger-mcp:ruby .
 docker run -i debugger-mcp:ruby
+
+# For Node.js projects (~200 MB)
+docker build -f Dockerfile.nodejs -t debugger-mcp:nodejs .
+docker run -i debugger-mcp:nodejs
 ```
 
 **Configure with Claude Desktop:**
 
 ```json
 {
-  "mccpServers": {
+  "mcpServers": {
     "debugger": {
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-v", "${workspaceFolder}:/workspace",
-        "debugger-mcp:latest"
+        "-v", "/home/user/projects:/workspace",
+        "debugger-mcp:nodejs"
       ]
     }
   }
 }
 ```
 
-See [Docker Documentation](docs/DOCKER.md) for details.
+**🚨 Critical**: When debugging, use `/workspace/...` paths (container) not `/home/user/projects/...` paths (host)!
+
+See [Docker Documentation](docs/DOCKER.md) and [Container Path Guide](docs/CONTAINER_PATH_GUIDE.md) for details.
 
 ### Option 2: Native Install
 
@@ -156,8 +170,8 @@ cargo build --release
 User: "My Python script crashes. Can you debug it?"
 
 Claude:
-  → debugger_start(language="python", program="script.py", stopOnEntry=true)
-  → debugger_set_breakpoint(sourcePath="script.py", line=42)
+  → debugger_start(language="python", program="/workspace/script.py", stopOnEntry=true)
+  → debugger_set_breakpoint(sourcePath="/workspace/script.py", line=42)
   → debugger_continue()
   → debugger_wait_for_stop()
   [Program stops at breakpoint]
@@ -168,13 +182,29 @@ Claude:
    The code doesn't check for None before accessing user_data.name..."
 ```
 
+**Node.js Example:**
+```
+User: "My Node.js script has a bug. Can you debug it?"
+
+Claude:
+  → debugger_start(language="nodejs", program="/workspace/fizzbuzz.js", stopOnEntry=true)
+  → debugger_set_breakpoint(sourcePath="/workspace/fizzbuzz.js", line=9)
+  → debugger_continue()
+  → debugger_wait_for_stop()
+  [Program stops at breakpoint]
+  → debugger_evaluate(expression="n % 4")  // Bug: should be n % 5
+  → Result: "1" (wrong check!)
+
+  "The bug is on line 5: using 'n % 4' instead of 'n % 5' for Buzz check..."
+```
+
 **Ruby Example:**
 ```
 User: "My Ruby script has a bug in the fizzbuzz function. Can you debug it?"
 
 Claude:
-  → debugger_start(language="ruby", program="fizzbuzz.rb", stopOnEntry=true)
-  → debugger_set_breakpoint(sourcePath="fizzbuzz.rb", line=9)
+  → debugger_start(language="ruby", program="/workspace/fizzbuzz.rb", stopOnEntry=true)
+  → debugger_set_breakpoint(sourcePath="/workspace/fizzbuzz.rb", line=9)
   → debugger_continue()
   → debugger_wait_for_stop()
   [Program stops at breakpoint]
