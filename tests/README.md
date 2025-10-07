@@ -9,7 +9,7 @@ cargo test --lib
 cargo test --test test_rust_integration test_rust_adapter_metadata test_rust_adapter_command
 ```
 
-### 2. Regression Tests (Manual via Claude Code)
+### 2. Regression Tests (Automated in Docker)
 Integration tests marked with `#[ignore]` that require full debugging environment:
 - `test_rust_stack_trace_uses_correct_thread_id()` - Verifies thread ID fix
 - `test_rust_evaluate_uses_watch_context()` - Verifies evaluation context fix
@@ -17,11 +17,20 @@ Integration tests marked with `#[ignore]` that require full debugging environmen
 **Purpose**: These tests serve as:
 1. **Documentation** of expected behavior and known bugs
 2. **Regression protection** - will fail if bugs are reintroduced
-3. **Verification** when run manually with Claude Code
+3. **Automated CI/CD verification** - can run in Docker without manual intervention
 
-**Why not automated?**: CodeLLDB cannot debug processes when running inside a Docker container that's also running the tests. These tests need the actual MCP server → CodeLLDB → target program flow.
+**Running in Docker**:
+```bash
+./scripts/test-rust-docker.sh               # Unit tests only
+./scripts/test-rust-docker.sh --all         # All tests including regression
+```
 
-**How to run**: Use Claude Code with the MCP server running in Docker to execute the debugging workflow described in each test.
+**Key Insights**: These tests CAN run in automated Docker! The key requirements are:
+1. Wait for initialize/launch to complete before operations (30s timeout for Docker)
+2. Use correct DAP field names (`stackFrames` not `frames`)
+3. Handle variable stop reasons (CodeLLDB may stop with "exception" instead of "entry")
+
+**Manual verification**: You can also use Claude Code with the MCP server running in Docker to manually execute the debugging workflow described in each test.
 
 ## Running Tests
 
