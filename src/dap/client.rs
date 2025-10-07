@@ -975,6 +975,27 @@ impl DapClient {
     }
 
     pub async fn evaluate(&self, expression: &str, frame_id: Option<i32>) -> Result<String> {
+        // If frame_id is None, get the top frame from stack trace
+        let frame_id = if let Some(id) = frame_id {
+            Some(id)
+        } else {
+            // Get current thread (assume thread 0 for simplicity)
+            match self.stack_trace(0).await {
+                Ok(frames) if !frames.is_empty() => {
+                    info!("📍 Auto-fetched frame_id {} for evaluate", frames[0].id);
+                    Some(frames[0].id)
+                }
+                Ok(_) => {
+                    warn!("⚠️  No stack frames available for evaluate");
+                    None
+                }
+                Err(e) => {
+                    warn!("⚠️  Failed to get stack trace for evaluate: {}", e);
+                    None
+                }
+            }
+        };
+
         let args = EvaluateArguments {
             expression: expression.to_string(),
             frame_id,
@@ -982,7 +1003,7 @@ impl DapClient {
         };
 
         let response = self.send_request("evaluate", Some(serde_json::to_value(args)?)).await?;
-        
+
         if !response.success {
             return Err(Error::Dap(format!("Evaluate failed: {:?}", response.message)));
         }
