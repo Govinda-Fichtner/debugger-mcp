@@ -19,18 +19,24 @@ COPY src ./src
 RUN cargo build --release
 
 # Stage 2: Create Rust debugging runtime image
-FROM rust:1.83-alpine
+# Note: Using Debian-based image because CodeLLDB is built against glibc, not musl
+FROM rust:1.83-slim-bookworm
 
-# Note: rust:1.83-alpine already includes rustc and cargo
+# Note: rust:1.83-slim-bookworm already includes rustc and cargo
 
 # Install runtime dependencies for Rust debugging
 # - wget/unzip: To download and extract CodeLLDB
 # - lldb: LLDB debugger (CodeLLDB backend)
-RUN apk add --no-cache \
+# - ca-certificates: For HTTPS downloads
+# Note: Removing update repos to bypass clock skew issues, using only main repo
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     wget \
     unzip \
     lldb \
-    && rm -rf /var/cache/apk/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download and install CodeLLDB
 # Version: v1.11.5 (latest stable with STDIO support)
@@ -53,8 +59,6 @@ RUN cd /tmp && \
     ln -s /usr/local/lib/codelldb/extension/adapter/codelldb /usr/local/bin/codelldb && \
     echo "=== Cleaning up ===" && \
     rm codelldb-linux-${CODELLDB_PLATFORM}.vsix && \
-    apk del wget unzip && \
-    rm -rf /var/cache/apk/* && \
     chmod +x /usr/local/bin/codelldb
 
 # Verify installations and print versions
@@ -63,12 +67,12 @@ RUN echo "=== Rust Debugging Environment ===" && \
     echo "Cargo version: $(cargo --version)" && \
     echo "LLDB version: $(lldb --version 2>&1 | head -1 || echo 'lldb installed')" && \
     echo "CodeLLDB location: $(ls -la /usr/local/bin/codelldb)" && \
-    echo "CodeLLDB test: $(file /usr/local/bin/codelldb)" && \
+    echo "CodeLLDB version: $(codelldb --version 2>&1 | head -1 || echo 'codelldb installed')" && \
     echo "✅ Rust debugging environment ready"
 
 # Create non-root user
-RUN addgroup -g 1000 mcpuser && \
-    adduser -D -u 1000 -G mcpuser mcpuser
+RUN groupadd -g 1000 mcpuser && \
+    useradd -m -u 1000 -g mcpuser mcpuser
 
 # Copy MCP server binary from builder (native architecture)
 COPY --from=builder /app/target/release/debugger_mcp /usr/local/bin/debugger_mcp

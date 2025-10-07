@@ -368,6 +368,55 @@ Debug session: CodeLLDB ← STDIO → MCP Server
 **Solution**: Removed redundant package installs, documented that base image includes toolchain
 **Status**: ✅ Resolved
 
+### Issue 2: CodeLLDB glibc Dependency
+
+**Problem**: CodeLLDB binary fails to execute in Alpine container
+**Error**: `Error relocating: gnu_get_libc_version: symbol not found`
+**Root Cause**: CodeLLDB is pre-built against glibc, but Alpine Linux uses musl libc (incompatible)
+**Investigation**:
+- Verified binary exists and has correct permissions
+- `ldd` revealed missing glibc symbols (`gnu_get_libc_version`, `__res_init`)
+- Alpine's musl libc doesn't provide glibc compatibility layer by default
+**Solution**: Switch runtime image from `rust:1.83-alpine` to `rust:1.83-slim-bookworm` (Debian-based with glibc)
+**Changes**:
+- Base image: `rust:1.83-alpine` → `rust:1.83-slim-bookworm`
+- Package manager: `apk` → `apt-get`
+- User creation: Alpine syntax → Debian syntax (`addgroup`/`adduser` → `groupadd`/`useradd`)
+- Added `ca-certificates` for HTTPS downloads
+**Trade-offs**:
+- Image size increase: ~400MB (Alpine) → ~900MB (Debian slim)
+- Benefit: CodeLLDB works out of the box (standard glibc environment)
+**Status**: ✅ Resolved (rebuilt with Debian base)
+
+### Issue 3: Docker Clock Skew (apt-get update failure)
+
+**Problem**: Docker build fails during `apt-get update`
+**Error**: `Release file for http://deb.debian.org/debian/dists/bookworm-updates/InRelease is not valid yet (invalid for another 1d 7h 40min 32s)`
+**Root Cause**: System clock is behind real time, causing APT to reject repository metadata with future timestamps
+**Investigation**:
+- Tried `-o Acquire::Check-Valid-Until=false` but it only applies to some repos
+- Security and updates repos still fail validation
+**Solution**: Use only main Debian repository, skip updates/security repos during build
+**Changes**:
+```dockerfile
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    apt-get update && apt-get install -y ...
+```
+**Trade-offs**:
+- May miss latest security updates in base packages
+- Acceptable for development/testing (production would use fixed clock)
+**Status**: ✅ Resolved (using main repo only)
+
+**Build Verification**:
+- Image builds successfully (exit code 0)
+- All tools verified:
+  - rustc 1.83.0 ✅
+  - cargo 1.83.0 ✅
+  - codelldb v1.11.5 ✅
+  - lldb 14.0.6 ✅
+  - debugger_mcp 0.1.0 ✅
+
 ---
 
 ## Risk Assessment
