@@ -197,36 +197,199 @@ mod nodejs_integration_tests {
     ///
     /// If this fails, we'll need the entry breakpoint workaround (like Ruby).
     #[tokio::test]
-    #[ignore] // Requires NodeJsAdapter implementation
+    #[ignore] // Requires vscode-js-debug installation
     async fn test_nodejs_stop_on_entry_native_support() {
-        // This will fail until full implementation
+        use debugger_mcp::adapters::nodejs::NodeJsAdapter;
+        use debugger_mcp::dap::client::DapClient;
+        use debugger_mcp::dap::types::Event;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use tokio::time::{timeout, Duration};
 
-        // Expected flow:
-        // 1. Spawn vscode-js-debug
-        // 2. Initialize DAP session
-        // 3. Launch with stopOnEntry: true
-        // 4. Wait for 'stopped' event
-        // 5. Verify reason: "entry" or "breakpoint"
+        println!("\n=== TESTING NODE.JS STOPENTRY NATIVE SUPPORT ===\n");
 
-        // Uncommenting will fail until implemented:
-        // use debugger_mcp::dap::client::DapClient;
-        // use std::sync::Arc;
-        // use tokio::sync::RwLock;
-
-        // let dap_client = Arc::new(RwLock::new(DapClient::new(/* ... */)));
-        // dap_client.write().await.initialize_and_launch(
-        //     "pwa-node",
-        //     launch_args_with_stop_on_entry,
-        //     Some("nodejs")
-        // ).await.unwrap();
-
-        // let stopped_event = wait_for_stopped_event(&dap_client, Duration::from_secs(5)).await;
-        // assert!(stopped_event.is_ok(), "No stopped event received - stopOnEntry may not work natively");
+        // 1. Create test program path
+        let test_program = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/fizzbuzz.js");
 
         assert!(
-            false,
-            "Full Node.js adapter not implemented. Cannot test stopOnEntry yet."
+            test_program.exists(),
+            "FizzBuzz test fixture not found: {}",
+            test_program.display()
         );
+
+        println!("✅ Test program: {}", test_program.display());
+
+        // 2. Spawn vscode-js-debug DAP server
+        println!("\n🚀 Spawning vscode-js-debug DAP server");
+        let nodejs_session = NodeJsAdapter::spawn_dap_server()
+            .await
+            .expect("Failed to spawn vscode-js-debug");
+
+        println!("✅ vscode-js-debug spawned on port {}", nodejs_session.port);
+
+        // 3. Create DAP client from socket
+        let client = DapClient::from_socket(nodejs_session.socket)
+            .await
+            .expect("Failed to create DAP client");
+
+        println!("✅ DAP client connected");
+
+        // 4. Track events
+        let events = Arc::new(Mutex::new(Vec::<Event>::new()));
+
+        // Register callbacks for specific events we care about
+        let events_clone = Arc::clone(&events);
+        client
+            .on_event("initialized", move |event| {
+                let events = events_clone.clone();
+                println!("📨 Event received: initialized");
+                tokio::spawn(async move {
+                    events.lock().await.push(event);
+                });
+            })
+            .await;
+
+        let events_clone = Arc::clone(&events);
+        client
+            .on_event("stopped", move |event| {
+                let events = events_clone.clone();
+                println!("📨 Event received: stopped");
+                tokio::spawn(async move {
+                    events.lock().await.push(event);
+                });
+            })
+            .await;
+
+        let events_clone = Arc::clone(&events);
+        client
+            .on_event("terminated", move |event| {
+                let events = events_clone.clone();
+                println!("📨 Event received: terminated");
+                tokio::spawn(async move {
+                    events.lock().await.push(event);
+                });
+            })
+            .await;
+
+        println!("✅ Event callbacks registered");
+
+        // Give event processing task time to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 5. Initialize DAP session
+        println!("\n🔧 Initializing DAP session");
+        let capabilities = timeout(
+            Duration::from_secs(5),
+            client.initialize("nodejs-test")
+        )
+        .await
+        .expect("Initialize timeout")
+        .expect("Initialize failed");
+
+        println!("✅ Initialize response received");
+        println!("   Capabilities: configurationDone={:?}",
+                 capabilities.supports_configuration_done_request);
+
+        // 6. Wait for 'initialized' event
+        println!("\n⏳ Waiting for 'initialized' event (2s timeout)...");
+        let got_initialized = timeout(Duration::from_secs(2), async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let events_locked = events.lock().await;
+                if events_locked.iter().any(|e| e.event == "initialized") {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok();
+
+        assert!(got_initialized, "❌ FAILED: Did not receive 'initialized' event");
+        println!("✅ Received 'initialized' event");
+
+        // 7. Send launch request with stopOnEntry: true
+        println!("\n🚀 Launching with stopOnEntry: true");
+        let launch_args = NodeJsAdapter::launch_config(
+            test_program.to_str().unwrap(),
+            &[],
+            None,
+            true, // stopOnEntry: true
+        );
+
+        println!("   Launch config: {}", serde_json::to_string_pretty(&launch_args).unwrap());
+
+        // Try using send_request directly (like Ruby test does)
+        client
+            .send_request("launch", Some(launch_args))
+            .await
+            .expect("Launch request failed");
+
+        println!("✅ Launch request sent");
+
+        // Give it a moment to process
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // 8. Send configurationDone to complete initialization
+        println!("\n📤 Sending configurationDone");
+        client
+            .configuration_done()
+            .await
+            .expect("ConfigurationDone failed");
+
+        println!("✅ Configuration done");
+
+        // 9. Wait for 'stopped' event at entry
+        println!("\n⏳ Waiting for 'stopped' event (up to 10 seconds)...");
+
+        let stopped_event = timeout(Duration::from_secs(10), async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let events_locked = events.lock().await;
+                if let Some(stopped) = events_locked.iter().find(|e| e.event == "stopped") {
+                    return stopped.clone();
+                }
+                drop(events_locked);
+            }
+        })
+        .await;
+
+        // 10. Verify result
+        match stopped_event {
+            Ok(event) => {
+                println!("✅ SUCCESS: Received 'stopped' event!");
+
+                // Extract reason from body
+                let reason = event.body
+                    .as_ref()
+                    .and_then(|b| b.get("reason"))
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("unknown");
+
+                println!("   Reason: {}", reason);
+                if let Some(body) = &event.body {
+                    println!("   Body: {}", serde_json::to_string_pretty(body).unwrap());
+                }
+
+                // Verify reason (should be "entry" or similar)
+                assert!(
+                    reason == "entry" || reason == "breakpoint" || reason == "pause",
+                    "Unexpected stop reason: {}",
+                    reason
+                );
+
+                println!("\n🎉 HYPOTHESIS CONFIRMED: Node.js stopOnEntry works natively!");
+            }
+            Err(_) => {
+                // Print all events received for debugging
+                let all_events = events.lock().await;
+                println!("\n❌ TIMEOUT: No 'stopped' event received within 10 seconds");
+                println!("   Events received: {:?}",
+                         all_events.iter().map(|e| &e.event).collect::<Vec<_>>());
+
+                panic!("stopOnEntry did not work - no 'stopped' event received. This means we need an entry breakpoint workaround like Ruby.");
+            }
+        }
     }
 
     /// Test: Full FizzBuzz debugging workflow for Node.js
