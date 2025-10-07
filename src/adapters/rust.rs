@@ -334,7 +334,7 @@ impl RustAdapter {
         error!("   ");
         error!("   Troubleshooting:");
         error!("   $ rustc --version");
-        error!("   Expected: rustc 1.70.0 or higher");
+        error!("   Expected: rustc 1.83.0 or higher");
         error!("   ");
         error!("   $ rustc <source_file>");
         error!("   This should show detailed compilation errors");
