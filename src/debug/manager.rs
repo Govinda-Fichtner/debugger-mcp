@@ -1,6 +1,7 @@
 use crate::{Error, Result};
 use crate::adapters::python::PythonAdapter;
 use crate::adapters::ruby::RubyAdapter;
+use crate::adapters::nodejs::NodeJsAdapter;
 use crate::dap::client::DapClient;
 use super::session::DebugSession;
 use std::collections::HashMap;
@@ -60,6 +61,40 @@ impl SessionManager {
 
                 // Create DAP client from socket
                 let client = DapClient::from_socket(ruby_session.socket).await?;
+
+                // Create session
+                let session = DebugSession::new(language.to_string(), program.clone(), client).await?;
+                let session_id = session.id.clone();
+
+                // Store session immediately
+                let session_arc = Arc::new(session);
+                {
+                    let mut sessions = self.sessions.write().await;
+                    sessions.insert(session_id.clone(), session_arc.clone());
+                }
+
+                // Initialize and launch in the background
+                tokio::spawn(session_arc.initialize_and_launch_async(
+                    adapter_id.to_string(),
+                    launch_args,
+                ));
+
+                return Ok(session_id);
+            }
+            "nodejs" => {
+                // Node.js uses socket-based communication with vscode-js-debug DAP server
+                // Spawn vscode-js-debug and connect to socket
+                let nodejs_session = NodeJsAdapter::spawn_dap_server().await?;
+                let adapter_id = NodeJsAdapter::adapter_id();
+                let launch_args = NodeJsAdapter::launch_config(
+                    &program,
+                    &args,
+                    cwd.as_deref(),
+                    stop_on_entry,
+                );
+
+                // Create DAP client from socket
+                let client = DapClient::from_socket(nodejs_session.socket).await?;
 
                 // Create session
                 let session = DebugSession::new(language.to_string(), program.clone(), client).await?;

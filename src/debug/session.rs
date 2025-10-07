@@ -137,6 +137,7 @@ impl DebugSession {
         let adapter_type = match self.language.as_str() {
             "python" => Some("python"),
             "ruby" => Some("ruby"),
+            "nodejs" => Some("nodejs"),
             _ => None,
         };
         client.initialize_and_launch_with_timeout(adapter_id, launch_args, adapter_type).await?;
