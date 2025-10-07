@@ -59,6 +59,8 @@ gem install debug
 
 #### 2. Program Path Not Found
 
+**🚨 Container users: See "Container Path Mismatch" in "Breakpoint Not Hitting" section!**
+
 **Check:**
 ```bash
 ls -la /path/to/your/program.py
@@ -68,6 +70,7 @@ ls -la /path/to/your/program.py
 - Verify the path exists
 - Use absolute paths instead of relative
 - Check file permissions (must be readable)
+- **If using Docker**: Use container path (`/workspace/...`), not host path!
 
 #### 3. Invalid Language Parameter
 
@@ -187,6 +190,89 @@ debugger_set_breakpoint({
 })
 ```
 
+#### 3a. Container Path Mismatch (CRITICAL for Docker)
+
+**🚨 Most common issue when debugging in containers!**
+
+**Symptoms:**
+- Session terminates immediately (< 1 second)
+- State goes: Initializing → Running → Terminated
+- No error message, just instant completion
+- Breakpoints never hit
+
+**Problem:** Using host path instead of container path
+
+```javascript
+// ❌ WRONG - Host path
+debugger_start({
+  language: "nodejs",
+  program: "/home/vagrant/projects/fizzbuzz-nodejs-test/fizzbuzz.js"
+})
+// Error: File not found (in container)
+
+// ✅ CORRECT - Container path
+debugger_start({
+  language: "nodejs",
+  program: "/workspace/fizzbuzz-nodejs-test/fizzbuzz.js"
+})
+```
+
+**Why This Happens:**
+
+The MCP server runs **inside the Docker container**, not on your host machine:
+
+```
+Host Machine:
+  /home/vagrant/projects/fizzbuzz-nodejs-test/fizzbuzz.js
+        ↓ Docker volume mount
+        ↓ -v /home/vagrant/projects:/workspace
+        ↓
+Container:
+  /workspace/fizzbuzz-nodejs-test/fizzbuzz.js  ← This is what MCP sees!
+```
+
+**Solution:**
+
+1. **Check Docker volume mount:**
+   ```bash
+   docker ps | grep debugger-nodejs
+   docker inspect <container-id> | grep -A 10 "Mounts"
+   # Shows: "Source": "/home/vagrant/projects", "Destination": "/workspace"
+   ```
+
+2. **Translate path:**
+   ```
+   Host path:      /home/vagrant/projects/my-app/src/index.js
+   Container path: /workspace/my-app/src/index.js
+   ```
+
+3. **Verify file exists in container:**
+   ```bash
+   docker exec <container-id> ls -la /workspace/fizzbuzz-nodejs-test/fizzbuzz.js
+   # Should show the file
+   ```
+
+4. **Use container path EVERYWHERE:**
+   ```javascript
+   // debugger_start
+   { program: "/workspace/app.js" }
+
+   // debugger_set_breakpoint
+   { sourcePath: "/workspace/app.js", line: 10 }
+
+   // Always /workspace/*, never /home/vagrant/projects/*
+   ```
+
+**Quick Reference:**
+
+| Container | Host Mount | Container Mount |
+|-----------|-----------|-----------------|
+| debugger-nodejs | `/home/vagrant/projects` | `/workspace` |
+| debugger-ruby | `/home/vagrant/projects` | `/workspace` |
+| debugger-python | `/home/vagrant/projects` | `/workspace` |
+
+**See Also:** `docs/CONTAINER_PATH_GUIDE.md` for comprehensive container path documentation
+
 #### 4. Code Never Executes
 
 **Problem:** Breakpoint is in a function that's never called
@@ -290,6 +376,8 @@ debugger_evaluate({ expression: "len(arr)" })  // ✅ Python syntax
 
 **Solution:** Use language-specific syntax
 
+**See Also:** `docs/EXPRESSION_SYNTAX_GUIDE.md` for comprehensive syntax examples for Python, Ruby, and Node.js
+
 #### 4. Expression Causes Exception
 
 **Problem:** Expression itself throws an error
@@ -334,6 +422,8 @@ x = None
 - State goes: Initializing → Running → Terminated
 - Never stops at entry or breakpoints
 - Total execution time < 100ms
+
+**🚨 Container users: If session terminates INSTANTLY (< 1 second), this is likely a container path issue! See "Container Path Mismatch" in "Breakpoint Not Hitting" section.**
 
 ### Common Causes
 
