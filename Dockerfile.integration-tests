@@ -63,4 +63,5 @@ WORKDIR /workspace
 
 # Default command: run all tests including ignored integration tests
 # Note: No coverage collection due to cargo-tarpaulin edition2024 dependency
-CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture"]
+# Skip claude_code_integration test (requires Claude CLI not available in Docker)
+CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture", "--skip", "claude_code_integration"]
