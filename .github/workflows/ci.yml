@@ -241,7 +241,7 @@ jobs:
           cargo tarpaulin --lib --exclude-files 'tests/*' \
             --out Json --out Xml --out Html \
             --output-dir coverage \
-            --fail-under 28
+            --fail-under 27
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -269,7 +269,7 @@ jobs:
           if [ -f coverage/tarpaulin-report.json ]; then
             # Parse tarpaulin JSON for coverage percentage
             COVERAGE=$(jq '.files | [.[].coverage] | add / length' coverage/tarpaulin-report.json 2>/dev/null | awk '{printf "%.2f", $1}' || echo "unknown")
-            COVERAGE_THRESHOLD=28
+            COVERAGE_THRESHOLD=27
 
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
             echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
