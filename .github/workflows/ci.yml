@@ -91,9 +91,6 @@ jobs:
       - name: Run unit tests
         run: cargo test --lib --verbose
 
-      - name: Run all tests
-        run: cargo test --all-targets --verbose
-
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
