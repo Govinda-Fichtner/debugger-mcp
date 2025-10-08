@@ -46,6 +46,9 @@ python -m debugpy --version
 
 # For Ruby
 gem list | grep debug
+
+# For Rust
+codelldb --version
 ```
 
 **Solution:**
@@ -55,6 +58,10 @@ pip install debugpy
 
 # Ruby
 gem install debug
+
+# Rust (CodeLLDB)
+# Download from https://github.com/vadimcn/codelldb/releases
+# Or use Docker image with pre-installed CodeLLDB
 ```
 
 #### 2. Program Path Not Found
@@ -86,7 +93,7 @@ ls -la /path/to/your/program.py
 
 **Solution:**
 - Use exact language name: "python" not "pythn" or "Python"
-- Currently supported: "python", "ruby"
+- Currently supported: "python", "ruby", "nodejs", "rust"
 
 #### 4. Port Already in Use (rare)
 
@@ -110,9 +117,13 @@ lsof -ti:5678 | xargs kill -9  # debugpy default port
    ```bash
    # Python
    python -m debugpy --listen 5678 --wait-for-client test.py
-   
+
    # Ruby
    rdbg --open test.rb
+
+   # Rust (first compile, then debug)
+   rustc -g test.rs -o test
+   codelldb test
    ```
 
 3. **Try Minimal Program:**
@@ -270,6 +281,7 @@ Container:
 | debugger-nodejs | `/home/vagrant/projects` | `/workspace` |
 | debugger-ruby | `/home/vagrant/projects` | `/workspace` |
 | debugger-python | `/home/vagrant/projects` | `/workspace` |
+| debugger-rust | `/home/vagrant/projects` | `/workspace` |
 
 **See Also:** `docs/CONTAINER_PATH_GUIDE.md` for comprehensive container path documentation
 
@@ -583,6 +595,147 @@ debugger_continue()  // ❌ Can only continue when "Stopped"
 - Remove unneeded breakpoints
 - Set breakpoints while stopped
 - Update DAP adapter
+
+---
+
+## Rust-Specific Issues
+
+### Compilation Errors
+
+**Symptoms:**
+- Session fails during initialization
+- Error message mentions "compilation failed"
+- State transitions to "Failed" before debugging starts
+
+**Common Causes:**
+
+#### 1. Syntax Errors in Source Code
+
+**Error:**
+```
+Compilation failed: error: expected `;`, found `}`
+  --> fizzbuzz.rs:10:5
+```
+
+**Solution:**
+- Fix Rust syntax errors before debugging
+- Run `rustc --check yourfile.rs` to verify syntax
+- Check compiler output for line numbers and hints
+
+#### 2. rustc Not Found
+
+**Error:**
+```
+Failed to spawn rustc: No such file or directory
+```
+
+**Solution:**
+- Install Rust toolchain: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- Or use Docker image with pre-installed Rust toolchain
+- Verify: `rustc --version`
+
+#### 3. Binary Path Issues
+
+**Problem:** Compiled binary not found after successful compilation
+
+**Cause:** Incorrect output directory structure
+
+**Solution:**
+- Check expected path: `<source_dir>/target/debug/<binary_name>`
+- For `/workspace/fizzbuzz.rs`, binary is at `/workspace/target/debug/fizzbuzz`
+- Verify compilation output shows binary location
+
+### CodeLLDB Issues
+
+#### 1. CodeLLDB Not Found
+
+**Error:**
+```
+Failed to spawn CodeLLDB: No such file or directory
+```
+
+**Solution:**
+- Download CodeLLDB from https://github.com/vadimcn/codelldb/releases
+- Use Docker image with pre-installed CodeLLDB
+- Verify installation: `codelldb --version`
+
+#### 2. glibc vs musl Compatibility
+
+**Error:**
+```
+Error relocating: gnu_get_libc_version: symbol not found
+```
+
+**Cause:** CodeLLDB binary requires glibc, Alpine Linux uses musl
+
+**Solution:**
+- Use Debian-based Docker image (e.g., `rust:1.83-slim-bookworm`)
+- Don't use Alpine base images for Rust debugging
+- See `docs/RUST_IMPLEMENTATION_STATUS.md` for details
+
+#### 3. Architecture Mismatch
+
+**Error:**
+```
+cannot execute binary file: Exec format error
+```
+
+**Cause:** CodeLLDB binary doesn't match CPU architecture
+
+**Solution:**
+- Ensure correct architecture: x86_64 or aarch64 (ARM64)
+- Docker image auto-detects and downloads correct version
+- For manual install, download matching architecture from releases
+
+### Debugging Rust Programs
+
+#### 1. No Debug Symbols
+
+**Symptoms:**
+- Variables show as "optimized out"
+- Stack frames missing details
+- Line numbers incorrect
+
+**Solution:**
+- Ensure compilation with `-g` flag (automatic in our implementation)
+- Don't use `--release` mode without debug symbols
+- Check binary has debug info: `file target/debug/yourprogram`
+
+#### 2. LLDB Expression Limitations
+
+**Problem:** Some Rust expressions don't evaluate
+
+**Examples:**
+```rust
+// ❌ Not supported
+debugger_evaluate({ expression: "|x| x + 1" })  // Closures
+debugger_evaluate({ expression: "vec![1, 2, 3]" })  // Complex macros
+
+// ✅ Supported
+debugger_evaluate({ expression: "n" })  // Variables
+debugger_evaluate({ expression: "n % 5" })  // Arithmetic
+debugger_evaluate({ expression: "result" })  // Struct inspection
+```
+
+**Solution:**
+- Use simple expressions (variables, arithmetic, method calls)
+- Avoid closures and complex generics
+- See `docs/EXPRESSION_SYNTAX_GUIDE.md` for supported syntax
+
+#### 3. Ownership and Borrowing Display
+
+**Problem:** Variables show confusing ownership information
+
+**Example:**
+```
+Variable: &String("hello")  // Reference display
+```
+
+**Solution:**
+- Understand Rust's ownership model affects display
+- `&T` indicates borrowed reference
+- `Option<T>` shows `Some(value)` or `None`
+- `Result<T, E>` shows `Ok(value)` or `Err(error)`
 
 ---
 

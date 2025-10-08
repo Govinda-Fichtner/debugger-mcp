@@ -4,15 +4,16 @@
 
 ## Overview
 
-When using `debugger_evaluate` to inspect variables and evaluate expressions, syntax varies by programming language. This guide provides practical examples for Python, Ruby, and Node.js debugging.
+When using `debugger_evaluate` to inspect variables and evaluate expressions, syntax varies by programming language. This guide provides practical examples for Python, Ruby, Node.js, and Rust debugging.
 
 ## Quick Reference
 
-| Language | Variable | Property/Attribute | Array/List Index | Method Call | String Interpolation |
-|----------|----------|-------------------|------------------|-------------|---------------------|
+| Language | Variable | Property/Field | Array/List Index | Method Call | String Format |
+|----------|----------|----------------|------------------|-------------|---------------|
 | **Python** | `n` | `obj.attr` | `arr[0]` | `len(arr)` | `f"{n}"` |
 | **Ruby** | `n` | `obj.attr` | `arr[0]` | `arr.length` | `"#{n}"` |
 | **Node.js** | `n` | `obj.prop` | `arr[0]` | `arr.length` | `` `${n}` `` |
+| **Rust** | `n` | `obj.field` | `arr[0]` | `arr.len()` | `format!("{}", n)` |
 
 ## Python (debugpy)
 
@@ -757,6 +758,181 @@ debugger_evaluate({ expression: "n % 4 === 0" })
 // Result: "false" (for n = 5)
 ```
 
+## Rust (CodeLLDB)
+
+CodeLLDB provides Rust debugging through LLDB with native expression evaluation.
+
+### Variables
+
+```rust
+// Simple variable
+debugger_evaluate({ expression: "n" })
+// Result: "15"
+
+// Local variable
+debugger_evaluate({ expression: "result" })
+// Result: "String(\"Buzz\")"
+
+// Mutable variable
+debugger_evaluate({ expression: "mut_var" })
+```
+
+### Struct Fields and Methods
+
+```rust
+// Struct field
+debugger_evaluate({ expression: "user.name" })
+// Result: "String(\"Alice\")"
+
+// Method call
+debugger_evaluate({ expression: "my_vec.len()" })
+// Result: "10"
+
+// Chained field access
+debugger_evaluate({ expression: "user.address.city" })
+// Result: "String(\"New York\")"
+```
+
+### Vectors and Arrays
+
+```rust
+// Vector element
+debugger_evaluate({ expression: "numbers[0]" })
+// Result: "1"
+
+// Vector length
+debugger_evaluate({ expression: "numbers.len()" })
+// Result: "5"
+
+// Array slice
+debugger_evaluate({ expression: "&numbers[0..2]" })
+// Result: "[1, 2]"
+
+// Check if empty
+debugger_evaluate({ expression: "numbers.is_empty()" })
+// Result: "false"
+```
+
+### Option and Result
+
+```rust
+// Option value
+debugger_evaluate({ expression: "maybe_value" })
+// Result: "Some(42)"
+
+// Check if Some
+debugger_evaluate({ expression: "maybe_value.is_some()" })
+// Result: "true"
+
+// Unwrap (unsafe in debugging!)
+debugger_evaluate({ expression: "maybe_value.unwrap()" })
+// Result: "42"
+
+// Result value
+debugger_evaluate({ expression: "result_value" })
+// Result: "Ok(\"success\")"
+```
+
+### Arithmetic and Logical Operators
+
+```rust
+// Basic arithmetic
+debugger_evaluate({ expression: "n + 5" })
+// Result: "20"
+
+debugger_evaluate({ expression: "n * 2" })
+// Result: "30"
+
+// Modulo
+debugger_evaluate({ expression: "n % 3" })
+// Result: "0"
+
+// Comparison
+debugger_evaluate({ expression: "n == 15" })
+// Result: "true"
+
+debugger_evaluate({ expression: "n > 10" })
+// Result: "true"
+
+// Logical operators
+debugger_evaluate({ expression: "n % 3 == 0 && n % 5 == 0" })
+// Result: "true" (for n = 15)
+
+debugger_evaluate({ expression: "n % 3 == 0 || n % 5 == 0" })
+// Result: "true"
+```
+
+### String Operations
+
+```rust
+// String length
+debugger_evaluate({ expression: "text.len()" })
+// Result: "11"
+
+// String contains
+debugger_evaluate({ expression: "text.contains(\"Fizz\")" })
+// Result: "true"
+
+// String equality
+debugger_evaluate({ expression: "text == \"FizzBuzz\"" })
+// Result: "true"
+
+// Format string (use with caution)
+debugger_evaluate({ expression: "format!(\"{}\", n)" })
+// Result: "String(\"15\")"
+```
+
+### Type Inspection
+
+```rust
+// Get type info (LLDB-specific)
+debugger_evaluate({ expression: "n" })
+// Result: "15" with type info: "i32"
+
+// Cast
+debugger_evaluate({ expression: "n as f64" })
+// Result: "15.0"
+```
+
+### Common Patterns in Rust Debugging
+
+```rust
+// Check FizzBuzz logic
+debugger_evaluate({ expression: "n % 3" })
+// Result: "0" → divisible by 3
+
+debugger_evaluate({ expression: "n % 5" })
+// Result: "0" → divisible by 5
+
+// Detect bug: checking n % 4 instead of n % 5
+debugger_evaluate({ expression: "n % 4" })
+// Result: "0" (for n = 4)
+
+debugger_evaluate({ expression: "n % 5" })
+// Result: "4" (not 0!) → Bug confirmed
+```
+
+### Rust-Specific Notes
+
+**✅ Supported:**
+- Variables and struct fields
+- Method calls
+- Arithmetic and logical operators
+- Vector/array indexing
+- Option/Result inspection
+- Type information
+
+**⚠️ Limited Support:**
+- Closures (may not evaluate correctly)
+- Complex generic expressions
+- Trait method calls (depends on context)
+- Macro expansion
+
+**❌ Not Supported:**
+- Side effects (mutations in expressions)
+- Unsafe operations
+- Thread-local storage access
+
 ## Summary
 
 Expression evaluation is a powerful debugging tool. Key takeaways:
@@ -773,6 +949,8 @@ Expression evaluation is a powerful debugging tool. Key takeaways:
 - [Python Expressions](https://docs.python.org/3/reference/expressions.html)
 - [Ruby Syntax](https://ruby-doc.org/core/doc/syntax_rdoc.html)
 - [JavaScript Expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Expressions_and_Operators)
+- [Rust Expressions](https://doc.rust-lang.org/reference/expressions.html)
+- [LLDB Expression Evaluation](https://lldb.llvm.org/use/variable.html)
 - [DAP Evaluate Request](https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Evaluate)
 
 ---

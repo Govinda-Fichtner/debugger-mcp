@@ -1,0 +1,97 @@
+# Multi-stage build for lean production image
+# Stage 1: Build the Rust MCP server binary
+FROM rust:1.83-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev
+
+# Create app directory
+WORKDIR /app
+
+# Copy manifest files
+COPY Cargo.toml Cargo.lock ./
+
+# Copy source code
+COPY src ./src
+
+# Build release binary with static linking for native architecture
+# Supports both x86_64 and aarch64 (ARM64)
+RUN cargo build --release
+
+# Stage 2: Create Rust debugging runtime image
+# Note: Using Debian-based image because CodeLLDB is built against glibc, not musl
+FROM rust:1.83-slim-bookworm
+
+# Note: rust:1.83-slim-bookworm already includes rustc and cargo
+
+# Install runtime dependencies for Rust debugging
+# - wget/unzip: To download and extract CodeLLDB
+# - lldb: LLDB debugger (CodeLLDB backend)
+# - ca-certificates: For HTTPS downloads
+# Note: Removing update repos to bypass clock skew issues, using only main repo
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
+    wget \
+    unzip \
+    lldb \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install CodeLLDB
+# Version: v1.11.5 (latest stable with STDIO support)
+# Architecture: Detect and download appropriate version (x64 or arm64)
+RUN cd /tmp && \
+    echo "=== Detecting architecture ===" && \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        CODELLDB_PLATFORM="x64"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        CODELLDB_PLATFORM="arm64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    echo "=== Downloading CodeLLDB v1.11.5 for $CODELLDB_PLATFORM ===" && \
+    wget -q https://github.com/vadimcn/codelldb/releases/download/v1.11.5/codelldb-linux-${CODELLDB_PLATFORM}.vsix && \
+    echo "=== Extracting CodeLLDB ===" && \
+    unzip -q codelldb-linux-${CODELLDB_PLATFORM}.vsix -d /usr/local/lib/codelldb && \
+    echo "=== Creating symlink ===" && \
+    ln -s /usr/local/lib/codelldb/extension/adapter/codelldb /usr/local/bin/codelldb && \
+    echo "=== Cleaning up ===" && \
+    rm codelldb-linux-${CODELLDB_PLATFORM}.vsix && \
+    chmod +x /usr/local/bin/codelldb
+
+# Verify installations and print versions
+RUN echo "=== Rust Debugging Environment ===" && \
+    echo "Rust version: $(rustc --version)" && \
+    echo "Cargo version: $(cargo --version)" && \
+    echo "LLDB version: $(lldb --version 2>&1 | head -1 || echo 'lldb installed')" && \
+    echo "CodeLLDB location: $(ls -la /usr/local/bin/codelldb)" && \
+    echo "CodeLLDB version: $(codelldb --version 2>&1 | head -1 || echo 'codelldb installed')" && \
+    echo "✅ Rust debugging environment ready"
+
+# Create non-root user
+RUN groupadd -g 1000 mcpuser && \
+    useradd -m -u 1000 -g mcpuser mcpuser
+
+# Copy MCP server binary from builder (native architecture)
+COPY --from=builder /app/target/release/debugger_mcp /usr/local/bin/debugger_mcp
+
+# Set ownership
+RUN chown mcpuser:mcpuser /usr/local/bin/debugger_mcp
+
+# Switch to non-root user
+USER mcpuser
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["debugger_mcp", "serve"]
+
+# Metadata
+LABEL org.opencontainers.image.title="debugger-mcp-rust"
+LABEL org.opencontainers.image.description="DAP MCP Server - Rust Debugging Support"
+LABEL org.opencontainers.image.source="https://github.com/Govinda-Fichtner/debugger-mcp"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.variant="rust"

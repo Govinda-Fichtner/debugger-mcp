@@ -98,6 +98,12 @@ Host Path:      /home/vagrant/projects/fizzbuzz-python-test/fizzbuzz.py
 Container Path: /workspace/fizzbuzz.py
 ```
 
+**Standard debugger-rust container**:
+```
+Host Path:      /home/vagrant/projects/fizzbuzz-rust-test/fizzbuzz.rs
+Container Path: /workspace/fizzbuzz-rust-test/fizzbuzz.rs
+```
+
 ## Translation Rules
 
 ### Rule 1: Replace Host Base with Container Base
@@ -162,6 +168,25 @@ Container: /workspace/myapp/src/utils/helper.js
 }
 ```
 
+### Rust
+
+**Important**: For Rust, provide the **source file** path (`.rs`), not the binary path. The MCP server will compile it automatically.
+
+```json
+{
+  "language": "rust",
+  "program": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+  "stopOnEntry": true
+}
+```
+
+**After compilation**, the binary will be at:
+```
+/workspace/fizzbuzz-rust-test/target/debug/fizzbuzz
+```
+
+But you don't need to specify this - the server handles it automatically.
+
 ## Breakpoint Paths
 
 **IMPORTANT**: Breakpoint source paths must ALSO use container paths!
@@ -178,6 +203,26 @@ debugger_set_breakpoint({
 debugger_set_breakpoint({
   "sessionId": "...",
   "sourcePath": "/workspace/fizzbuzz-nodejs-test/fizzbuzz.js",
+  "line": 9
+})
+```
+
+### Rust Breakpoint Paths
+
+For Rust, use the **source file** path (`.rs`), not the compiled binary path:
+
+```json
+// ✅ CORRECT - Source file path
+debugger_set_breakpoint({
+  "sessionId": "...",
+  "sourcePath": "/workspace/fizzbuzz-rust-test/fizzbuzz.rs",
+  "line": 9
+})
+
+// ❌ WRONG - Binary path
+debugger_set_breakpoint({
+  "sessionId": "...",
+  "sourcePath": "/workspace/fizzbuzz-rust-test/target/debug/fizzbuzz",
   "line": 9
 })
 ```
