@@ -293,7 +293,7 @@ A: Rebuild the image: `docker build -t debugger-mcp:latest . && docker-compose u
 
 ---
 
-**Image**: debugger-mcp:latest  
-**Base**: Alpine Linux 3.21  
-**Size**: ~50MB  
+**Image**: debugger-mcp:latest
+**Base**: Alpine Linux 3.21
+**Size**: ~50MB
 **Security**: Non-root user, minimal surface

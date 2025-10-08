@@ -81,7 +81,7 @@
 - **Fixed**: Cargo.lock was in .dockerignore but referenced in Dockerfile
 - **Solution**: Removed Cargo.lock from .dockerignore for reproducible builds
 
-#### Issue 3: Rust Edition Compatibility  
+#### Issue 3: Rust Edition Compatibility
 - **Fixed**: Edition 2024 requires nightly Rust but Dockerfile used stable
 - **Solution**: Changed to stable edition 2021 in Cargo.toml
 

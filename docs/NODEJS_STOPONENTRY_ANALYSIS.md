@@ -288,4 +288,3 @@ Check if there's a simpler entry point than dapDebugServer.js.
 **Status**: Workaround approach approved
 **Next Step**: Implement entry breakpoint pattern
 **Timeline**: 1-2 hours
-

@@ -26,7 +26,7 @@
 4. Added comprehensive mock tests:
    - 5 mock tests for DAP transport (11 new tests total)
    - 6 mock tests for MCP transport
-   
+
 **Test Coverage Added:**
 - DAP transport mock tests: Read responses, write requests, error handling, events
 - MCP transport mock tests: JSON-RPC requests/responses, notifications, errors

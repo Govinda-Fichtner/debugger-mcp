@@ -8,7 +8,7 @@ This program is used as a test fixture to validate debugging functionality.
 def fizzbuzz(n):
     """
     Returns FizzBuzz output for number n.
-    
+
     Rules:
     - If n is divisible by 3 and 5, return "FizzBuzz"
     - If n is divisible by 3, return "Fizz"
@@ -32,7 +32,7 @@ def main():
         result = fizzbuzz(i)
         results.append(result)
         print(result)
-    
+
     return results
 
 

@@ -7,19 +7,19 @@ services:
       dockerfile: Dockerfile
     image: debugger-mcp:latest
     container_name: debugger-mcp-server
-    
+
     # Mount workspace for debugging programs
     volumes:
       - ./workspace:/workspace
-    
+
     # STDIO mode - interact via stdin/stdout
     stdin_open: true
     tty: true
-    
+
     # Environment variables
     environment:
       - RUST_LOG=info
-    
+
     # Restart policy
     restart: unless-stopped
 
