@@ -126,15 +126,17 @@ repos:
   # ===================
   - repo: local
     hooks:
-      # Code coverage check (slower, runs on push)
-      - id: cargo-tarpaulin
-        name: cargo tarpaulin (code coverage)
-        entry: bash -c 'source $HOME/.cargo/env && cargo tarpaulin --lib --exclude-files "tests/*" --out Stdout --fail-under 60'
-        language: system
-        types: [rust]
-        pass_filenames: false
-        stages: [pre-push]
-        verbose: true
+      # Code coverage check (disabled - runs in CI instead)
+      # Tarpaulin takes ~30s and can fail in local environments
+      # CI workflow handles coverage with proper environment setup
+      # - id: cargo-tarpaulin
+      #   name: cargo tarpaulin (code coverage)
+      #   entry: bash -c 'source $HOME/.cargo/env && cargo tarpaulin --lib --exclude-files "tests/*" --out Stdout --fail-under 60'
+      #   language: system
+      #   types: [rust]
+      #   pass_filenames: false
+      #   stages: [pre-push]
+      #   verbose: true
 
       # All tests including integration (on push)
       # Note: Some integration tests require specific environment setup
