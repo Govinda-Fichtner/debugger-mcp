@@ -35,8 +35,11 @@ RUN python3 -m pip install --break-system-packages debugpy
 # Install Ruby debug gem
 RUN gem install debug
 
-# Install Node.js vscode-js-debug globally
-RUN npm install -g @vscode/js-debug
+# Install Node.js vscode-js-debug from official tarball
+# Tests expect js-debug at /tmp/js-debug/src/dapDebugServer.js
+RUN cd /tmp && \
+    curl -L https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz | tar -xzf - && \
+    chmod +x /tmp/js-debug/src/dapDebugServer.js
 
 # Install Rust LLDB component (for CodeLLDB)
 RUN rustup component add lldb
