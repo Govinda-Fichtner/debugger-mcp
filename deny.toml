@@ -15,10 +15,10 @@ ignore = [
 # This section is considered when running `cargo deny check licenses`
 # More documentation: https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
 [licenses]
-# Permissive license enforcement - warn on issues but don't block
-unlicensed = "warn"
 # List of explicitly allowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
+# Note: With cargo-deny v2, licenses not in this list are denied by default
+# The CI job has continue-on-error: true to keep it non-blocking
 allow = [
     "0BSD",
     "MIT",
@@ -36,12 +36,6 @@ allow = [
     "Unlicense",
     "Zlib",
 ]
-# Warn on copyleft but don't deny (permissive policy)
-copyleft = "warn"
-# Allow OSI/FSF approved licenses
-allow-osi-fsf-free = "both"
-# Default action for unknown licenses
-default = "warn"
 # The confidence threshold for detecting a license from license text
 # We have high confidence that the license text is required to be accurate
 confidence-threshold = 0.8
