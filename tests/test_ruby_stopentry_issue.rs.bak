@@ -1,3 +1,5 @@
+#![cfg(feature = "disabled")] // Disabled: Uses old API
+
 /// Test to demonstrate Ruby stopOnEntry issue
 ///
 /// **Issue**: rdbg with --stop-at-load and --open (socket mode) doesn't send

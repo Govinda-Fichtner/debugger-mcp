@@ -1,0 +1,78 @@
+# Multi-stage build for lean production image
+# Stage 1: Build the Rust binary
+FROM rust:1.83-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev
+
+# Create app directory
+WORKDIR /app
+
+# Copy manifest files
+COPY Cargo.toml Cargo.lock ./
+
+# Copy source code
+COPY src ./src
+
+# Build release binary with static linking for native architecture
+# Supports both x86_64 and aarch64 (ARM64)
+RUN cargo build --release
+
+# Stage 2: Create minimal runtime image
+FROM alpine:3.21
+
+# Install runtime dependencies
+# Node.js is needed for JavaScript/TypeScript debugging support
+RUN apk add --no-cache \
+    nodejs \
+    npm \
+    wget \
+    && rm -rf /var/cache/apk/*
+
+# Download pre-built vscode-js-debug from official releases
+# This is much faster and more reliable than building from source
+# Using v1.105.0 as specified in the integration tests
+RUN cd /tmp && \
+    wget -q https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz && \
+    mkdir -p /usr/local/lib && \
+    tar -xzf js-debug-dap-v1.105.0.tar.gz -C /usr/local/lib && \
+    mv /usr/local/lib/js-debug /usr/local/lib/vscode-js-debug && \
+    rm js-debug-dap-v1.105.0.tar.gz && \
+    # Clean up wget
+    apk del wget && \
+    rm -rf /var/cache/apk/*
+
+# Create symlink for easier access
+RUN ln -s /usr/local/lib/vscode-js-debug/src/dapDebugServer.js /usr/local/bin/js-debug
+
+# Verify installation
+RUN echo "=== Node.js Debugger Installation ===" && \
+    node --version && \
+    npm --version && \
+    ls -la /usr/local/lib/vscode-js-debug/src/dapDebugServer.js
+
+# Create non-root user
+RUN addgroup -g 1000 mcpuser && \
+    adduser -D -u 1000 -G mcpuser mcpuser
+
+# Copy binary from builder (native architecture)
+COPY --from=builder /app/target/release/debugger_mcp /usr/local/bin/debugger_mcp
+
+# Set ownership
+RUN chown mcpuser:mcpuser /usr/local/bin/debugger_mcp
+
+# Switch to non-root user
+USER mcpuser
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["debugger_mcp", "serve"]
+
+# Metadata
+LABEL org.opencontainers.image.title="debugger-mcp-nodejs"
+LABEL org.opencontainers.image.description="DAP MCP Server - Node.js Debugging Support"
+LABEL org.opencontainers.image.source="https://github.com/Govinda-Fichtner/debugger-mcp"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.variant="nodejs"

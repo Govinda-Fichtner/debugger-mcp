@@ -1,0 +1,40 @@
+# Docker image for running Node.js integration tests
+# Includes Rust toolchain + vscode-js-debug
+
+FROM rust:1.83-alpine
+
+# Install dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    nodejs \
+    npm \
+    wget \
+    && rm -rf /var/cache/apk/*
+
+# Download pre-built vscode-js-debug v1.105.0
+RUN cd /tmp && \
+    wget -q https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz && \
+    mkdir -p /tmp/js-debug && \
+    tar -xzf js-debug-dap-v1.105.0.tar.gz -C /tmp && \
+    rm js-debug-dap-v1.105.0.tar.gz
+
+# Verify installations
+RUN echo "=== Environment ====" && \
+    rustc --version && \
+    cargo --version && \
+    node --version && \
+    npm --version && \
+    ls -la /tmp/js-debug/src/dapDebugServer.js
+
+# Set working directory
+WORKDIR /app
+
+# Default command: run all Node.js integration tests
+CMD ["cargo", "test", "--test", "test_nodejs_integration", "--", "--ignored", "--nocapture"]
+
+# Metadata
+LABEL org.opencontainers.image.title="debugger-mcp-nodejs-test"
+LABEL org.opencontainers.image.description="DAP MCP Server - Node.js Integration Testing Environment"
+LABEL org.opencontainers.image.source="https://github.com/Govinda-Fichtner/debugger-mcp"
+LABEL org.opencontainers.image.version="0.1.0"
+LABEL org.opencontainers.image.variant="nodejs-test"

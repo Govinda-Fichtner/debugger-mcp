@@ -1,4 +1,7 @@
 use serde_json::{json, Value};
+use super::logging::DebugAdapterLogger;
+use tracing::error;
+use std::error::Error;
 
 /// Python debugpy adapter configuration
 pub struct PythonAdapter;
@@ -49,6 +52,80 @@ impl PythonAdapter {
         }
 
         launch
+    }
+}
+
+// ============================================================================
+// DebugAdapterLogger Trait Implementation
+// ============================================================================
+
+impl DebugAdapterLogger for PythonAdapter {
+    fn language_name(&self) -> &str {
+        "Python"
+    }
+
+    fn language_emoji(&self) -> &str {
+        "🐍"
+    }
+
+    fn transport_type(&self) -> &str {
+        "STDIO"
+    }
+
+    fn adapter_id(&self) -> &str {
+        "debugpy"
+    }
+
+    fn command_line(&self) -> String {
+        let args = Self::args();
+        format!("python {}", args.join(" "))
+    }
+
+    fn requires_workaround(&self) -> bool {
+        false
+    }
+
+    fn log_spawn_error(&self, error: &dyn Error) {
+        error!("❌ [PYTHON] Failed to spawn debugpy adapter: {}", error);
+        error!("   Command: {}", self.command_line());
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. debugpy not installed → pip install debugpy");
+        error!("   2. python not in PATH → which python");
+        error!("   3. Python version < 3.7 → python --version");
+        error!("   4. Virtual environment not activated");
+        error!("   ");
+        error!("   Troubleshooting:");
+        error!("   $ python -c 'import debugpy; print(debugpy.__version__)'");
+        error!("   Expected: 1.6.0 or higher");
+    }
+
+    fn log_connection_error(&self, error: &dyn Error) {
+        error!("❌ [PYTHON] Adapter connection failed: {}", error);
+        error!("   Transport: STDIO");
+        error!("   This shouldn't happen with STDIO transport");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. Adapter process crashed on startup");
+        error!("   2. Python exception during debugpy.adapter initialization");
+        error!("   3. STDIO pipes broken or closed unexpectedly");
+        error!("   ");
+        error!("   The adapter process may have written error to stderr.");
+        error!("   Check process stderr output for Python exceptions.");
+    }
+
+    fn log_init_error(&self, error: &dyn Error) {
+        error!("❌ [PYTHON] DAP initialization failed: {}", error);
+        error!("   The adapter started but couldn't complete DAP handshake");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. Program path doesn't exist or is not accessible");
+        error!("   2. Program has Python syntax errors");
+        error!("   3. Required modules not installed in Python environment");
+        error!("   4. Incompatible debugpy version (need >= 1.6.0)");
+        error!("   ");
+        error!("   Verify program can run:");
+        error!("   $ python <program_path>");
     }
 }
 

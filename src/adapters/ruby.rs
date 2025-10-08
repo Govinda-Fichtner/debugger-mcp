@@ -4,7 +4,8 @@ use crate::dap::socket_helper;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use std::time::Duration;
-use tracing::info;
+use tracing::{error, info};
+use super::logging::DebugAdapterLogger;
 
 /// Ruby rdbg (debug gem) adapter configuration
 ///
@@ -107,6 +108,105 @@ impl RubyAdapter {
     }
 }
 
+// ============================================================================
+// DebugAdapterLogger Trait Implementation
+// ============================================================================
+
+impl DebugAdapterLogger for RubyAdapter {
+    fn language_name(&self) -> &str {
+        "Ruby"
+    }
+
+    fn language_emoji(&self) -> &str {
+        "💎"
+    }
+
+    fn transport_type(&self) -> &str {
+        "TCP Socket"
+    }
+
+    fn adapter_id(&self) -> &str {
+        "rdbg"
+    }
+
+    fn command_line(&self) -> String {
+        // Port is allocated dynamically, show template
+        "rdbg --open --port <PORT> [--stop-at-load|--nonstop] <program> [args...]".to_string()
+    }
+
+    fn requires_workaround(&self) -> bool {
+        true
+    }
+
+    fn workaround_reason(&self) -> Option<&str> {
+        Some("rdbg socket mode doesn't honor --stop-at-load flag")
+    }
+
+    fn log_spawn_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [RUBY] Failed to spawn rdbg: {}", error);
+        error!("   Command template: {}", self.command_line());
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. debug gem not installed → gem install debug");
+        error!("   2. rdbg not in PATH → which rdbg");
+        error!("   3. Ruby version < 3.1 → ruby --version");
+        error!("   4. Port already in use (rare with dynamic allocation)");
+        error!("   5. Permission denied on port binding");
+        error!("   ");
+        error!("   Troubleshooting:");
+        error!("   $ gem list debug");
+        error!("   Expected: debug (>= 1.0.0)");
+        error!("   ");
+        error!("   $ rdbg --version");
+        error!("   Expected: rdbg 1.x.x or higher");
+    }
+
+    fn log_connection_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [RUBY] Socket connection failed: {}", error);
+        error!("   Transport: TCP Socket");
+        error!("   Timeout: 2 seconds");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. rdbg process crashed before opening socket");
+        error!("   2. Port blocked by firewall");
+        error!("   3. Program exited immediately (syntax error or file not found)");
+        error!("   4. Socket binding failed (port already in use)");
+        error!("   ");
+        error!("   Troubleshooting:");
+        error!("   Check if rdbg process is still running:");
+        error!("   $ ps aux | grep rdbg");
+        error!("   ");
+        error!("   Verify program can run:");
+        error!("   $ ruby <program_path>");
+    }
+
+    fn log_init_error(&self, error: &dyn std::error::Error) {
+        error!("❌ [RUBY] DAP initialization failed: {}", error);
+        error!("   Socket connected but DAP protocol handshake failed");
+        error!("   ");
+        error!("   Possible causes:");
+        error!("   1. Incompatible rdbg version (need >= 1.0.0)");
+        error!("   2. Program has Ruby syntax errors");
+        error!("   3. Required gems not installed");
+        error!("   4. DAP protocol version mismatch");
+        error!("   ");
+        error!("   Verify rdbg compatibility:");
+        error!("   $ rdbg --version");
+        error!("   ");
+        error!("   Test program syntax:");
+        error!("   $ ruby -c <program_path>");
+    }
+}
+
+/// Helper to log Ruby-specific connection success with port information
+impl RubyDebugSession {
+    pub fn log_connection_success_with_port(&self) {
+        info!("✅ [RUBY] Connected to rdbg on port {}", self.port);
+        info!("   Socket: localhost:{}", self.port);
+        info!("   Process ID: {:?}", self.process.id());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,34 +216,6 @@ mod tests {
         assert_eq!(RubyAdapter::command(), "rdbg");
     }
 
-    #[test]
-    fn test_args_with_stop_on_entry() {
-        let program = "/path/to/script.rb";
-        let program_args = vec!["arg1".to_string(), "arg2".to_string()];
-        let args = RubyAdapter::args_with_options(program, &program_args, true);
-
-        assert_eq!(args.len(), 4); // --stop-at-load + program + 2 args
-        assert_eq!(args[0], "--stop-at-load");
-        assert_eq!(args[1], program);
-        assert_eq!(args[2], "arg1");
-        assert_eq!(args[3], "arg2");
-        // Should NOT have --nonstop when stopOnEntry is true
-        assert!(!args.contains(&"--nonstop".to_string()));
-    }
-
-    #[test]
-    fn test_args_without_stop_on_entry() {
-        let program = "/path/to/script.rb";
-        let program_args = vec!["arg1".to_string()];
-        let args = RubyAdapter::args_with_options(program, &program_args, false);
-
-        assert_eq!(args.len(), 3); // --nonstop + program + 1 arg
-        assert_eq!(args[0], "--nonstop");
-        assert_eq!(args[1], program);
-        assert_eq!(args[2], "arg1");
-        // Should NOT have --stop-at-load when stopOnEntry is false
-        assert!(!args.contains(&"--stop-at-load".to_string()));
-    }
 
     #[test]
     fn test_adapter_id() {

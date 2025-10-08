@@ -29,6 +29,9 @@ pub enum Error {
     #[error("Invalid state: {0}")]
     InvalidState(String),
 
+    #[error("Timeout: {0}")]
+    Timeout(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -41,6 +44,7 @@ impl Error {
             Error::Dap(_) => -32003,
             Error::Process(_) => -32004,
             Error::InvalidState(_) => -32005,
+            Error::Timeout(_) => -32006,
             Error::InvalidRequest(_) => -32600,
             Error::MethodNotFound(_) => -32601,
             Error::Internal(_) => -32603,
