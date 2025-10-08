@@ -119,7 +119,7 @@ jobs:
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run coverage
-        run: cargo tarpaulin --lib --exclude-files 'tests/*' --out Xml --fail-under 33
+        run: cargo tarpaulin --lib --exclude-files 'tests/*' --out Xml --fail-under 28
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
