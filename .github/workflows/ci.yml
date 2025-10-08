@@ -144,16 +144,20 @@ jobs:
 
       - name: Run tests with nextest
         run: |
-          cargo nextest run --lib --no-fail-fast --message-format libtest-json > nextest-output.json 2>&1 || true
-          # Also run in standard format for human readability
-          cargo nextest run --lib --no-fail-fast || true
+          # Run tests and capture output
+          cargo nextest run --lib --no-fail-fast 2>&1 | tee nextest-output.txt
+
+          # Extract summary line for parsing
+          grep "Summary \[" nextest-output.txt > nextest-summary.txt || echo "Summary [0s] 0 tests run: 0 passed, 0 skipped" > nextest-summary.txt
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
-          path: nextest-output.json
+          path: |
+            nextest-output.txt
+            nextest-summary.txt
           retention-days: 30
 
       - name: Generate Test Summary
@@ -162,20 +166,16 @@ jobs:
           echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Parse nextest/libtest JSON output
-          if [ -f nextest-output.json ]; then
-            # Count test events
-            TOTAL_TESTS=$(jq -s '[.[] | select(.type == "test")] | length' nextest-output.json 2>/dev/null || echo 0)
-            PASSED_TESTS=$(jq -s '[.[] | select(.type == "test" and .event == "ok")] | length' nextest-output.json 2>/dev/null || echo 0)
-            FAILED_TESTS=$(jq -s '[.[] | select(.type == "test" and .event == "failed")] | length' nextest-output.json 2>/dev/null || echo 0)
+          # Parse nextest summary output
+          # Example: "Summary [0.565s] 171 tests run: 171 passed, 1 skipped"
+          if [ -f nextest-summary.txt ]; then
+            SUMMARY_LINE=$(cat nextest-summary.txt)
 
-            # If JSON parsing fails, fall back to simple counting
-            if [ "$TOTAL_TESTS" -eq 0 ]; then
-              # Try alternative parsing or use cargo test output
-              TOTAL_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $3}' || echo "unknown")
-              PASSED_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $5}' || echo "unknown")
-              FAILED_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $8}' || echo "unknown")
-            fi
+            # Extract numbers using regex
+            TOTAL_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= tests run)' || echo "0")
+            PASSED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= passed)' || echo "0")
+            FAILED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= failed)' || echo "0")
+            SKIPPED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= skipped)' || echo "0")
 
             echo "### Test Suite Results" >> $GITHUB_STEP_SUMMARY
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
@@ -183,16 +183,17 @@ jobs:
             echo "| Total Tests | $TOTAL_TESTS |" >> $GITHUB_STEP_SUMMARY
             echo "| ✅ Passed | $PASSED_TESTS |" >> $GITHUB_STEP_SUMMARY
             echo "| ❌ Failed | $FAILED_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⏭️ Skipped | $SKIPPED_TESTS |" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "$FAILED_TESTS" != "0" ] && [ "$FAILED_TESTS" != "unknown" ]; then
+            if [ "$FAILED_TESTS" != "0" ]; then
               echo "⚠️ **Test failures detected!**" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
 
-              # Show failed tests
+              # Show failed tests from output
               echo "<details><summary>Failed Tests</summary>" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              jq -s '[.[] | select(.type == "test" and .event == "failed")] | .[] | "- \(.name)"' nextest-output.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "See logs for details" >> $GITHUB_STEP_SUMMARY
+              grep "FAIL \[" nextest-output.txt | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "See logs for details" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "</details>" >> $GITHUB_STEP_SUMMARY
             else
