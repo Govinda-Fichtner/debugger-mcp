@@ -50,8 +50,9 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
+            -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
             debugger-mcp:integration-tests \
-            cargo test --all -- --include-ignored --nocapture --skip claude_code_integration 2>&1 | tee integration-test-output.txt || true
+            cargo test --all -- --include-ignored --nocapture 2>&1 | tee integration-test-output.txt || true
 
       - name: Upload test output
         uses: actions/upload-artifact@v4

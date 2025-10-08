@@ -29,10 +29,17 @@ async fn test_claude_code_integration() {
 
     // 3. Build the MCP server binary
     println!("\n🔨 Step 3: Building MCP server...");
+
+    // Get the workspace root (works both locally and in Docker)
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent().unwrap_or(&manifest_dir);
+
+    println!("   Workspace root: {}", workspace_root.display());
+
     let cargo_build = Command::new("cargo")
         .arg("build")
         .arg("--release")
-        .current_dir("/home/vagrant/projects/debugger_mcp")
+        .current_dir(workspace_root)
         .output()
         .expect("Failed to run cargo build");
 
@@ -43,11 +50,11 @@ async fn test_claude_code_integration() {
     );
     println!("✅ MCP server built successfully");
 
-    let binary_path = "/home/vagrant/projects/debugger_mcp/target/release/debugger_mcp";
+    let binary_path = workspace_root.join("target/release/debugger_mcp");
     assert!(
-        PathBuf::from(binary_path).exists(),
+        binary_path.exists(),
         "❌ Binary not found at {}",
-        binary_path
+        binary_path.display()
     );
 
     // 4. Create fizzbuzz.py test file

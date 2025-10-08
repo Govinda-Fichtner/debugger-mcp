@@ -43,6 +43,12 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
 # Install Ruby debug gem
 RUN gem install debug
 
+# Install Claude Code CLI (Node.js-based)
+# This allows running the claude_code_integration_test
+# Note: If running tests that require API access, pass ANTHROPIC_API_KEY as environment variable:
+#   docker run -e ANTHROPIC_API_KEY=your_key_here debugger-mcp:integration-tests
+RUN npm install -g @anthropic-ai/claude-code
+
 # Install Node.js vscode-js-debug from official tarball
 # Tests expect js-debug at /tmp/js-debug/src/dapDebugServer.js
 RUN cd /tmp && \
@@ -64,5 +70,4 @@ WORKDIR /workspace
 
 # Default command: run all tests including ignored integration tests
 # Note: No coverage collection due to cargo-tarpaulin edition2024 dependency
-# Skip claude_code_integration test (requires Claude CLI not available in Docker)
-CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture", "--skip", "claude_code_integration"]
+CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture"]
