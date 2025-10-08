@@ -147,8 +147,8 @@ jobs:
           # Run tests and capture output
           cargo nextest run --lib --no-fail-fast 2>&1 | tee nextest-output.txt
 
-          # Extract summary line for parsing
-          grep "Summary \[" nextest-output.txt > nextest-summary.txt || echo "Summary [0s] 0 tests run: 0 passed, 0 skipped" > nextest-summary.txt
+          # Extract summary line for parsing (handle leading spaces)
+          grep -E "^\s*Summary \[" nextest-output.txt > nextest-summary.txt || echo "Summary [0s] 0 tests run: 0 passed, 0 skipped" > nextest-summary.txt
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
