@@ -167,15 +167,22 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Parse nextest summary output
-          # Example: "Summary [0.565s] 171 tests run: 171 passed, 1 skipped"
+          # Example with ANSI codes: "[32;1m     Summary[0m [   0.565s] [1m171[0m tests run: [1m171[0m [32;1mpassed[0m, [1m1[0m [33;1mskipped[0m"
           if [ -f nextest-summary.txt ]; then
-            SUMMARY_LINE=$(cat nextest-summary.txt)
+            # Strip ANSI color codes first
+            SUMMARY_LINE=$(cat nextest-summary.txt | sed 's/\x1b\[[0-9;]*m//g')
 
-            # Extract numbers using regex
-            TOTAL_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= tests run)' || echo "0")
-            PASSED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= passed)' || echo "0")
-            FAILED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= failed)' || echo "0")
-            SKIPPED_TESTS=$(echo "$SUMMARY_LINE" | grep -oP '\d+(?= skipped)' || echo "0")
+            # Extract numbers using awk (more reliable than grep -P)
+            TOTAL_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="tests" && $(i+1)=="run:") print $(i-1)}' || echo "0")
+            PASSED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed,") print $(i-1)}' || echo "0")
+            FAILED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed,") print $(i-1)}' || echo "0")
+            SKIPPED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="skipped" || $i=="skipped,") print $(i-1)}' || echo "0")
+
+            # Default to 0 if empty
+            TOTAL_TESTS=${TOTAL_TESTS:-0}
+            PASSED_TESTS=${PASSED_TESTS:-0}
+            FAILED_TESTS=${FAILED_TESTS:-0}
+            SKIPPED_TESTS=${SKIPPED_TESTS:-0}
 
             echo "### Test Suite Results" >> $GITHUB_STEP_SUMMARY
             echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
@@ -190,10 +197,10 @@ jobs:
               echo "⚠️ **Test failures detected!**" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
 
-              # Show failed tests from output
+              # Show failed tests from output (strip ANSI codes)
               echo "<details><summary>Failed Tests</summary>" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              grep "FAIL \[" nextest-output.txt | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "See logs for details" >> $GITHUB_STEP_SUMMARY
+              grep "FAIL \[" nextest-output.txt | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^/- /' >> $GITHUB_STEP_SUMMARY || echo "See logs for details" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "</details>" >> $GITHUB_STEP_SUMMARY
             else
