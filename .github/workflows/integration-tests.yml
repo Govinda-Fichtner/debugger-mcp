@@ -1,0 +1,184 @@
+# Integration Tests Workflow
+# Runs comprehensive integration tests for all supported languages in Docker
+# Generates combined code coverage including both unit and integration tests
+
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile.integration-tests'
+      - '.github/workflows/integration-tests.yml'
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_HOME: /home/runner/.cargo
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  integration-tests:
+    name: Integration Tests (All Languages)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build integration test Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.integration-tests
+          tags: debugger-mcp:integration-tests
+          cache-from: type=gha,scope=integration-tests
+          cache-to: type=gha,mode=max,scope=integration-tests
+          load: true
+
+      - name: Run integration tests with coverage
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -e RUST_BACKTRACE=1 \
+            debugger-mcp:integration-tests \
+            cargo tarpaulin \
+              --all \
+              --ignore-panics \
+              --exclude-files 'tests/bin/*' \
+              --out Json --out Xml --out Html \
+              --output-dir coverage-integration \
+              -- --include-ignored 2>&1 | tee integration-test-output.txt || true
+
+      - name: Check if coverage was generated
+        id: check_coverage
+        run: |
+          if [ -f coverage-integration/cobertura.xml ]; then
+            echo "coverage_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Coverage report generated"
+          else
+            echo "coverage_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Coverage report not found"
+          fi
+
+      - name: Upload integration coverage to Codecov
+        if: steps.check_coverage.outputs.coverage_exists == 'true'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-integration/cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          flags: integration-tests
+          name: integration-tests
+          verbose: true
+
+      - name: Upload combined coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-coverage-report
+          path: |
+            coverage-integration/
+            integration-test-output.txt
+          retention-days: 90
+
+      - name: Parse test results
+        if: always()
+        id: parse_results
+        run: |
+          # Strip ANSI codes and parse results
+          sed 's/\x1b\[[0-9;]*m//g' integration-test-output.txt > integration-test-clean.txt
+
+          # Extract test counts
+          TOTAL_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) {
+              if($i=="passed" || $i=="passed;") passed=$(i-1);
+              if($i=="failed" || $i=="failed;") failed=$(i-1);
+              if($i=="ignored" || $i=="ignored;") ignored=$(i-1);
+            }
+          } END {
+            print (passed+0) + (failed+0)
+          }' integration-test-clean.txt || echo "0")
+
+          PASSED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
+          }' integration-test-clean.txt | tail -1 || echo "0")
+
+          FAILED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
+          }' integration-test-clean.txt | tail -1 || echo "0")
+
+          IGNORED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
+          }' integration-test-clean.txt | tail -1 || echo "0")
+
+          # Extract coverage percentage if available
+          COVERAGE=$(grep -oP '\d+\.\d+% coverage' integration-test-clean.txt | grep -oP '\d+\.\d+' | tail -1 || echo "unknown")
+
+          echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "ignored_tests=${IGNORED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "coverage=${COVERAGE:-unknown}" >> $GITHUB_OUTPUT
+
+      - name: Generate Integration Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Integration Test Results (All Languages)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Tests | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏭️ Ignored | ${{ steps.parse_results.outputs.ignored_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.parse_results.outputs.failed_tests }}" != "0" ]; then
+            echo "⚠️ **Integration test failures detected!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>View failed tests</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "FAILED" integration-test-clean.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "See full logs for details" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **All integration tests passed!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Code Coverage (Combined)" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Coverage | ${{ steps.parse_results.outputs.coverage }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Languages Tested" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐍 Python (debugpy)" >> $GITHUB_STEP_SUMMARY
+          echo "- 💎 Ruby (rdbg/debug gem)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🟢 Node.js (vscode-js-debug)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🦀 Rust (CodeLLDB)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐹 Go (Delve)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [Download coverage report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if integration tests failed
+        if: steps.parse_results.outputs.failed_tests != '0'
+        run: |
+          echo "Integration tests failed!"
+          exit 1

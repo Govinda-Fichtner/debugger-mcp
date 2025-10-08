@@ -249,8 +249,9 @@ jobs:
           files: ./coverage/cobertura.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
-          flags: unittests
-          name: codecov-umbrella
+          flags: unit-tests
+          name: unit-tests-coverage
+          verbose: true
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v4

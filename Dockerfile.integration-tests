@@ -1,0 +1,65 @@
+# Multi-Language Integration Test Docker Image
+# Contains Python, Ruby, Node.js, Rust, and Go debuggers for comprehensive testing
+#
+# Build: docker build -f Dockerfile.integration-tests -t debugger-mcp:integration-tests .
+# Run:   docker run --rm -v $(pwd):/workspace debugger-mcp:integration-tests
+
+FROM rust:1.70-slim-bookworm AS base
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ruby \
+    ruby-dev \
+    nodejs \
+    npm \
+    lldb \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go 1.21.0
+ARG GO_VERSION=1.21.0
+RUN curl -L https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+
+# Install Python debugpy
+RUN python3 -m pip install --break-system-packages debugpy
+
+# Install Ruby debug gem
+RUN gem install debug
+
+# Install Node.js vscode-js-debug globally
+RUN npm install -g @vscode/js-debug
+
+# Install Rust LLDB component (for CodeLLDB)
+RUN rustup component add lldb
+
+# Install Go Delve debugger
+RUN go install github.com/go-delve/delve/cmd/dlv@latest
+
+# Install cargo-nextest for faster parallel test execution
+RUN cargo install cargo-nextest
+
+# Install cargo-tarpaulin for code coverage
+RUN cargo install cargo-tarpaulin
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command: run all tests including ignored integration tests with coverage
+CMD ["cargo", "tarpaulin", \
+     "--all", \
+     "--ignore-panics", \
+     "--exclude-files", "tests/bin/*", \
+     "--out", "Json", \
+     "--out", "Xml", \
+     "--out", "Html", \
+     "--output-dir", "coverage-integration", \
+     "--", "--include-ignored"]
