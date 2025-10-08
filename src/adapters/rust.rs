@@ -49,9 +49,9 @@
 //! - `docs/RUST_DEBUGGING_RESEARCH_AND_PROPOSAL.md` - Architecture and research
 //! - https://github.com/vadimcn/codelldb - CodeLLDB debugger
 
-use serde_json::{json, Value};
 use super::logging::DebugAdapterLogger;
-use crate::{Result, Error};
+use crate::{Error, Result};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, error, info};
@@ -92,10 +92,7 @@ impl RustAdapter {
     /// 2. /usr/bin/codelldb (system install)
     /// 3. codelldb (in PATH)
     pub fn command() -> String {
-        let locations = vec![
-            "/usr/local/bin/codelldb",
-            "/usr/bin/codelldb",
-        ];
+        let locations = vec!["/usr/local/bin/codelldb", "/usr/bin/codelldb"];
 
         for location in locations {
             if Path::new(location).exists() {
@@ -114,7 +111,7 @@ impl RustAdapter {
     /// --port is only for TCP mode. When stdio pipes are provided (via DapClient::spawn),
     /// CodeLLDB automatically detects and uses STDIO for DAP communication.
     pub fn args() -> Vec<String> {
-        vec![]  // Empty = STDIO mode (default for v1.11.0+)
+        vec![] // Empty = STDIO mode (default for v1.11.0+)
     }
 
     /// Adapter ID for CodeLLDB
@@ -430,9 +427,9 @@ impl RustAdapter {
             }
             RustProjectType::CargoProject { root, .. } => {
                 info!("📦 [RUST] Compiling Cargo project");
-                let root_str = root.to_str().ok_or_else(|| {
-                    Error::Compilation("Non-UTF8 Cargo root path".to_string())
-                })?;
+                let root_str = root
+                    .to_str()
+                    .ok_or_else(|| Error::Compilation("Non-UTF8 Cargo root path".to_string()))?;
                 // Default to building binary target
                 Self::compile_cargo_project(root_str, &CargoTargetType::Binary, release).await
             }
@@ -486,9 +483,9 @@ impl RustAdapter {
         let output_dir = source_dir.join("target").join(build_type);
 
         // Create output directory if it doesn't exist
-        tokio::fs::create_dir_all(&output_dir).await.map_err(|e| {
-            Error::Compilation(format!("Failed to create output directory: {}", e))
-        })?;
+        tokio::fs::create_dir_all(&output_dir)
+            .await
+            .map_err(|e| Error::Compilation(format!("Failed to create output directory: {}", e)))?;
 
         let binary_path = output_dir.join(binary_name);
 
@@ -504,7 +501,7 @@ impl RustAdapter {
         if release {
             // Release build: optimizations + debug symbols
             cmd.arg("-C").arg("opt-level=3");
-            cmd.arg("-g");  // Keep debug symbols even in release
+            cmd.arg("-g"); // Keep debug symbols even in release
         } else {
             // Debug build: no optimizations, full debug symbols
             cmd.arg("-g");
@@ -601,7 +598,7 @@ impl DebugAdapterLogger for RustAdapter {
     }
 
     fn requires_workaround(&self) -> bool {
-        false  // CodeLLDB supports stopOnEntry natively
+        false // CodeLLDB supports stopOnEntry natively
     }
 
     fn workaround_reason(&self) -> Option<&str> {
@@ -697,7 +694,7 @@ mod tests {
     #[test]
     fn test_args() {
         let args = RustAdapter::args();
-        assert_eq!(args.len(), 0);  // Empty for STDIO mode (v1.11.0+)
+        assert_eq!(args.len(), 0); // Empty for STDIO mode (v1.11.0+)
     }
 
     #[test]
@@ -746,7 +743,7 @@ mod tests {
 
     // Compilation tests require rustc installed
     #[tokio::test]
-    #[ignore]  // Only run when rustc is available
+    #[ignore] // Only run when rustc is available
     async fn test_compile_single_file_creates_binary() {
         // This test requires a real Rust source file
         // In CI/CD, this would be run inside Dockerfile.rust container

@@ -1,7 +1,7 @@
+use super::resources::ResourcesHandler;
+use super::tools::ToolsHandler;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use super::tools::ToolsHandler;
-use super::resources::ResourcesHandler;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
@@ -496,7 +496,10 @@ mod tests {
 
         let response = handler.handle_tools_call(req).await;
         assert!(response.error.is_some());
-        assert_eq!(response.error.unwrap().message, "Tools handler not initialized");
+        assert_eq!(
+            response.error.unwrap().message,
+            "Tools handler not initialized"
+        );
     }
 
     #[tokio::test]
@@ -524,11 +527,17 @@ mod tests {
             params: None,
         };
 
-        let response = handler.handle_message(JsonRpcMessage::Notification(notif)).await;
+        let response = handler
+            .handle_message(JsonRpcMessage::Notification(notif))
+            .await;
         match response {
             JsonRpcMessage::Response(r) => {
                 assert!(r.error.is_some());
-                assert!(r.error.unwrap().message.contains("Notifications not yet supported"));
+                assert!(r
+                    .error
+                    .unwrap()
+                    .message
+                    .contains("Notifications not yet supported"));
             }
             _ => panic!("Expected response"),
         }
@@ -548,7 +557,11 @@ mod tests {
         match response {
             JsonRpcMessage::Response(r) => {
                 assert!(r.error.is_some());
-                assert!(r.error.unwrap().message.contains("Server does not accept response messages"));
+                assert!(r
+                    .error
+                    .unwrap()
+                    .message
+                    .contains("Server does not accept response messages"));
             }
             _ => panic!("Expected response"),
         }
@@ -638,7 +651,7 @@ mod tests {
         let response = handler.handle_request(req).await;
         assert!(response.error.is_some());
         let error = response.error.unwrap();
-        assert!(error.code != 0);  // Should have an error code
+        assert!(error.code != 0); // Should have an error code
     }
 
     #[tokio::test]

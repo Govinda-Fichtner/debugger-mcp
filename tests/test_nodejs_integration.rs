@@ -19,7 +19,6 @@
 /// 6. Full FizzBuzz debugging workflow
 ///
 /// NOTE: These tests will fail initially (TDD red phase) until the adapter is implemented.
-
 // Conditional compilation - these tests require vscode-js-debug
 #[cfg(test)]
 mod nodejs_tests {
@@ -58,7 +57,7 @@ mod nodejs_tests {
             assert_eq!(cmd[0], "node");
             assert!(cmd[1].ends_with("dapDebugServer.js"));
             assert_eq!(cmd[2], "8123");
-            assert_eq!(cmd[3], "127.0.0.1");  // IPv4 explicit
+            assert_eq!(cmd[3], "127.0.0.1"); // IPv4 explicit
         } else {
             // If vscode-js-debug not installed, test passes with warning
             println!("WARNING: vscode-js-debug not installed, skipping command test");
@@ -75,7 +74,7 @@ mod nodejs_tests {
             "/workspace/fizzbuzz.js",
             &["100".to_string()],
             Some("/workspace"),
-            true
+            true,
         );
 
         assert_eq!(config["type"], "pwa-node");
@@ -92,12 +91,7 @@ mod nodejs_tests {
         use debugger_mcp::adapters::nodejs::NodeJsAdapter;
         use serde_json::json;
 
-        let config = NodeJsAdapter::launch_config(
-            "/workspace/app.js",
-            &[],
-            None,
-            false
-        );
+        let config = NodeJsAdapter::launch_config("/workspace/app.js", &[], None, false);
 
         assert_eq!(config["stopOnEntry"], false);
         assert!(config["cwd"].is_null());
@@ -111,12 +105,8 @@ mod nodejs_tests {
         use serde_json::json;
 
         let program_args = vec!["--verbose".to_string(), "input.json".to_string()];
-        let config = NodeJsAdapter::launch_config(
-            "/app/server.js",
-            &program_args,
-            Some("/app"),
-            false
-        );
+        let config =
+            NodeJsAdapter::launch_config("/app/server.js", &program_args, Some("/app"), false);
 
         assert_eq!(config["args"], json!(["--verbose", "input.json"]));
         assert_eq!(config["type"], "pwa-node");
@@ -130,9 +120,9 @@ mod nodejs_tests {
 /// cargo test --test test_nodejs_integration -- --ignored
 #[cfg(test)]
 mod nodejs_integration_tests {
+    use std::path::Path;
     use std::time::Duration;
     use tokio::process::Command;
-    use std::path::Path;
 
     /// Test: Spawn vscode-js-debug DAP server
     ///
@@ -156,7 +146,7 @@ mod nodejs_integration_tests {
         // Spawn DAP server
         let port = 8126u16;
         let mut child = Command::new("node")
-            .args(&[dap_server_path, &port.to_string(), "127.0.0.1"])
+            .args([dap_server_path, &port.to_string(), "127.0.0.1"])
             .spawn()
             .expect("Failed to spawn vscode-js-debug");
 
@@ -212,8 +202,8 @@ mod nodejs_integration_tests {
         println!("\n=== TESTING NODE.JS STOPENTRY NATIVE SUPPORT ===\n");
 
         // 1. Create test program path
-        let test_program = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let test_program =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         assert!(
             test_program.exists(),
@@ -279,15 +269,23 @@ mod nodejs_integration_tests {
         client
             .on_event("output", move |event| {
                 let events = events_clone.clone();
-                let category = event.body.as_ref()
+                let category = event
+                    .body
+                    .as_ref()
                     .and_then(|b| b.get("category"))
                     .and_then(|c| c.as_str())
                     .unwrap_or("unknown");
-                let output = event.body.as_ref()
+                let output = event
+                    .body
+                    .as_ref()
                     .and_then(|b| b.get("output"))
                     .and_then(|o| o.as_str())
                     .unwrap_or("");
-                println!("📨 Event received: output ({}): {}", category, output.trim());
+                println!(
+                    "📨 Event received: output ({}): {}",
+                    category,
+                    output.trim()
+                );
                 tokio::spawn(async move {
                     events.lock().await.push(event);
                 });
@@ -319,15 +317,18 @@ mod nodejs_integration_tests {
             true, // stopOnEntry: true
         );
 
-        println!("   Launch config: {}", serde_json::to_string_pretty(&launch_args).unwrap());
+        println!(
+            "   Launch config: {}",
+            serde_json::to_string_pretty(&launch_args).unwrap()
+        );
 
         timeout(
             Duration::from_secs(10),
             client.initialize_and_launch_with_timeout(
                 "nodejs-test",
                 launch_args,
-                Some("nodejs")  // This triggers the entry breakpoint workaround
-            )
+                Some("nodejs"), // This triggers the entry breakpoint workaround
+            ),
         )
         .await
         .expect("Initialize and launch timeout")
@@ -360,7 +361,8 @@ mod nodejs_integration_tests {
                 println!("⚠️  UNEXPECTED: Received 'stopped' event on parent connection!");
 
                 // Extract reason from body
-                let reason = event.body
+                let reason = event
+                    .body
                     .as_ref()
                     .and_then(|b| b.get("reason"))
                     .and_then(|r| r.as_str())
@@ -377,8 +379,10 @@ mod nodejs_integration_tests {
                 // This is EXPECTED behavior - parent doesn't receive stopped events
                 let all_events = events.lock().await;
                 println!("\n✅ CONFIRMED: No 'stopped' event on parent connection (as expected)");
-                println!("   Events received: {:?}",
-                         all_events.iter().map(|e| &e.event).collect::<Vec<_>>());
+                println!(
+                    "   Events received: {:?}",
+                    all_events.iter().map(|e| &e.event).collect::<Vec<_>>()
+                );
 
                 println!("\n🎉 TEST PASSED: Confirms entry breakpoint workaround is necessary!");
                 println!("   - Parent connection coordinates debugging");
@@ -404,8 +408,8 @@ mod nodejs_integration_tests {
     #[tokio::test]
     #[ignore] // Requires vscode-js-debug installation
     async fn test_nodejs_fizzbuzz_debugging_workflow() {
-        use debugger_mcp::debug::SessionManager;
         use debugger_mcp::debug::DebugState;
+        use debugger_mcp::debug::SessionManager;
         use std::time::Duration;
 
         // Initialize tracing
@@ -416,8 +420,8 @@ mod nodejs_integration_tests {
 
         println!("\n=== TESTING NODE.JS FIZZBUZZ DEBUGGING WORKFLOW ===\n");
 
-        let fizzbuzz_js = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let fizzbuzz_js =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         assert!(
             fizzbuzz_js.exists(),
@@ -431,15 +435,16 @@ mod nodejs_integration_tests {
         println!("\n🚀 Starting Node.js debugging session...");
         let manager = SessionManager::new();
 
-        let session_id = manager.create_session(
-            "nodejs",
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            vec![],
-            Some(fizzbuzz_js.parent().unwrap().to_str().unwrap().to_string()),
-            true, // stopOnEntry
-        )
-        .await
-        .expect("Failed to create Node.js session");
+        let session_id = manager
+            .create_session(
+                "nodejs",
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                vec![],
+                Some(fizzbuzz_js.parent().unwrap().to_str().unwrap().to_string()),
+                true, // stopOnEntry
+            )
+            .await
+            .expect("Failed to create Node.js session");
 
         println!("✅ Session created: {}", session_id);
 
@@ -447,7 +452,9 @@ mod nodejs_integration_tests {
         println!("\n⏳ Waiting for stopped at entry...");
         let mut retries = 50; // 5 seconds total (50 * 100ms)
         loop {
-            let state = manager.get_session_state(&session_id).await
+            let state = manager
+                .get_session_state(&session_id)
+                .await
                 .expect("Failed to get session state");
 
             if matches!(state, DebugState::Stopped { .. }) {
@@ -464,30 +471,34 @@ mod nodejs_integration_tests {
         }
 
         // Get the session
-        let session = manager.get_session(&session_id).await
+        let session = manager
+            .get_session(&session_id)
+            .await
             .expect("Failed to get session");
 
         // 3. Set breakpoint at line 9 (the bug: n % 4 instead of n % 5)
         println!("\n📍 Setting breakpoint at line 9 (buggy line)...");
-        session.set_breakpoint(
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            9,
-        )
-        .await
-        .expect("Failed to set breakpoint");
+        session
+            .set_breakpoint(fizzbuzz_js.to_str().unwrap().to_string(), 9)
+            .await
+            .expect("Failed to set breakpoint");
 
         println!("✅ Breakpoint set at line 9");
 
         // 4. Continue execution
         println!("\n▶️  Continuing execution...");
-        session.continue_execution().await
+        session
+            .continue_execution()
+            .await
             .expect("Failed to continue");
 
         // 5. Wait for breakpoint hit
         println!("\n⏳ Waiting for breakpoint hit...");
         retries = 50;
         loop {
-            let state = manager.get_session_state(&session_id).await
+            let state = manager
+                .get_session_state(&session_id)
+                .await
                 .expect("Failed to get session state");
 
             if let DebugState::Stopped { reason, .. } = state {
@@ -507,29 +518,34 @@ mod nodejs_integration_tests {
 
         // 6. Evaluate variable 'n'
         println!("\n🔍 Evaluating variable 'n'...");
-        let n_value = session.evaluate("n", None).await
+        let n_value = session
+            .evaluate("n", None)
+            .await
             .expect("Failed to evaluate 'n'");
 
         println!("   n = {}", n_value);
 
         // 7. Evaluate the buggy expression
         println!("\n🐛 Evaluating buggy expression 'n % 4'...");
-        let bug_result = session.evaluate("n % 4", None).await
+        let bug_result = session
+            .evaluate("n % 4", None)
+            .await
             .expect("Failed to evaluate 'n % 4'");
 
         println!("   n % 4 = {} (BUGGY!)", bug_result);
 
         // 8. Evaluate the correct expression
         println!("\n✅ Evaluating correct expression 'n % 5'...");
-        let correct_result = session.evaluate("n % 5", None).await
+        let correct_result = session
+            .evaluate("n % 5", None)
+            .await
             .expect("Failed to evaluate 'n % 5'");
 
         println!("   n % 5 = {} (CORRECT)", correct_result);
 
         // 9. Disconnect
         println!("\n🛑 Disconnecting...");
-        session.disconnect().await
-            .expect("Failed to disconnect");
+        session.disconnect().await.expect("Failed to disconnect");
 
         println!("\n🎉 FizzBuzz debugging workflow completed successfully!");
         println!("   Bug confirmed: Line 9 uses n % 4 instead of n % 5");
@@ -543,29 +559,34 @@ mod nodejs_integration_tests {
     async fn test_nodejs_breakpoint_set_and_verify() {
         use debugger_mcp::debug::SessionManager;
 
-        let fizzbuzz_js = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let fizzbuzz_js =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         let manager = SessionManager::new();
-        let session_id = manager.create_session(
-            "nodejs",
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            vec![],
-            None,
-            true,
-        )
-        .await
-        .expect("Failed to create session");
+        let session_id = manager
+            .create_session(
+                "nodejs",
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                vec![],
+                None,
+                true,
+            )
+            .await
+            .expect("Failed to create session");
 
-        let session = manager.get_session(&session_id).await.expect("Failed to get session");
+        let session = manager
+            .get_session(&session_id)
+            .await
+            .expect("Failed to get session");
 
         // Set breakpoint - should be verified
-        session.set_breakpoint(
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            17, // for loop line
-        )
-        .await
-        .expect("Failed to set breakpoint");
+        session
+            .set_breakpoint(
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                17, // for loop line
+            )
+            .await
+            .expect("Failed to set breakpoint");
 
         println!("✅ Breakpoint set and verified");
 
@@ -581,27 +602,34 @@ mod nodejs_integration_tests {
         use debugger_mcp::debug::SessionManager;
         use std::time::Duration;
 
-        let fizzbuzz_js = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let fizzbuzz_js =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         let manager = SessionManager::new();
-        let session_id = manager.create_session(
-            "nodejs",
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            vec![],
-            None,
-            true,
-        )
-        .await
-        .expect("Failed to create session");
+        let session_id = manager
+            .create_session(
+                "nodejs",
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                vec![],
+                None,
+                true,
+            )
+            .await
+            .expect("Failed to create session");
 
-        let session = manager.get_session(&session_id).await.expect("Failed to get session");
+        let session = manager
+            .get_session(&session_id)
+            .await
+            .expect("Failed to get session");
 
         // Wait for stop
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // Set breakpoint at line 9
-        session.set_breakpoint(fizzbuzz_js.to_str().unwrap().to_string(), 9).await.ok();
+        session
+            .set_breakpoint(fizzbuzz_js.to_str().unwrap().to_string(), 9)
+            .await
+            .ok();
 
         // Continue to breakpoint
         session.continue_execution().await.ok();
@@ -628,27 +656,34 @@ mod nodejs_integration_tests {
         use debugger_mcp::debug::SessionManager;
         use std::time::Duration;
 
-        let fizzbuzz_js = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let fizzbuzz_js =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         let manager = SessionManager::new();
-        let session_id = manager.create_session(
-            "nodejs",
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            vec![],
-            None,
-            true,
-        )
-        .await
-        .expect("Failed to create session");
+        let session_id = manager
+            .create_session(
+                "nodejs",
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                vec![],
+                None,
+                true,
+            )
+            .await
+            .expect("Failed to create session");
 
-        let session = manager.get_session(&session_id).await.expect("Failed to get session");
+        let session = manager
+            .get_session(&session_id)
+            .await
+            .expect("Failed to get session");
 
         // Wait for stop
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // Set breakpoint inside fizzbuzz function (line 6)
-        session.set_breakpoint(fizzbuzz_js.to_str().unwrap().to_string(), 6).await.ok();
+        session
+            .set_breakpoint(fizzbuzz_js.to_str().unwrap().to_string(), 6)
+            .await
+            .ok();
 
         // Continue to breakpoint
         session.continue_execution().await.ok();
@@ -669,28 +704,31 @@ mod nodejs_integration_tests {
         use debugger_mcp::debug::SessionManager;
         use std::time::Duration;
 
-        let fizzbuzz_js = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/fizzbuzz.js");
+        let fizzbuzz_js =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fizzbuzz.js");
 
         let manager = SessionManager::new();
-        let session_id = manager.create_session(
-            "nodejs",
-            fizzbuzz_js.to_str().unwrap().to_string(),
-            vec![],
-            None,
-            true,
-        )
-        .await
-        .expect("Failed to create session");
+        let session_id = manager
+            .create_session(
+                "nodejs",
+                fizzbuzz_js.to_str().unwrap().to_string(),
+                vec![],
+                None,
+                true,
+            )
+            .await
+            .expect("Failed to create session");
 
-        let session = manager.get_session(&session_id).await.expect("Failed to get session");
+        let session = manager
+            .get_session(&session_id)
+            .await
+            .expect("Failed to get session");
 
         // Wait a bit
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // Disconnect - should clean up both parent and child processes
-        session.disconnect().await
-            .expect("Failed to disconnect");
+        session.disconnect().await.expect("Failed to disconnect");
 
         println!("✅ Clean disconnect completed");
 
@@ -736,7 +774,7 @@ mod nodejs_documentation_tests {
         // // }
 
         // For now, this test just documents the expected interface
-        assert!(true, "Documentation test - see comments for expected API");
+        // (No assertions needed - this is a documentation test)
     }
 
     /// Documents the expected debugging workflow
@@ -775,6 +813,6 @@ mod nodejs_documentation_tests {
         //    vscode-js-debug terminates Node.js process
         //    close TCP connection
 
-        assert!(true, "Documentation test - see comments for workflow");
+        // (No assertions needed - this is a documentation test)
     }
 }

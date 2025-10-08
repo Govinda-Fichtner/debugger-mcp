@@ -10,7 +10,6 @@
 /// 4. stopOnEntry flag handling (native LLDB support)
 /// 5. DAP communication via stdio (like Python)
 /// 6. Basic debugging workflow (compile, start, breakpoint, continue, evaluate)
-
 use debugger_mcp::adapters::rust::RustAdapter;
 use debugger_mcp::debug::manager::SessionManager;
 use debugger_mcp::mcp::tools::ToolsHandler;
@@ -23,7 +22,11 @@ use tokio::sync::RwLock;
 fn test_rust_adapter_command() {
     let command = RustAdapter::command();
     // Should be a CodeLLDB path
-    assert!(command.contains("codelldb"), "Command should be codelldb, got: {}", command);
+    assert!(
+        command.contains("codelldb"),
+        "Command should be codelldb, got: {}",
+        command
+    );
 }
 
 /// Test that Rust adapter ID is "codelldb"
@@ -36,7 +39,11 @@ fn test_rust_adapter_id() {
 #[test]
 fn test_rust_adapter_args() {
     let args = RustAdapter::args();
-    assert_eq!(args, Vec::<String>::new(), "CodeLLDB should use STDIO mode (no args = default)");
+    assert_eq!(
+        args,
+        Vec::<String>::new(),
+        "CodeLLDB should use STDIO mode (no args = default)"
+    );
 }
 
 /// Test that launch args use binary path (not source) and include stopOnEntry
@@ -49,7 +56,10 @@ fn test_rust_launch_args_structure() {
 
     assert_eq!(launch_args["request"], "launch");
     assert_eq!(launch_args["type"], "lldb");
-    assert_eq!(launch_args["program"], binary_path, "Should use compiled binary, not source");
+    assert_eq!(
+        launch_args["program"], binary_path,
+        "Should use compiled binary, not source"
+    );
     assert_eq!(launch_args["args"], json!(program_args));
     assert_eq!(launch_args["stopOnEntry"], true);
     assert_eq!(launch_args["cwd"], "/workspace/fizzbuzz-rust-test");
@@ -73,7 +83,10 @@ fn test_rust_launch_args_no_stop_on_entry() {
     let binary_path = "/workspace/target/debug/app";
     let launch_args = RustAdapter::launch_args(binary_path, &[], None, false);
 
-    assert_eq!(launch_args["stopOnEntry"], false, "stopOnEntry should be false when disabled");
+    assert_eq!(
+        launch_args["stopOnEntry"], false,
+        "stopOnEntry should be false when disabled"
+    );
 }
 
 /// Test compilation of a single Rust file (requires rustc)
@@ -89,8 +102,11 @@ async fn test_rust_compilation_single_file() {
     assert!(result.is_ok(), "Compilation failed: {:?}", result.err());
 
     let binary_path = result.unwrap();
-    assert!(binary_path.ends_with("target/debug/fizzbuzz"),
-            "Binary path should end with target/debug/fizzbuzz, got: {}", binary_path);
+    assert!(
+        binary_path.ends_with("target/debug/fizzbuzz"),
+        "Binary path should end with target/debug/fizzbuzz, got: {}",
+        binary_path
+    );
 
     // Verify binary exists (in Docker container)
     // Note: This test requires running in the debugger-mcp-rust Docker container
@@ -105,8 +121,11 @@ async fn test_rust_compilation_error() {
 
     assert!(result.is_err(), "Should fail for non-existent file");
     let error = result.unwrap_err();
-    assert!(error.to_string().contains("Compilation error"),
-            "Error should mention compilation failure: {}", error);
+    assert!(
+        error.to_string().contains("Compilation error"),
+        "Error should mention compilation failure: {}",
+        error
+    );
 }
 
 /// Test Rust session creation (requires Docker with rustc and CodeLLDB)
@@ -126,11 +145,13 @@ async fn test_rust_session_creation() {
     // 1. Compile: rustc fizzbuzz.rs -o target/debug/fizzbuzz
     // 2. Spawn: codelldb --port 0
     // 3. Launch: target/debug/fizzbuzz
-    let result = tools_handler
-        .handle_tool("debugger_start", args)
-        .await;
+    let result = tools_handler.handle_tool("debugger_start", args).await;
 
-    assert!(result.is_ok(), "Rust session creation failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Rust session creation failed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response["sessionId"].is_string());
@@ -152,11 +173,13 @@ async fn test_rust_session_with_program_args() {
     });
 
     // Should compile, then launch with args
-    let result = tools_handler
-        .handle_tool("debugger_start", args)
-        .await;
+    let result = tools_handler.handle_tool("debugger_start", args).await;
 
-    assert!(result.is_ok(), "Rust session with args failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Rust session with args failed: {:?}",
+        result.err()
+    );
 }
 
 /// Regression test for stack trace thread ID bug
@@ -206,7 +229,10 @@ async fn test_rust_stack_trace_uses_correct_thread_id() {
     // The important thing is that we're stopped and can proceed
     let reason = entry_stop["reason"].as_str().unwrap_or("unknown");
     println!("Initial stop reason: {}", reason);
-    assert!(entry_stop["reason"].is_string(), "Should have a stop reason");
+    assert!(
+        entry_stop["reason"].is_string(),
+        "Should have a stop reason"
+    );
 
     // Set breakpoint at line 9
     let bp_args = json!({
@@ -241,7 +267,10 @@ async fn test_rust_stack_trace_uses_correct_thread_id() {
         .await
         .expect("Failed to wait for stop");
 
-    assert_eq!(stop_result["reason"], "breakpoint", "Should stop at breakpoint");
+    assert_eq!(
+        stop_result["reason"], "breakpoint",
+        "Should stop at breakpoint"
+    );
 
     let thread_id = stop_result["threadId"]
         .as_i64()
@@ -259,12 +288,15 @@ async fn test_rust_stack_trace_uses_correct_thread_id() {
         .expect("Stack trace should succeed with correct thread ID from Stopped state");
 
     // Verify we got stack frames (field name is "stackFrames" from DAP spec)
-    let frames = stack_result["stackFrames"]
-        .as_array()
-        .unwrap_or_else(|| panic!("Stack trace should return stackFrames array. Got: {}", stack_result));
+    let frames = stack_result["stackFrames"].as_array().unwrap_or_else(|| {
+        panic!(
+            "Stack trace should return stackFrames array. Got: {}",
+            stack_result
+        )
+    });
 
     assert!(
-        frames.len() > 0,
+        !frames.is_empty(),
         "Should have at least one stack frame when stopped at breakpoint"
     );
 
@@ -340,7 +372,10 @@ async fn test_rust_evaluate_uses_watch_context() {
     // The important thing is that we're stopped and can proceed
     let reason = entry_stop["reason"].as_str().unwrap_or("unknown");
     println!("Initial stop reason: {}", reason);
-    assert!(entry_stop["reason"].is_string(), "Should have a stop reason");
+    assert!(
+        entry_stop["reason"].is_string(),
+        "Should have a stop reason"
+    );
 
     // Set breakpoint at line 9
     let bp_args = json!({
@@ -375,7 +410,10 @@ async fn test_rust_evaluate_uses_watch_context() {
         .await
         .expect("Failed to wait for stop");
 
-    assert_eq!(stop_result["reason"], "breakpoint", "Should stop at breakpoint");
+    assert_eq!(
+        stop_result["reason"], "breakpoint",
+        "Should stop at breakpoint"
+    );
 
     // Get stack trace to get frameId
     let stack_trace_args = json!({
@@ -391,11 +429,9 @@ async fn test_rust_evaluate_uses_watch_context() {
         .as_array()
         .expect("Stack trace should return stackFrames array");
 
-    assert!(frames.len() > 0, "Should have at least one stack frame");
+    assert!(!frames.is_empty(), "Should have at least one stack frame");
 
-    let frame_id = frames[0]["id"]
-        .as_i64()
-        .expect("Frame should have id");
+    let frame_id = frames[0]["id"].as_i64().expect("Frame should have id");
 
     // THIS IS THE REGRESSION TEST: evaluate should work with "watch" context
     // Test 1: Evaluate a variable
@@ -422,12 +458,15 @@ async fn test_rust_evaluate_uses_watch_context() {
 
     // Verify the value is a valid number
     // Note: Will be some value between 1-100 depending on which iteration hits the breakpoint
-    let n_val: i32 = var_value.trim().parse()
-        .expect(&format!("Variable 'n' should be a number, got: '{}'", var_value));
+    let n_val: i32 = var_value
+        .trim()
+        .parse()
+        .unwrap_or_else(|_| panic!("Variable 'n' should be a number, got: '{}'", var_value));
 
     assert!(
-        n_val >= 1 && n_val <= 100,
-        "Variable 'n' should be in range 1-100, got: {}", n_val
+        (1..=100).contains(&n_val),
+        "Variable 'n' should be in range 1-100, got: {}",
+        n_val
     );
 
     println!("✅ Variable evaluation works: n = {}", n_val);
@@ -454,8 +493,12 @@ async fn test_rust_evaluate_uses_watch_context() {
     );
 
     // Verify the result is 2
-    let expr_val: i32 = expr_value.trim().parse()
-        .expect(&format!("Expression '1 + 1' should evaluate to number, got: '{}'", expr_value));
+    let expr_val: i32 = expr_value.trim().parse().unwrap_or_else(|_| {
+        panic!(
+            "Expression '1 + 1' should evaluate to number, got: '{}'",
+            expr_value
+        )
+    });
 
     assert_eq!(expr_val, 2, "Expression '1 + 1' should evaluate to 2");
 
@@ -533,7 +576,10 @@ async fn test_rust_fizzbuzz_debugging_workflow() {
         .await
         .expect("Failed to wait for stop");
 
-    assert_eq!(stop_result["reason"], "breakpoint", "Should stop at breakpoint");
+    assert_eq!(
+        stop_result["reason"], "breakpoint",
+        "Should stop at breakpoint"
+    );
 
     // Step 5: Evaluate the bug - check what n is
     let eval_n_args = json!({
@@ -625,16 +671,23 @@ fn test_detect_single_file_project() {
 fn test_detect_cargo_project_from_src_file() {
     use debugger_mcp::adapters::rust::{RustAdapter, RustProjectType};
 
-    let result = RustAdapter::detect_project_type("/workspace/tests/fixtures/cargo-simple/src/main.rs");
-    assert!(result.is_ok(), "Should detect Cargo project from source file");
+    let result =
+        RustAdapter::detect_project_type("/workspace/tests/fixtures/cargo-simple/src/main.rs");
+    assert!(
+        result.is_ok(),
+        "Should detect Cargo project from source file"
+    );
 
     match result.unwrap() {
         RustProjectType::CargoProject { root, manifest } => {
             let root_str = root.to_str().unwrap();
             println!("DEBUG: Detected root = {}", root_str);
             // Should find cargo-simple's Cargo.toml by walking up from src/main.rs
-            assert!(root_str.contains("cargo-simple"),
-                    "Root path '{}' should contain cargo-simple", root_str);
+            assert!(
+                root_str.contains("cargo-simple"),
+                "Root path '{}' should contain cargo-simple",
+                root_str
+            );
             assert!(manifest.to_str().unwrap().ends_with("Cargo.toml"));
         }
         _ => panic!("Expected CargoProject variant"),
@@ -653,7 +706,7 @@ fn test_detect_project_type_invalid_path() {
 /// Test parsing cargo JSON output for binary executable
 #[test]
 fn test_parse_cargo_json_binary() {
-    use debugger_mcp::adapters::rust::{RustAdapter, CargoTargetType};
+    use debugger_mcp::adapters::rust::{CargoTargetType, RustAdapter};
 
     let json_output = r#"{"reason":"compiler-artifact","package_id":"test-app 0.1.0","target":{"kind":["bin"],"name":"test-app"},"executable":"/workspace/target/debug/test-app"}
 {"reason":"build-finished","success":true}"#;
@@ -666,7 +719,7 @@ fn test_parse_cargo_json_binary() {
 /// Test parsing cargo JSON output for test executable
 #[test]
 fn test_parse_cargo_json_test() {
-    use debugger_mcp::adapters::rust::{RustAdapter, CargoTargetType};
+    use debugger_mcp::adapters::rust::{CargoTargetType, RustAdapter};
 
     let json_output = r#"{"reason":"compiler-artifact","package_id":"test-lib 0.1.0","target":{"kind":["test"],"name":"test-lib"},"executable":"/workspace/target/debug/deps/test_lib-abc123"}
 {"reason":"build-finished","success":true}"#;
@@ -679,7 +732,7 @@ fn test_parse_cargo_json_test() {
 /// Test parsing cargo JSON with no executable (library only)
 #[test]
 fn test_parse_cargo_json_no_executable() {
-    use debugger_mcp::adapters::rust::{RustAdapter, CargoTargetType};
+    use debugger_mcp::adapters::rust::{CargoTargetType, RustAdapter};
 
     let json_output = r#"{"reason":"compiler-artifact","package_id":"lib-only 0.1.0","target":{"kind":["lib"],"name":"lib-only"}}
 {"reason":"build-finished","success":true}"#;
@@ -692,15 +745,15 @@ fn test_parse_cargo_json_no_executable() {
 #[test]
 fn test_cargo_target_types() {
     use debugger_mcp::adapters::rust::CargoTargetType;
-    
+
     // Binary target
     let binary = CargoTargetType::Binary;
     assert!(matches!(binary, CargoTargetType::Binary));
-    
+
     // Test target
     let test = CargoTargetType::Test;
     assert!(matches!(test, CargoTargetType::Test));
-    
+
     // Example target
     let example = CargoTargetType::Example("demo".to_string());
     match example {
@@ -718,15 +771,21 @@ fn test_cargo_target_types() {
 #[ignore] // Requires Docker with cargo and rustc
 async fn test_cargo_compile_simple_binary() {
     use debugger_mcp::adapters::rust::RustAdapter;
-    
+
     let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple/src/main.rs", false)
         .await
         .expect("Should compile simple Cargo project");
 
-    assert!(binary.contains("target/debug"), "Binary should be in target/debug");
-    assert!(binary.contains("cargo") && binary.contains("simple"),
-            "Binary name should match project name. Got: {}", binary);
-    
+    assert!(
+        binary.contains("target/debug"),
+        "Binary should be in target/debug"
+    );
+    assert!(
+        binary.contains("cargo") && binary.contains("simple"),
+        "Binary name should match project name. Got: {}",
+        binary
+    );
+
     // Verify binary exists and is executable
     let path = std::path::Path::new(&binary);
     assert!(path.exists(), "Compiled binary should exist at: {}", binary);
@@ -737,15 +796,22 @@ async fn test_cargo_compile_simple_binary() {
 #[ignore] // Requires Docker with cargo and network access
 async fn test_cargo_compile_with_dependencies() {
     use debugger_mcp::adapters::rust::RustAdapter;
-    
-    let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-with-deps/src/main.rs", false)
-        .await
-        .expect("Should compile Cargo project with serde dependency");
-    
+
+    let binary = RustAdapter::compile(
+        "/workspace/tests/fixtures/cargo-with-deps/src/main.rs",
+        false,
+    )
+    .await
+    .expect("Should compile Cargo project with serde dependency");
+
     assert!(binary.contains("target/debug"));
-    
+
     let path = std::path::Path::new(&binary);
-    assert!(path.exists(), "Binary with dependencies should exist: {}", binary);
+    assert!(
+        path.exists(),
+        "Binary with dependencies should exist: {}",
+        binary
+    );
 }
 
 /// Test compiling Cargo project from source file path
@@ -753,12 +819,12 @@ async fn test_cargo_compile_with_dependencies() {
 #[ignore] // Requires Docker
 async fn test_cargo_compile_from_source_file() {
     use debugger_mcp::adapters::rust::RustAdapter;
-    
+
     // Provide src/main.rs, should auto-detect Cargo.toml and compile project
     let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple/src/main.rs", false)
         .await
         .expect("Should detect and compile Cargo project from source file");
-    
+
     assert!(binary.contains("target/debug"));
 }
 
@@ -766,8 +832,8 @@ async fn test_cargo_compile_from_source_file() {
 #[tokio::test]
 #[ignore] // Requires Docker
 async fn test_cargo_compile_tests() {
-    use debugger_mcp::adapters::rust::{RustAdapter, CargoTargetType};
-    
+    use debugger_mcp::adapters::rust::{CargoTargetType, RustAdapter};
+
     let binary = RustAdapter::compile_cargo_project(
         "/workspace/tests/fixtures/cargo-simple",
         &CargoTargetType::Test,
@@ -775,19 +841,21 @@ async fn test_cargo_compile_tests() {
     )
     .await
     .expect("Should compile test binary");
-    
+
     assert!(binary.contains("target/debug"));
     // Test binaries are in deps/ subdirectory
-    assert!(binary.contains("/deps/") || binary.contains("test"), 
-            "Test binary should be in deps or have test in name");
+    assert!(
+        binary.contains("/deps/") || binary.contains("test"),
+        "Test binary should be in deps or have test in name"
+    );
 }
 
 /// Test compiling Cargo example
 #[tokio::test]
 #[ignore] // Requires Docker
 async fn test_cargo_compile_example() {
-    use debugger_mcp::adapters::rust::{RustAdapter, CargoTargetType};
-    
+    use debugger_mcp::adapters::rust::{CargoTargetType, RustAdapter};
+
     let binary = RustAdapter::compile_cargo_project(
         "/workspace/tests/fixtures/cargo-example",
         &CargoTargetType::Example("demo".to_string()),
@@ -795,9 +863,11 @@ async fn test_cargo_compile_example() {
     )
     .await
     .expect("Should compile example");
-    
-    assert!(binary.contains("target/debug/examples") || binary.contains("demo"),
-            "Example binary should be in examples/ or contain example name");
+
+    assert!(
+        binary.contains("target/debug/examples") || binary.contains("demo"),
+        "Example binary should be in examples/ or contain example name"
+    );
 }
 
 /// Test backward compatibility: single-file compilation still works
@@ -805,11 +875,11 @@ async fn test_cargo_compile_example() {
 #[ignore] // Requires Docker
 async fn test_backward_compat_single_file_still_works() {
     use debugger_mcp::adapters::rust::RustAdapter;
-    
+
     let binary = RustAdapter::compile("/workspace/fizzbuzz-rust-test/fizzbuzz.rs", false)
         .await
         .expect("Single-file compilation should still work (backward compat)");
-    
+
     assert!(binary.contains("target/debug/fizzbuzz"));
 }
 
@@ -819,26 +889,30 @@ async fn test_backward_compat_single_file_still_works() {
 async fn test_cargo_compile_error_handling() {
     use debugger_mcp::adapters::rust::RustAdapter;
     use std::io::Write;
-    
+
     // Create temp project with syntax error
     let temp_dir = "/tmp/rust-compile-error-test";
     std::fs::create_dir_all(format!("{}/src", temp_dir)).unwrap();
-    
+
     // Write Cargo.toml
     let mut cargo_toml = std::fs::File::create(format!("{}/Cargo.toml", temp_dir)).unwrap();
-    cargo_toml.write_all(b"[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n").unwrap();
-    
+    cargo_toml
+        .write_all(b"[package]\nname = \"test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+        .unwrap();
+
     // Write main.rs with syntax error
     let mut main_rs = std::fs::File::create(format!("{}/src/main.rs", temp_dir)).unwrap();
     main_rs.write_all(b"fn main() {\n    let x = \n}").unwrap(); // Syntax error
-    
+
     let result = RustAdapter::compile(temp_dir, false).await;
-    
+
     assert!(result.is_err(), "Should error on compilation failure");
     let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("Cargo build failed") || error_msg.contains("Compilation failed"),
-            "Error should mention cargo/compilation failure");
-    
+    assert!(
+        error_msg.contains("Cargo build failed") || error_msg.contains("Compilation failed"),
+        "Error should mention cargo/compilation failure"
+    );
+
     // Cleanup
     std::fs::remove_dir_all(temp_dir).ok();
 }
@@ -848,10 +922,13 @@ async fn test_cargo_compile_error_handling() {
 #[ignore] // Requires Docker
 async fn test_cargo_compile_release_mode() {
     use debugger_mcp::adapters::rust::RustAdapter;
-    
+
     let binary = RustAdapter::compile("/workspace/tests/fixtures/cargo-simple/src/main.rs", true)
         .await
         .expect("Should compile in release mode");
-    
-    assert!(binary.contains("target/release"), "Release binary should be in target/release");
+
+    assert!(
+        binary.contains("target/release"),
+        "Release binary should be in target/release"
+    );
 }

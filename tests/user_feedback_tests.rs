@@ -5,14 +5,13 @@
 /// workflows work correctly.
 ///
 /// See: docs/PROPOSED_INTEGRATION_TESTS.md
-
 use debugger_mcp::debug::SessionManager;
 use debugger_mcp::mcp::tools::ToolsHandler;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
-use std::path::PathBuf;
 
 /// Helper to get path to fizzbuzz test fixture
 fn get_fizzbuzz_path() -> String {
@@ -49,7 +48,7 @@ async fn start_and_hit_breakpoint_in_function(
 
     let start_response = timeout(
         Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_start", start_args)
+        tools_handler.handle_tool("debugger_start", start_args),
     )
     .await
     .map_err(|_| "Start timeout".to_string())?
@@ -68,7 +67,7 @@ async fn start_and_hit_breakpoint_in_function(
 
     timeout(
         Duration::from_secs(6),
-        tools_handler.handle_tool("debugger_wait_for_stop", wait_args)
+        tools_handler.handle_tool("debugger_wait_for_stop", wait_args),
     )
     .await
     .map_err(|_| "Wait for entry timeout".to_string())?
@@ -102,7 +101,7 @@ async fn start_and_hit_breakpoint_in_function(
 
     let stop_result = timeout(
         Duration::from_secs(6),
-        tools_handler.handle_tool("debugger_wait_for_stop", wait_args)
+        tools_handler.handle_tool("debugger_wait_for_stop", wait_args),
     )
     .await
     .map_err(|_| "Wait for breakpoint timeout".to_string())?
@@ -190,10 +189,7 @@ async fn test_frameid_required_for_local_variables() {
 
     // Get stack trace to obtain frame ID
     let stack_result = tools_handler
-        .handle_tool(
-            "debugger_stack_trace",
-            json!({"sessionId": &session_id}),
-        )
+        .handle_tool("debugger_stack_trace", json!({"sessionId": &session_id}))
         .await
         .expect("Stack trace should succeed");
 
@@ -229,10 +225,7 @@ async fn test_frameid_required_for_local_variables() {
 
     // Cleanup
     let _ = tools_handler
-        .handle_tool(
-            "debugger_disconnect",
-            json!({"sessionId": session_id}),
-        )
+        .handle_tool("debugger_disconnect", json!({"sessionId": session_id}))
         .await;
 }
 
@@ -363,7 +356,10 @@ async fn test_frame_ids_change_between_stops() {
         "❌ FAIL: Frame IDs should change between stops"
     );
 
-    println!("✅ TEST PASS: Frame IDs changed between stops ({} → {})", frame_id_1, frame_id_2);
+    println!(
+        "✅ TEST PASS: Frame IDs changed between stops ({} → {})",
+        frame_id_1, frame_id_2
+    );
 
     // TEST: Using old frame ID should fail
     println!("\n📝 Test: Using stale frame ID from stop 1");
@@ -537,7 +533,7 @@ async fn test_list_breakpoints_shows_all_breakpoints() {
             "   Line {}: verified={}, source={}",
             line,
             verified,
-            source.split('/').last().unwrap_or(source)
+            source.split('/').next_back().unwrap_or(source)
         );
 
         // All should be verified
@@ -825,11 +821,17 @@ async fn test_step_commands_comprehensive() {
         return;
     }
 
-    let frames_before = stack_before.unwrap()["stackFrames"].as_array().unwrap().clone();
+    let frames_before = stack_before.unwrap()["stackFrames"]
+        .as_array()
+        .unwrap()
+        .clone();
     let frame_name_before = frames_before[0]["name"].as_str().unwrap();
     let line_before = frames_before[0]["line"].as_i64().unwrap();
 
-    println!("\n📝 Initial position: {} at line {}", frame_name_before, line_before);
+    println!(
+        "\n📝 Initial position: {} at line {}",
+        frame_name_before, line_before
+    );
 
     // TEST 1: step_into - should enter fizzbuzz function
     println!("\n📝 Test 1: step_into (should enter fizzbuzz function)");
@@ -865,7 +867,10 @@ async fn test_step_commands_comprehensive() {
             if frame_name == "fizzbuzz" {
                 println!("✅ TEST PASS: step_into entered function");
             } else {
-                println!("⚠️  Note: Expected to be in 'fizzbuzz', got '{}'", frame_name);
+                println!(
+                    "⚠️  Note: Expected to be in 'fizzbuzz', got '{}'",
+                    frame_name
+                );
             }
 
             // TEST 2: step_over - should advance to next line
@@ -1026,7 +1031,10 @@ async fn test_wait_for_stop_timing_behavior() {
         if elapsed.as_millis() < 500 {
             println!("✅ TEST PASS: Immediate return when already stopped");
         } else {
-            println!("⚠️  Note: Took {}ms (expected <100ms, acceptable <500ms)", elapsed.as_millis());
+            println!(
+                "⚠️  Note: Took {}ms (expected <100ms, acceptable <500ms)",
+                elapsed.as_millis()
+            );
         }
     } else {
         println!("⚠️  wait_for_stop failed or timed out");
@@ -1059,7 +1067,10 @@ async fn test_wait_for_stop_timing_behavior() {
     match wait_result {
         Ok(result) => {
             println!("   ✓ Returned in {}ms", elapsed.as_millis());
-            println!("   ✓ State: {} (program stopped or terminated)", result["state"]);
+            println!(
+                "   ✓ State: {} (program stopped or terminated)",
+                result["state"]
+            );
             println!("✅ TEST PASS: wait_for_stop returned (program stopped)");
         }
         Err(e) => {
@@ -1070,7 +1081,10 @@ async fn test_wait_for_stop_timing_behavior() {
             if elapsed.as_millis() >= 1000 && elapsed.as_millis() < 2000 {
                 println!("✅ TEST PASS: Timeout behavior works correctly");
             } else {
-                println!("⚠️  Note: Timeout took {}ms (expected ~1000ms)", elapsed.as_millis());
+                println!(
+                    "⚠️  Note: Timeout took {}ms (expected ~1000ms)",
+                    elapsed.as_millis()
+                );
             }
         }
     }

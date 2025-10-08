@@ -1,6 +1,6 @@
-use crate::{Error, Result};
 use super::protocol::JsonRpcMessage;
 use super::transport_trait::McpTransportTrait;
+use crate::{Error, Result};
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{debug, trace};
@@ -80,8 +80,10 @@ impl McpTransportTrait for StdioTransport {
 
 #[cfg(test)]
 mod tests {
+    use super::super::protocol::{
+        JsonRpcError, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    };
     use super::*;
-    use super::super::protocol::{JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError};
     use mockall::mock;
     use serde_json::json;
 
@@ -100,17 +102,14 @@ mod tests {
     async fn test_mock_read_request() {
         let mut mock_transport = MockStdioTransport::new();
 
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(JsonRpcMessage::Request(JsonRpcRequest {
-                    jsonrpc: "2.0".to_string(),
-                    id: json!(1),
-                    method: "initialize".to_string(),
-                    params: Some(json!({"clientID": "test"})),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(JsonRpcMessage::Request(JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                id: json!(1),
+                method: "initialize".to_string(),
+                params: Some(json!({"clientID": "test"})),
+            }))
+        });
 
         let msg = mock_transport.read_message().await.unwrap();
 
@@ -153,21 +152,18 @@ mod tests {
     async fn test_mock_read_error_response() {
         let mut mock_transport = MockStdioTransport::new();
 
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(JsonRpcMessage::Response(JsonRpcResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: json!(1),
-                    result: None,
-                    error: Some(JsonRpcError {
-                        code: -32600,
-                        message: "Invalid request".to_string(),
-                        data: None,
-                    }),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(JsonRpcMessage::Response(JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: json!(1),
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32600,
+                    message: "Invalid request".to_string(),
+                    data: None,
+                }),
+            }))
+        });
 
         let msg = mock_transport.read_message().await.unwrap();
 
@@ -184,16 +180,13 @@ mod tests {
     async fn test_mock_read_notification() {
         let mut mock_transport = MockStdioTransport::new();
 
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(JsonRpcMessage::Notification(JsonRpcNotification {
-                    jsonrpc: "2.0".to_string(),
-                    method: "notification".to_string(),
-                    params: Some(json!({"event": "test"})),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(JsonRpcMessage::Notification(JsonRpcNotification {
+                jsonrpc: "2.0".to_string(),
+                method: "notification".to_string(),
+                params: Some(json!({"event": "test"})),
+            }))
+        });
 
         let msg = mock_transport.read_message().await.unwrap();
 
@@ -274,10 +267,14 @@ mod tests {
         let serialized = serde_json::to_string(&msg).unwrap();
 
         // Verify the message format expectations
-        assert!(!serialized.contains("Content-Length:"),
-            "MCP messages must NOT contain LSP Content-Length headers");
-        assert!(!serialized.contains("\r\n\r\n"),
-            "MCP messages must NOT contain LSP header separators");
+        assert!(
+            !serialized.contains("Content-Length:"),
+            "MCP messages must NOT contain LSP Content-Length headers"
+        );
+        assert!(
+            !serialized.contains("\r\n\r\n"),
+            "MCP messages must NOT contain LSP header separators"
+        );
 
         // Message should be valid single-line JSON
         let parsed: serde_json::Value = serde_json::from_str(&serialized).unwrap();
@@ -297,10 +294,14 @@ mod tests {
 
         // Verify message can be serialized as single line
         let serialized = serde_json::to_string(&msg).unwrap();
-        assert!(!serialized.contains('\n'),
-            "Serialized message should not contain newlines before transport adds them");
-        assert!(!serialized.contains('\r'),
-            "Serialized message should not contain carriage returns");
+        assert!(
+            !serialized.contains('\n'),
+            "Serialized message should not contain newlines before transport adds them"
+        );
+        assert!(
+            !serialized.contains('\r'),
+            "Serialized message should not contain carriage returns"
+        );
     }
 
     #[tokio::test]
@@ -320,10 +321,14 @@ mod tests {
         }
 
         // Verify the reverse: LSP-style input should NOT be parseable as JSON-RPC
-        let lsp_style = "Content-Length: 58\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"test\"}";
-        let lsp_parse_attempt: std::result::Result<JsonRpcMessage, _> = serde_json::from_str(lsp_style);
-        assert!(lsp_parse_attempt.is_err(),
-            "LSP-formatted messages should not be parseable as JSON-RPC");
+        let lsp_style =
+            "Content-Length: 58\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"test\"}";
+        let lsp_parse_attempt: std::result::Result<JsonRpcMessage, _> =
+            serde_json::from_str(lsp_style);
+        assert!(
+            lsp_parse_attempt.is_err(),
+            "LSP-formatted messages should not be parseable as JSON-RPC"
+        );
     }
 
     #[tokio::test]
@@ -339,8 +344,11 @@ mod tests {
 
         for example in examples {
             let parsed: std::result::Result<JsonRpcMessage, _> = serde_json::from_str(example);
-            assert!(parsed.is_ok(),
-                "Failed to parse MCP-compliant message: {}", example);
+            assert!(
+                parsed.is_ok(),
+                "Failed to parse MCP-compliant message: {}",
+                example
+            );
         }
     }
 
@@ -437,12 +445,17 @@ mod tests {
 
         // Read what was written
         let mut output = Vec::new();
-        tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut output).await.unwrap();
+        tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut output)
+            .await
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
 
         // Verify format
         assert!(output_str.ends_with('\n'), "Output must end with newline");
-        assert!(!output_str.contains("Content-Length:"), "Must not contain LSP headers");
+        assert!(
+            !output_str.contains("Content-Length:"),
+            "Must not contain LSP headers"
+        );
 
         // Verify content
         let trimmed = output_str.trim();
@@ -551,10 +564,8 @@ mod tests {
 
         // Should be a JSON parse error
         match result {
-            Err(Error::Json(_)) => {}, // Expected
+            Err(Error::Json(_)) => {} // Expected
             other => panic!("Expected JSON error, got: {:?}", other),
         }
     }
 }
-
-

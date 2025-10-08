@@ -342,9 +342,7 @@ mod tests {
     fn test_uri_to_github_path_invalid() {
         let handler = DocumentationHandler::new("user", "repo", "main");
 
-        assert!(handler
-            .uri_to_github_path("invalid://path")
-            .is_err());
+        assert!(handler.uri_to_github_path("invalid://path").is_err());
         assert!(handler
             .uri_to_github_path("debugger-docs://nonexistent")
             .is_err());
@@ -366,9 +364,7 @@ mod tests {
             .await;
 
         // Should be cached now
-        let cached = handler
-            .get_cached("https://test.com/doc.md")
-            .await;
+        let cached = handler.get_cached("https://test.com/doc.md").await;
         assert_eq!(cached, Some("Test content".to_string()));
 
         // Clear cache

@@ -1,8 +1,8 @@
+pub mod adapters;
+pub mod dap;
+pub mod debug;
 pub mod error;
 pub mod mcp;
-pub mod debug;
-pub mod dap;
-pub mod adapters;
 pub mod process;
 
 pub use error::Error;

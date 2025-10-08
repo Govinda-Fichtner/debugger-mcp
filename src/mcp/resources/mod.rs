@@ -1,5 +1,5 @@
-use crate::{Error, Result};
 use crate::debug::SessionManager;
+use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -61,19 +61,26 @@ impl ResourcesHandler {
             Resource {
                 uri: "debugger://workflows".to_string(),
                 name: "Common Debugging Workflows".to_string(),
-                description: Some("Step-by-step workflows for common debugging scenarios".to_string()),
+                description: Some(
+                    "Step-by-step workflows for common debugging scenarios".to_string(),
+                ),
                 mime_type: Some("application/json".to_string()),
             },
             Resource {
                 uri: "debugger://state-machine".to_string(),
                 name: "Session State Machine".to_string(),
-                description: Some("Complete state machine diagram showing all session states and transitions".to_string()),
+                description: Some(
+                    "Complete state machine diagram showing all session states and transitions"
+                        .to_string(),
+                ),
                 mime_type: Some("application/json".to_string()),
             },
             Resource {
                 uri: "debugger://error-handling".to_string(),
                 name: "Error Handling Guide".to_string(),
-                description: Some("Error codes, recovery strategies, and troubleshooting tips".to_string()),
+                description: Some(
+                    "Error codes, recovery strategies, and troubleshooting tips".to_string(),
+                ),
                 mime_type: Some("application/json".to_string()),
             },
         ];
@@ -110,7 +117,10 @@ impl ResourcesHandler {
 
         // Parse debugger:// URIs
         if !uri.starts_with("debugger://") {
-            return Err(Error::InvalidRequest(format!("Invalid resource URI: {}", uri)));
+            return Err(Error::InvalidRequest(format!(
+                "Invalid resource URI: {}",
+                uri
+            )));
         }
 
         let path = &uri["debugger://".len()..];
@@ -141,7 +151,10 @@ impl ResourcesHandler {
                     let session_id = parts[0];
                     self.read_session_stack_trace(session_id).await
                 }
-                _ => Err(Error::InvalidRequest(format!("Unknown resource path: {}", path))),
+                _ => Err(Error::InvalidRequest(format!(
+                    "Unknown resource path: {}",
+                    path
+                ))),
             }
         } else {
             Err(Error::InvalidRequest(format!("Unknown resource: {}", uri)))
@@ -873,7 +886,7 @@ mod tests {
         let handler = ResourcesHandler::new(manager);
         // Verify construction works and list_resources is callable
         let resources = handler.list_resources().await.unwrap();
-        assert!(resources.len() >= 1); // At least the list resource itself
+        assert!(!resources.is_empty()); // At least the list resource itself
     }
 
     #[tokio::test]
@@ -890,12 +903,20 @@ mod tests {
 
         // Verify workflow resources are present
         assert!(resources.iter().any(|r| r.uri == "debugger://workflows"));
-        assert!(resources.iter().any(|r| r.uri == "debugger://state-machine"));
-        assert!(resources.iter().any(|r| r.uri == "debugger://error-handling"));
+        assert!(resources
+            .iter()
+            .any(|r| r.uri == "debugger://state-machine"));
+        assert!(resources
+            .iter()
+            .any(|r| r.uri == "debugger://error-handling"));
 
         // Verify documentation resources are present
-        assert!(resources.iter().any(|r| r.uri == "debugger-docs://getting-started"));
-        assert!(resources.iter().any(|r| r.uri == "debugger-docs://troubleshooting"));
+        assert!(resources
+            .iter()
+            .any(|r| r.uri == "debugger-docs://getting-started"));
+        assert!(resources
+            .iter()
+            .any(|r| r.uri == "debugger-docs://troubleshooting"));
     }
 
     #[tokio::test]
@@ -944,11 +965,13 @@ mod tests {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
         let handler = ResourcesHandler::new(manager);
 
-        let result = handler.read_resource("debugger://sessions/nonexistent-id").await;
+        let result = handler
+            .read_resource("debugger://sessions/nonexistent-id")
+            .await;
         assert!(result.is_err());
 
         match result {
-            Err(Error::SessionNotFound(_)) => {},
+            Err(Error::SessionNotFound(_)) => {}
             _ => panic!("Expected SessionNotFound error"),
         }
     }
@@ -958,7 +981,9 @@ mod tests {
         let manager = Arc::new(RwLock::new(SessionManager::new()));
         let handler = ResourcesHandler::new(manager);
 
-        let result = handler.read_resource("debugger://sessions/nonexistent-id/stackTrace").await;
+        let result = handler
+            .read_resource("debugger://sessions/nonexistent-id/stackTrace")
+            .await;
         assert!(result.is_err());
     }
 
@@ -970,19 +995,22 @@ mod tests {
         assert_eq!(templates.len(), 10);
 
         // Check first template (sessions)
-        assert!(templates[0]["uriTemplate"].as_str().unwrap().contains("sessions"));
+        assert!(templates[0]["uriTemplate"]
+            .as_str()
+            .unwrap()
+            .contains("sessions"));
         assert!(templates[0]["name"].as_str().is_some());
         assert!(templates[0]["mimeType"].as_str().unwrap() == "application/json");
 
         // Verify workflow templates are present
-        assert!(templates.iter().any(|t|
-            t["uriTemplate"].as_str().unwrap() == "debugger://workflows"
-        ));
+        assert!(templates
+            .iter()
+            .any(|t| t["uriTemplate"].as_str().unwrap() == "debugger://workflows"));
 
         // Verify documentation templates are present
-        assert!(templates.iter().any(|t|
-            t["uriTemplate"].as_str().unwrap() == "debugger-docs://getting-started"
-        ));
+        assert!(templates
+            .iter()
+            .any(|t| t["uriTemplate"].as_str().unwrap() == "debugger-docs://getting-started"));
     }
 
     #[tokio::test]

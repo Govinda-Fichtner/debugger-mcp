@@ -1,6 +1,6 @@
-use crate::{Error, Result};
-use super::types::Message;
 use super::transport_trait::DapTransportTrait;
+use super::types::Message;
+use crate::{Error, Result};
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -15,9 +15,7 @@ pub enum DapTransport {
         stdout: BufReader<ChildStdout>,
     },
     /// TCP socket transport (used by Ruby/rdbg)
-    Socket {
-        stream: BufReader<TcpStream>,
-    },
+    Socket { stream: BufReader<TcpStream> },
 }
 
 impl DapTransport {
@@ -53,7 +51,7 @@ impl DapTransport {
 
     /// Helper to read DAP message from any async reader
     async fn read_from_stream<R: AsyncBufReadExt + tokio::io::AsyncRead + Unpin>(
-        reader: &mut R
+        reader: &mut R,
     ) -> Result<(String, String)> {
         // Read Content-Length header
         let mut headers = String::new();
@@ -76,14 +74,17 @@ impl DapTransport {
             .and_then(|s| s.trim().parse::<usize>().ok())
             .ok_or_else(|| Error::Dap("Missing Content-Length header".to_string()))?;
 
-        trace!("DAP: Reading message with Content-Length: {}", content_length);
+        trace!(
+            "DAP: Reading message with Content-Length: {}",
+            content_length
+        );
 
         // Read content
         let mut buffer = vec![0u8; content_length];
         tokio::io::AsyncReadExt::read_exact(reader, &mut buffer).await?;
 
-        let content = String::from_utf8(buffer)
-            .map_err(|e| Error::Dap(format!("Invalid UTF-8: {}", e)))?;
+        let content =
+            String::from_utf8(buffer).map_err(|e| Error::Dap(format!("Invalid UTF-8: {}", e)))?;
 
         Ok((headers, content))
     }
@@ -131,8 +132,8 @@ impl DapTransportTrait for DapTransport {
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{Event, Request, Response};
     use super::*;
-    use super::super::types::{Request, Response, Event};
     use mockall::mock;
     use serde_json::json;
 
@@ -151,22 +152,19 @@ mod tests {
     async fn test_mock_read_initialize_response() {
         let mut mock_transport = MockDapTransport::new();
 
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(Message::Response(Response {
-                    seq: 1,
-                    request_seq: 1,
-                    command: "initialize".to_string(),
-                    success: true,
-                    message: None,
-                    body: Some(json!({
-                        "supportsConfigurationDoneRequest": true,
-                        "supportsFunctionBreakpoints": false,
-                    })),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(Message::Response(Response {
+                seq: 1,
+                request_seq: 1,
+                command: "initialize".to_string(),
+                success: true,
+                message: None,
+                body: Some(json!({
+                    "supportsConfigurationDoneRequest": true,
+                    "supportsFunctionBreakpoints": false,
+                })),
+            }))
+        });
 
         let msg = mock_transport.read_message().await.unwrap();
 
@@ -227,19 +225,16 @@ mod tests {
     async fn test_mock_read_event() {
         let mut mock_transport = MockDapTransport::new();
 
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(Message::Event(Event {
-                    seq: 1,
-                    event: "stopped".to_string(),
-                    body: Some(json!({
-                        "reason": "breakpoint",
-                        "threadId": 1,
-                    })),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(Message::Event(Event {
+                seq: 1,
+                event: "stopped".to_string(),
+                body: Some(json!({
+                    "reason": "breakpoint",
+                    "threadId": 1,
+                })),
+            }))
+        });
 
         let msg = mock_transport.read_message().await.unwrap();
 

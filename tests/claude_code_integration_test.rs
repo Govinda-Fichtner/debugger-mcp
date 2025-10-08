@@ -1,8 +1,8 @@
+use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
-use serde_json::json;
 
 /// Test that validates the MCP server works with Claude Code
 #[tokio::test]
@@ -13,9 +13,7 @@ async fn test_claude_code_integration() {
 
     // 1. Check Claude CLI is available
     println!("\n📋 Step 1: Checking Claude CLI availability...");
-    let claude_check = Command::new("claude")
-        .arg("--version")
-        .output();
+    let claude_check = Command::new("claude").arg("--version").output();
 
     assert!(
         claude_check.is_ok() && claude_check.as_ref().unwrap().status.success(),
@@ -90,7 +88,8 @@ if __name__ == "__main__":
     // 5. Create Claude prompt file
     println!("\n📜 Step 5: Creating Claude prompt...");
     let prompt_path = test_dir.join("debug_prompt.md");
-    let prompt = format!(r#"# Debugging Task
+    let prompt = format!(
+        r#"# Debugging Task
 
 You are testing the Debugger MCP server integration. Your task is to:
 
@@ -155,7 +154,10 @@ The report should include:
 - Include the full JSON for each interaction
 - Note the timing/sequence of state changes
 - If anything fails, document the error clearly
-"#, fizzbuzz_path.display(), fizzbuzz_path.display());
+"#,
+        fizzbuzz_path.display(),
+        fizzbuzz_path.display()
+    );
 
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
     println!("✅ Created prompt at {}", prompt_path.display());
@@ -176,11 +178,18 @@ The report should include:
 
     fs::write(
         &mcp_config_path,
-        serde_json::to_string_pretty(&mcp_config).expect("Failed to serialize MCP config")
-    ).expect("Failed to write MCP config");
+        serde_json::to_string_pretty(&mcp_config).expect("Failed to serialize MCP config"),
+    )
+    .expect("Failed to write MCP config");
 
-    println!("✅ MCP server configuration created at {}", mcp_config_path.display());
-    println!("   Config: {}", serde_json::to_string_pretty(&mcp_config).unwrap());
+    println!(
+        "✅ MCP server configuration created at {}",
+        mcp_config_path.display()
+    );
+    println!(
+        "   Config: {}",
+        serde_json::to_string_pretty(&mcp_config).unwrap()
+    );
 
     // 7. Run Claude with the prompt
     println!("\n🤖 Step 7: Running Claude Code with debugging task...");
@@ -190,12 +199,12 @@ The report should include:
     let prompt_text = fs::read_to_string(&prompt_path).expect("Failed to read prompt file");
 
     let claude_output = Command::new("claude")
-        .arg(&prompt_text)  // Prompt comes first
+        .arg(&prompt_text) // Prompt comes first
         .arg("--print")
-        .arg("--dangerously-skip-permissions")  // For automated testing
+        .arg("--dangerously-skip-permissions") // For automated testing
         .arg("--mcp-config")
         .arg(mcp_config_path.to_str().unwrap())
-        .arg("--debug")  // Enable debug logging
+        .arg("--debug") // Enable debug logging
         .current_dir(test_dir)
         .output()
         .expect("Failed to run claude");
@@ -221,8 +230,7 @@ The report should include:
         protocol_log_path.display()
     );
 
-    let protocol_log = fs::read_to_string(&protocol_log_path)
-        .expect("Failed to read protocol log");
+    let protocol_log = fs::read_to_string(&protocol_log_path).expect("Failed to read protocol log");
 
     println!("✅ Protocol log created ({} bytes)", protocol_log.len());
 
@@ -237,8 +245,14 @@ The report should include:
     let has_disconnect = protocol_log.contains("debugger_disconnect");
 
     println!("   ✓ Contains debugger_start: {}", has_debugger_start);
-    println!("   ✓ Contains debugger_session_state: {}", has_session_state);
-    println!("   ✓ Contains debugger_set_breakpoint: {}", has_set_breakpoint);
+    println!(
+        "   ✓ Contains debugger_session_state: {}",
+        has_session_state
+    );
+    println!(
+        "   ✓ Contains debugger_set_breakpoint: {}",
+        has_set_breakpoint
+    );
     println!("   ✓ Contains debugger_continue: {}", has_continue);
     println!("   ✓ Contains debugger_disconnect: {}", has_disconnect);
 
@@ -247,10 +261,10 @@ The report should include:
     println!("   ✓ Contains sessionId: {}", has_session_id);
 
     // Check for state mentions
-    let has_state_info = protocol_log.contains("state") ||
-                         protocol_log.contains("Initializing") ||
-                         protocol_log.contains("Running") ||
-                         protocol_log.contains("Stopped");
+    let has_state_info = protocol_log.contains("state")
+        || protocol_log.contains("Initializing")
+        || protocol_log.contains("Running")
+        || protocol_log.contains("Stopped");
     println!("   ✓ Contains state information: {}", has_state_info);
 
     println!("\n📄 Protocol Log Contents:");
@@ -270,15 +284,9 @@ The report should include:
         "❌ Protocol log missing debugger_start tool usage"
     );
 
-    assert!(
-        has_session_id,
-        "❌ Protocol log missing sessionId"
-    );
+    assert!(has_session_id, "❌ Protocol log missing sessionId");
 
-    assert!(
-        has_state_info,
-        "❌ Protocol log missing state information"
-    );
+    assert!(has_state_info, "❌ Protocol log missing state information");
 
     // Assert Claude execution was successful
     assert!(

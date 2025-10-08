@@ -1,11 +1,11 @@
-use serde_json::{json, Value};
-use crate::{Result, Error};
+use super::logging::DebugAdapterLogger;
 use crate::dap::socket_helper;
+use crate::{Error, Result};
+use serde_json::{json, Value};
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
-use std::time::Duration;
 use tracing::{error, info};
-use super::logging::DebugAdapterLogger;
 
 /// Ruby rdbg (debug gem) adapter configuration
 ///
@@ -38,11 +38,7 @@ impl RubyAdapter {
         let port = socket_helper::find_free_port()?;
 
         // 2. Build command args
-        let mut args = vec![
-            "--open".to_string(),
-            "--port".to_string(),
-            port.to_string(),
-        ];
+        let mut args = vec!["--open".to_string(), "--port".to_string(), port.to_string()];
 
         // Add stop behavior flag
         if stop_on_entry {
@@ -68,10 +64,9 @@ impl RubyAdapter {
         // 4. Connect to socket (with 2 second timeout)
         let socket = socket_helper::connect_with_retry(port, Duration::from_secs(2))
             .await
-            .map_err(|e| Error::Process(format!(
-                "Failed to connect to rdbg on port {}: {}",
-                port, e
-            )))?;
+            .map_err(|e| {
+                Error::Process(format!("Failed to connect to rdbg on port {}: {}", port, e))
+            })?;
 
         Ok(RubyDebugSession {
             process: child,
@@ -215,7 +210,6 @@ mod tests {
     fn test_command() {
         assert_eq!(RubyAdapter::command(), "rdbg");
     }
-
 
     #[test]
     fn test_adapter_id() {

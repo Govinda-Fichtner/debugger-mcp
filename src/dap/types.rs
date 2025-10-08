@@ -227,7 +227,7 @@ mod tests {
             command: "initialize".to_string(),
             arguments: Some(json!({"clientID": "test"})),
         };
-        
+
         let serialized = serde_json::to_string(&req).unwrap();
         assert!(serialized.contains("initialize"));
         assert!(serialized.contains("\"seq\":1"));
@@ -243,7 +243,7 @@ mod tests {
             message: None,
             body: Some(json!({"capabilities": {}})),
         };
-        
+
         let serialized = serde_json::to_string(&resp).unwrap();
         assert!(serialized.contains("\"success\":true"));
     }
@@ -256,7 +256,7 @@ mod tests {
             condition: Some("x > 0".to_string()),
             hit_condition: None,
         };
-        
+
         assert_eq!(bp.line, 10);
         assert_eq!(bp.column, Some(5));
     }
@@ -276,7 +276,7 @@ mod tests {
             end_line: None,
             end_column: None,
         };
-        
+
         assert_eq!(frame.name, "main");
         assert_eq!(frame.line, 42);
     }

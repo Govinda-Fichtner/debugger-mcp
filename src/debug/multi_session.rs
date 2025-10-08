@@ -1,5 +1,5 @@
-use crate::{Result, Error};
 use crate::dap::client::DapClient;
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -61,7 +61,10 @@ pub struct MultiSessionManager {
 impl MultiSessionManager {
     /// Create a new multi-session manager for a parent session
     pub fn new(parent_session_id: String) -> Self {
-        info!("🔄 Creating MultiSessionManager for parent: {}", parent_session_id);
+        info!(
+            "🔄 Creating MultiSessionManager for parent: {}",
+            parent_session_id
+        );
         Self {
             parent_session_id,
             children: Arc::new(RwLock::new(HashMap::new())),
@@ -78,7 +81,10 @@ impl MultiSessionManager {
         let port = child.port;
         let session_type = child.session_type.clone();
 
-        info!("➕ Adding child session '{}' (type: {}, port: {})", child_id, session_type, port);
+        info!(
+            "➕ Adding child session '{}' (type: {}, port: {})",
+            child_id, session_type, port
+        );
 
         self.children.write().await.insert(child_id.clone(), child);
 
@@ -194,13 +200,16 @@ mod tests {
 
     fn create_empty_mock() -> MockTestTransport {
         let mut mock = MockTestTransport::new();
-        mock.expect_read_message().returning(|| Err(Error::Dap("Connection closed".to_string())));
+        mock.expect_read_message()
+            .returning(|| Err(Error::Dap("Connection closed".to_string())));
         mock
     }
 
     async fn create_mock_child_session(id: &str, port: u16) -> ChildSession {
         let mock_transport = create_empty_mock();
-        let client = DapClient::new_with_transport(Box::new(mock_transport), None).await.unwrap();
+        let client = DapClient::new_with_transport(Box::new(mock_transport), None)
+            .await
+            .unwrap();
 
         ChildSession {
             id: id.to_string(),
@@ -226,7 +235,10 @@ mod tests {
         manager.add_child(child).await;
 
         assert_eq!(manager.child_count().await, 1);
-        assert_eq!(manager.get_active_child_id().await, Some("child-1".to_string()));
+        assert_eq!(
+            manager.get_active_child_id().await,
+            Some("child-1".to_string())
+        );
         assert!(manager.get_active_child().await.is_some());
     }
 
@@ -242,7 +254,10 @@ mod tests {
 
         assert_eq!(manager.child_count().await, 2);
         // First child should still be active
-        assert_eq!(manager.get_active_child_id().await, Some("child-1".to_string()));
+        assert_eq!(
+            manager.get_active_child_id().await,
+            Some("child-1".to_string())
+        );
 
         let children = manager.get_children().await;
         assert!(children.contains(&"child-1".to_string()));
@@ -260,8 +275,14 @@ mod tests {
         manager.add_child(child2).await;
 
         // Switch to child-2
-        manager.set_active_child("child-2".to_string()).await.unwrap();
-        assert_eq!(manager.get_active_child_id().await, Some("child-2".to_string()));
+        manager
+            .set_active_child("child-2".to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.get_active_child_id().await,
+            Some("child-2".to_string())
+        );
     }
 
     #[tokio::test]
@@ -306,7 +327,10 @@ mod tests {
 
         // child-2 should become active
         assert_eq!(manager.child_count().await, 1);
-        assert_eq!(manager.get_active_child_id().await, Some("child-2".to_string()));
+        assert_eq!(
+            manager.get_active_child_id().await,
+            Some("child-2".to_string())
+        );
     }
 
     #[tokio::test]

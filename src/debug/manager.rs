@@ -1,11 +1,11 @@
-use crate::{Error, Result};
+use super::session::DebugSession;
+use crate::adapters::logging::DebugAdapterLogger;
+use crate::adapters::nodejs::NodeJsAdapter;
 use crate::adapters::python::PythonAdapter;
 use crate::adapters::ruby::RubyAdapter;
-use crate::adapters::nodejs::NodeJsAdapter;
 use crate::adapters::rust::RustAdapter;
-use crate::adapters::logging::DebugAdapterLogger;
 use crate::dap::client::DapClient;
-use super::session::DebugSession;
+use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -38,166 +38,177 @@ impl SessionManager {
         stop_on_entry: bool,
     ) -> Result<String> {
         // Type alias for STDIO adapter tuple: (command, args, adapter_id, launch_args, adapter_for_logging)
-        type StdioAdapterTuple<'a> = (String, Vec<String>, &'a str, serde_json::Value, Box<dyn DebugAdapterLogger + 'a>);
+        type StdioAdapterTuple<'a> = (
+            String,
+            Vec<String>,
+            &'a str,
+            serde_json::Value,
+            Box<dyn DebugAdapterLogger + 'a>,
+        );
 
-        let (command, adapter_args, adapter_id, launch_args, adapter): StdioAdapterTuple = match language {
-            "python" => {
-                // Create adapter instance for logging
-                let adapter = PythonAdapter;
+        let (command, adapter_args, adapter_id, launch_args, adapter): StdioAdapterTuple =
+            match language {
+                "python" => {
+                    // Create adapter instance for logging
+                    let adapter = PythonAdapter;
 
-                // Log adapter selection
-                adapter.log_selection();
+                    // Log adapter selection
+                    adapter.log_selection();
 
-                let cmd = PythonAdapter::command();
-                let adapter_args = PythonAdapter::args();
-                let adapter_id = PythonAdapter::adapter_id();
-                let launch_args = PythonAdapter::launch_args_with_options(
-                    &program,
-                    &args,
-                    cwd.as_deref(),
-                    stop_on_entry,
-                );
+                    let cmd = PythonAdapter::command();
+                    let adapter_args = PythonAdapter::args();
+                    let adapter_id = PythonAdapter::adapter_id();
+                    let launch_args = PythonAdapter::launch_args_with_options(
+                        &program,
+                        &args,
+                        cwd.as_deref(),
+                        stop_on_entry,
+                    );
 
-                // Log transport initialization
-                adapter.log_transport_init();
+                    // Log transport initialization
+                    adapter.log_transport_init();
 
-                (cmd, adapter_args, adapter_id, launch_args, Box::new(adapter))
-            }
-            "ruby" => {
-                // Create adapter instance for logging
-                let adapter = RubyAdapter;
-
-                // Log adapter selection
-                adapter.log_selection();
-
-                // Log transport initialization
-                adapter.log_transport_init();
-
-                // Ruby uses socket-based communication, not stdio
-                // Spawn rdbg and connect to socket
-                adapter.log_spawn_attempt();
-                let ruby_session = RubyAdapter::spawn(&program, &args, stop_on_entry)
-                    .await
-                    .map_err(|e| {
-                        adapter.log_spawn_error(&e);
-                        e
-                    })?;
-
-                // Log successful connection with Ruby-specific details
-                ruby_session.log_connection_success_with_port();
-
-                let adapter_id = RubyAdapter::adapter_id();
-                let launch_args = RubyAdapter::launch_args_with_options(
-                    &program,
-                    &args,
-                    cwd.as_deref(),
-                    stop_on_entry,
-                );
-
-                // Create DAP client from socket
-                let client = DapClient::from_socket(ruby_session.socket)
-                    .await
-                    .map_err(|e| {
-                        adapter.log_connection_error(&e);
-                        e
-                    })?;
-
-                // Create session
-                let session = DebugSession::new(language.to_string(), program.clone(), client).await?;
-                let session_id = session.id.clone();
-
-                // Store session immediately
-                let session_arc = Arc::new(session);
-                {
-                    let mut sessions = self.sessions.write().await;
-                    sessions.insert(session_id.clone(), session_arc.clone());
+                    (
+                        cmd,
+                        adapter_args,
+                        adapter_id,
+                        launch_args,
+                        Box::new(adapter),
+                    )
                 }
+                "ruby" => {
+                    // Create adapter instance for logging
+                    let adapter = RubyAdapter;
 
-                // Log workaround application (Ruby requires entry breakpoint workaround)
-                adapter.log_workaround_applied();
+                    // Log adapter selection
+                    adapter.log_selection();
 
-                // Initialize and launch in the background
-                tokio::spawn(session_arc.initialize_and_launch_async(
-                    adapter_id.to_string(),
-                    launch_args,
-                ));
+                    // Log transport initialization
+                    adapter.log_transport_init();
 
-                return Ok(session_id);
-            }
-            "nodejs" => {
-                // Create adapter instance for logging
-                let adapter = NodeJsAdapter;
+                    // Ruby uses socket-based communication, not stdio
+                    // Spawn rdbg and connect to socket
+                    adapter.log_spawn_attempt();
+                    let ruby_session = RubyAdapter::spawn(&program, &args, stop_on_entry)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_spawn_error(e);
+                        })?;
 
-                // Log adapter selection
-                adapter.log_selection();
+                    // Log successful connection with Ruby-specific details
+                    ruby_session.log_connection_success_with_port();
 
-                // Log transport initialization
-                adapter.log_transport_init();
+                    let adapter_id = RubyAdapter::adapter_id();
+                    let launch_args = RubyAdapter::launch_args_with_options(
+                        &program,
+                        &args,
+                        cwd.as_deref(),
+                        stop_on_entry,
+                    );
 
-                // Node.js uses socket-based communication with vscode-js-debug DAP server
-                // Spawn vscode-js-debug and connect to socket
-                adapter.log_spawn_attempt();
-                let nodejs_session = NodeJsAdapter::spawn_dap_server()
-                    .await
-                    .map_err(|e| {
-                        adapter.log_spawn_error(&e);
-                        e
-                    })?;
+                    // Create DAP client from socket
+                    let client = DapClient::from_socket(ruby_session.socket)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_connection_error(e);
+                        })?;
 
-                // Log successful connection with Node.js-specific details
-                nodejs_session.log_connection_success_with_details();
+                    // Create session
+                    let session =
+                        DebugSession::new(language.to_string(), program.clone(), client).await?;
+                    let session_id = session.id.clone();
 
-                let adapter_id = NodeJsAdapter::adapter_id();
-                let launch_args = NodeJsAdapter::launch_config(
-                    &program,
-                    &args,
-                    cwd.as_deref(),
-                    stop_on_entry,
-                );
+                    // Store session immediately
+                    let session_arc = Arc::new(session);
+                    {
+                        let mut sessions = self.sessions.write().await;
+                        sessions.insert(session_id.clone(), session_arc.clone());
+                    }
 
-                // Create DAP client from socket (parent session)
-                let parent_client = DapClient::from_socket(nodejs_session.socket)
-                    .await
-                    .map_err(|e| {
-                        adapter.log_connection_error(&e);
-                        e
-                    })?;
+                    // Log workaround application (Ruby requires entry breakpoint workaround)
+                    adapter.log_workaround_applied();
 
-                info!("🔄 [NODEJS] Creating multi-session manager for parent session");
+                    // Initialize and launch in the background
+                    tokio::spawn(
+                        session_arc
+                            .initialize_and_launch_async(adapter_id.to_string(), launch_args),
+                    );
 
-                // Create session with multi-session mode
-                use super::session::SessionMode;
-                use super::multi_session::MultiSessionManager;
-
-                let session_id = uuid::Uuid::new_v4().to_string();
-                let multi_session_manager = MultiSessionManager::new(session_id.clone());
-
-                let session_mode = SessionMode::MultiSession {
-                    parent_client: Arc::new(RwLock::new(parent_client)),
-                    multi_session_manager: multi_session_manager.clone(),
-                    vscode_js_debug_port: nodejs_session.port,
-                };
-
-                let session = DebugSession::new_with_mode(
-                    language.to_string(),
-                    program.clone(),
-                    session_mode,
-                )
-                .await?;
-
-                // Store session immediately
-                let session_arc = Arc::new(session);
-                {
-                    let mut sessions = self.sessions.write().await;
-                    sessions.insert(session_id.clone(), session_arc.clone());
+                    return Ok(session_id);
                 }
+                "nodejs" => {
+                    // Create adapter instance for logging
+                    let adapter = NodeJsAdapter;
 
-                // Register child session spawn callback on parent client
-                info!("🔄 [NODEJS] Registering child session spawn callback");
-                let session_clone = session_arc.clone();
-                if let SessionMode::MultiSession { parent_client, .. } = &session_arc.session_mode {
-                    let parent = parent_client.read().await;
-                    parent
+                    // Log adapter selection
+                    adapter.log_selection();
+
+                    // Log transport initialization
+                    adapter.log_transport_init();
+
+                    // Node.js uses socket-based communication with vscode-js-debug DAP server
+                    // Spawn vscode-js-debug and connect to socket
+                    adapter.log_spawn_attempt();
+                    let nodejs_session =
+                        NodeJsAdapter::spawn_dap_server().await.inspect_err(|e| {
+                            adapter.log_spawn_error(e);
+                        })?;
+
+                    // Log successful connection with Node.js-specific details
+                    nodejs_session.log_connection_success_with_details();
+
+                    let adapter_id = NodeJsAdapter::adapter_id();
+                    let launch_args = NodeJsAdapter::launch_config(
+                        &program,
+                        &args,
+                        cwd.as_deref(),
+                        stop_on_entry,
+                    );
+
+                    // Create DAP client from socket (parent session)
+                    let parent_client = DapClient::from_socket(nodejs_session.socket)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_connection_error(e);
+                        })?;
+
+                    info!("🔄 [NODEJS] Creating multi-session manager for parent session");
+
+                    // Create session with multi-session mode
+                    use super::multi_session::MultiSessionManager;
+                    use super::session::SessionMode;
+
+                    let session_id = uuid::Uuid::new_v4().to_string();
+                    let multi_session_manager = MultiSessionManager::new(session_id.clone());
+
+                    let session_mode = SessionMode::MultiSession {
+                        parent_client: Arc::new(RwLock::new(parent_client)),
+                        multi_session_manager: multi_session_manager.clone(),
+                        vscode_js_debug_port: nodejs_session.port,
+                    };
+
+                    let session = DebugSession::new_with_mode(
+                        language.to_string(),
+                        program.clone(),
+                        session_mode,
+                    )
+                    .await?;
+
+                    // Store session immediately
+                    let session_arc = Arc::new(session);
+                    {
+                        let mut sessions = self.sessions.write().await;
+                        sessions.insert(session_id.clone(), session_arc.clone());
+                    }
+
+                    // Register child session spawn callback on parent client
+                    info!("🔄 [NODEJS] Registering child session spawn callback");
+                    let session_clone = session_arc.clone();
+                    if let SessionMode::MultiSession { parent_client, .. } =
+                        &session_arc.session_mode
+                    {
+                        let parent = parent_client.read().await;
+                        parent
                         .on_child_session_spawn(move |target_id| {
                             let session = session_clone.clone();
                             Box::pin(async move {
@@ -210,67 +221,72 @@ impl SessionManager {
                             })
                         })
                         .await;
+                    }
+
+                    // Log workaround application (Node.js uses multi-session for stopOnEntry)
+                    adapter.log_workaround_applied();
+
+                    // Initialize and launch in the background
+                    // This will trigger the parent session, which will send startDebugging reverse request
+                    tokio::spawn(
+                        session_arc
+                            .initialize_and_launch_async(adapter_id.to_string(), launch_args),
+                    );
+
+                    return Ok(session_id);
                 }
+                "rust" => {
+                    // Create adapter instance for logging
+                    let adapter = RustAdapter;
 
-                // Log workaround application (Node.js uses multi-session for stopOnEntry)
-                adapter.log_workaround_applied();
+                    // Log adapter selection
+                    adapter.log_selection();
 
-                // Initialize and launch in the background
-                // This will trigger the parent session, which will send startDebugging reverse request
-                tokio::spawn(session_arc.initialize_and_launch_async(
-                    adapter_id.to_string(),
-                    launch_args,
-                ));
+                    info!("🔨 [RUST] Compiling Rust source before debugging");
 
-                return Ok(session_id);
-            }
-            "rust" => {
-                // Create adapter instance for logging
-                let adapter = RustAdapter;
+                    // Step 1: Compile the Rust source (auto-detects single-file vs Cargo project)
+                    RustAdapter::log_compilation_start(&program, false); // false = debug build
+                    let binary_path =
+                        RustAdapter::compile(&program, false)
+                            .await
+                            .inspect_err(|e| {
+                                RustAdapter::log_compilation_error(e);
+                            })?;
 
-                // Log adapter selection
-                adapter.log_selection();
+                    RustAdapter::log_compilation_success(&binary_path);
 
-                info!("🔨 [RUST] Compiling Rust source before debugging");
+                    // Step 2: Prepare CodeLLDB adapter
+                    let cmd = RustAdapter::command();
+                    let adapter_args = RustAdapter::args();
+                    let adapter_id = RustAdapter::adapter_id();
+                    let launch_args = RustAdapter::launch_args(
+                        &binary_path, // Use compiled binary path, not source
+                        &args,
+                        cwd.as_deref(),
+                        stop_on_entry,
+                    );
 
-                // Step 1: Compile the Rust source (auto-detects single-file vs Cargo project)
-                RustAdapter::log_compilation_start(&program, false);  // false = debug build
-                let binary_path = RustAdapter::compile(&program, false)
-                    .await
-                    .map_err(|e| {
-                        RustAdapter::log_compilation_error(&e);
-                        e
-                    })?;
+                    // Log transport initialization
+                    adapter.log_transport_init();
 
-                RustAdapter::log_compilation_success(&binary_path);
-
-                // Step 2: Prepare CodeLLDB adapter
-                let cmd = RustAdapter::command();
-                let adapter_args = RustAdapter::args();
-                let adapter_id = RustAdapter::adapter_id();
-                let launch_args = RustAdapter::launch_args(
-                    &binary_path,  // Use compiled binary path, not source
-                    &args,
-                    cwd.as_deref(),
-                    stop_on_entry,
-                );
-
-                // Log transport initialization
-                adapter.log_transport_init();
-
-                (cmd, adapter_args, adapter_id, launch_args, Box::new(adapter))
-            }
-            _ => return Err(Error::AdapterNotFound(language.to_string())),
-        };
+                    (
+                        cmd,
+                        adapter_args,
+                        adapter_id,
+                        launch_args,
+                        Box::new(adapter),
+                    )
+                }
+                _ => return Err(Error::AdapterNotFound(language.to_string())),
+            };
 
         // Spawn DAP client (Python/Rust path - uses STDIO transport)
         // Adapter instance is passed from match arm above for language-specific logging
         adapter.log_spawn_attempt();
         let client = DapClient::spawn(&command, &adapter_args)
             .await
-            .map_err(|e| {
-                adapter.log_spawn_error(&e);
-                e
+            .inspect_err(|e| {
+                adapter.log_spawn_error(e);
             })?;
 
         // Log successful connection
@@ -291,10 +307,7 @@ impl SessionManager {
         adapter.log_workaround_applied();
 
         // Initialize and launch in the background
-        tokio::spawn(session_arc.initialize_and_launch_async(
-            adapter_id.to_string(),
-            launch_args,
-        ));
+        tokio::spawn(session_arc.initialize_and_launch_async(adapter_id.to_string(), launch_args));
 
         Ok(session_id)
     }
@@ -307,7 +320,10 @@ impl SessionManager {
             .ok_or_else(|| Error::SessionNotFound(session_id.to_string()))
     }
 
-    pub async fn get_session_state(&self, session_id: &str) -> Result<crate::debug::state::DebugState> {
+    pub async fn get_session_state(
+        &self,
+        session_id: &str,
+    ) -> Result<crate::debug::state::DebugState> {
         let session = self.get_session(session_id).await?;
         Ok(session.get_state().await)
     }

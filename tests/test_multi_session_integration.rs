@@ -1,3 +1,5 @@
+use debugger_mcp::dap::client::DapClient;
+use debugger_mcp::debug::{ChildSession, DebugSession, MultiSessionManager};
 /// Integration tests for multi-session architecture (Node.js debugging)
 ///
 /// These tests verify that the multi-session architecture works correctly
@@ -11,10 +13,7 @@
 /// 2. Child session spawning and management
 /// 3. Operation routing to child sessions
 /// 4. Event forwarding from child to parent
-
-use debugger_mcp::debug::{SessionManager, DebugState, SessionMode};
-use debugger_mcp::debug::{DebugSession, MultiSessionManager, ChildSession};
-use debugger_mcp::dap::client::DapClient;
+use debugger_mcp::debug::{DebugState, SessionManager, SessionMode};
 use debugger_mcp::{Error, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -35,7 +34,8 @@ async fn create_mock_child_session(port: u16) -> ChildSession {
     }
 
     let mut mock_transport = MockTestTransport::new();
-    mock_transport.expect_read_message()
+    mock_transport
+        .expect_read_message()
         .returning(|| Err(Error::Dap("Connection closed".to_string())));
 
     let client = DapClient::new_with_transport(Box::new(mock_transport), None)
@@ -72,7 +72,10 @@ async fn test_adding_child_session_sets_as_active() {
 
     assert_eq!(manager.child_count().await, 1);
     assert!(manager.get_active_child().await.is_some());
-    assert_eq!(manager.get_active_child_id().await, Some("child-9000".to_string()));
+    assert_eq!(
+        manager.get_active_child_id().await,
+        Some("child-9000".to_string())
+    );
 }
 
 #[tokio::test]
@@ -89,11 +92,20 @@ async fn test_multiple_child_sessions() {
 
     assert_eq!(manager.child_count().await, 3);
     // First child should still be active
-    assert_eq!(manager.get_active_child_id().await, Some("child-9000".to_string()));
+    assert_eq!(
+        manager.get_active_child_id().await,
+        Some("child-9000".to_string())
+    );
 
     // Switch to second child
-    manager.set_active_child("child-9001".to_string()).await.unwrap();
-    assert_eq!(manager.get_active_child_id().await, Some("child-9001".to_string()));
+    manager
+        .set_active_child("child-9001".to_string())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager.get_active_child_id().await,
+        Some("child-9001".to_string())
+    );
 }
 
 #[tokio::test]
@@ -111,7 +123,10 @@ async fn test_removing_active_child_switches_to_next() {
 
     // Should switch to child-9001
     assert_eq!(manager.child_count().await, 1);
-    assert_eq!(manager.get_active_child_id().await, Some("child-9001".to_string()));
+    assert_eq!(
+        manager.get_active_child_id().await,
+        Some("child-9001".to_string())
+    );
 }
 
 // ============================================================================
@@ -134,7 +149,8 @@ async fn test_session_mode_single_for_python() {
     }
 
     let mut mock_transport = MockTestTransport::new();
-    mock_transport.expect_read_message()
+    mock_transport
+        .expect_read_message()
         .returning(|| Err(Error::Dap("Connection closed".to_string())));
 
     let client = DapClient::new_with_transport(Box::new(mock_transport), None)
@@ -142,13 +158,9 @@ async fn test_session_mode_single_for_python() {
         .unwrap();
 
     // Python uses Single mode (default constructor)
-    let session = DebugSession::new(
-        "python".to_string(),
-        "test.py".to_string(),
-        client,
-    )
-    .await
-    .unwrap();
+    let session = DebugSession::new("python".to_string(), "test.py".to_string(), client)
+        .await
+        .unwrap();
 
     // Verify session created successfully
     assert_eq!(session.language, "python");
@@ -175,7 +187,8 @@ async fn test_session_mode_multi_for_nodejs() {
     }
 
     let mut mock_transport = MockTestTransport::new();
-    mock_transport.expect_read_message()
+    mock_transport
+        .expect_read_message()
         .returning(|| Err(Error::Dap("Connection closed".to_string())));
 
     let client = DapClient::new_with_transport(Box::new(mock_transport), None)
@@ -190,13 +203,10 @@ async fn test_session_mode_multi_for_nodejs() {
         vscode_js_debug_port: 12345, // Mock port for testing
     };
 
-    let session = DebugSession::new_with_mode(
-        "nodejs".to_string(),
-        "test.js".to_string(),
-        session_mode,
-    )
-    .await
-    .unwrap();
+    let session =
+        DebugSession::new_with_mode("nodejs".to_string(), "test.js".to_string(), session_mode)
+            .await
+            .unwrap();
 
     // Verify session created successfully
     assert_eq!(session.language, "nodejs");
@@ -230,20 +240,17 @@ async fn test_operation_routing_single_mode() {
     }
 
     let mut mock_transport = MockTestTransport::new();
-    mock_transport.expect_read_message()
+    mock_transport
+        .expect_read_message()
         .returning(|| Err(Error::Dap("Connection closed".to_string())));
 
     let client = DapClient::new_with_transport(Box::new(mock_transport), None)
         .await
         .unwrap();
 
-    let session = DebugSession::new(
-        "python".to_string(),
-        "test.py".to_string(),
-        client,
-    )
-    .await
-    .unwrap();
+    let session = DebugSession::new("python".to_string(), "test.py".to_string(), client)
+        .await
+        .unwrap();
 
     // Test that get_state works (uses internal routing)
     let state = session.get_state().await;
@@ -266,7 +273,8 @@ async fn test_operation_routing_multi_mode_no_child() {
     }
 
     let mut mock_transport = MockTestTransport::new();
-    mock_transport.expect_read_message()
+    mock_transport
+        .expect_read_message()
         .returning(|| Err(Error::Dap("Connection closed".to_string())));
 
     let client = DapClient::new_with_transport(Box::new(mock_transport), None)
@@ -280,13 +288,10 @@ async fn test_operation_routing_multi_mode_no_child() {
         vscode_js_debug_port: 12345, // Mock port for testing
     };
 
-    let session = DebugSession::new_with_mode(
-        "nodejs".to_string(),
-        "test.js".to_string(),
-        session_mode,
-    )
-    .await
-    .unwrap();
+    let session =
+        DebugSession::new_with_mode("nodejs".to_string(), "test.js".to_string(), session_mode)
+            .await
+            .unwrap();
 
     // With no child, operations should fall back to parent client
     let state = session.get_state().await;
@@ -305,46 +310,46 @@ fn test_multi_session_workflow_documentation() {
     println!("\n=== Multi-Session Debugging Workflow ===\n");
     println!("1. User calls create_session('nodejs', 'fizzbuzz.js', ...)");
     println!("   └─> SessionManager spawns vscode-js-debug parent (dapDebugServer.js)");
-    println!("");
+    println!();
     println!("2. SessionManager creates DebugSession with MultiSession mode");
     println!("   ├─> MultiSessionManager tracks parent-child relationships");
     println!("   └─> Registers child session spawn callback on parent client");
-    println!("");
+    println!();
     println!("3. SessionManager calls initialize_and_launch() on session");
     println!("   ├─> Parent session sends initialize request");
     println!("   ├─> Parent session sends launch request");
     println!("   └─> Parent session sends configurationDone");
-    println!("");
+    println!();
     println!("4. Parent sends 'startDebugging' reverse request");
     println!("   ├─> DapClient message_reader detects reverse request");
     println!("   ├─> Extracts port from configuration.__jsDebugChildServer");
     println!("   └─> Invokes registered callback(port)");
-    println!("");
+    println!();
     println!("5. Callback triggers session.spawn_child_session(port)");
     println!("   ├─> Connects to child port via TCP");
     println!("   ├─> Creates DapClient for child");
     println!("   ├─> Initializes child session");
     println!("   ├─> Registers event handlers (stopped, continued, etc.)");
     println!("   └─> Adds child to MultiSessionManager as active");
-    println!("");
+    println!();
     println!("6. User calls set_breakpoint(session_id, 'fizzbuzz.js', 5)");
     println!("   ├─> DebugSession.get_debug_client() returns active child");
     println!("   ├─> Breakpoint request sent to child session");
     println!("   └─> Child responds with verified=true");
-    println!("");
+    println!();
     println!("7. User calls continue_execution(session_id)");
     println!("   ├─> Continue request sent to child session");
     println!("   └─> Child session runs Node.js program");
-    println!("");
+    println!();
     println!("8. Breakpoint hit in Node.js program");
     println!("   ├─> Child session sends 'stopped' event");
     println!("   ├─> Event handler forwards to parent session state");
     println!("   └─> Parent session state set to Stopped");
-    println!("");
+    println!();
     println!("9. User calls evaluate(session_id, 'n', frame_id)");
     println!("   ├─> Evaluate request sent to child session");
     println!("   └─> Child returns variable value");
-    println!("");
+    println!();
     println!("=== End Workflow ===\n");
 }
 
@@ -355,32 +360,32 @@ fn test_architecture_documentation() {
     println!("SessionMode enum:");
     println!("  Single {{ client }} - Python, Ruby");
     println!("  MultiSession {{ parent_client, multi_session_manager }} - Node.js");
-    println!("");
+    println!();
     println!("MultiSessionManager:");
     println!("  - Tracks child sessions (HashMap<String, ChildSession>)");
     println!("  - Manages active child selection");
     println!("  - Routes operations to correct child");
-    println!("");
+    println!();
     println!("ChildSession:");
     println!("  - id: Unique identifier");
     println!("  - client: DapClient for child");
     println!("  - port: TCP port");
     println!("  - session_type: 'pwa-node', 'chrome', etc.");
-    println!("");
+    println!();
     println!("DapClient callbacks:");
     println!("  - on_child_session_spawn(callback)");
     println!("  - Callback invoked when startDebugging reverse request received");
-    println!("");
+    println!();
     println!("Operation routing:");
     println!("  - get_debug_client() returns appropriate client");
     println!("  - Single mode: returns sole client");
     println!("  - MultiSession: returns active child (fallback to parent)");
-    println!("");
+    println!();
     println!("Event forwarding:");
     println!("  - Child event handlers registered in spawn_child_session()");
     println!("  - Events forwarded to parent session state");
     println!("  - Maintains single source of truth");
-    println!("");
+    println!();
     println!("=== End Architecture ===\n");
 }
 
@@ -436,9 +441,20 @@ async fn test_nodejs_multi_session_full_workflow() {
     let session = manager.get_session(&session_id).await.unwrap();
 
     // Verify it's in multi-session mode
-    if let SessionMode::MultiSession { multi_session_manager, .. } = &session.session_mode {
-        assert_eq!(multi_session_manager.child_count().await, 1, "Should have 1 child session");
-        assert!(multi_session_manager.get_active_child().await.is_some(), "Should have active child");
+    if let SessionMode::MultiSession {
+        multi_session_manager,
+        ..
+    } = &session.session_mode
+    {
+        assert_eq!(
+            multi_session_manager.child_count().await,
+            1,
+            "Should have 1 child session"
+        );
+        assert!(
+            multi_session_manager.get_active_child().await.is_some(),
+            "Should have active child"
+        );
         println!("✅ Multi-session mode verified: 1 child session active");
     } else {
         panic!("Session should be in MultiSession mode");
@@ -478,7 +494,10 @@ async fn test_nodejs_multi_session_full_workflow() {
     println!("✅ Breakpoint hit");
 
     // Get stack trace
-    let stack_trace = session.stack_trace().await.expect("Failed to get stack trace");
+    let stack_trace = session
+        .stack_trace()
+        .await
+        .expect("Failed to get stack trace");
     assert!(!stack_trace.is_empty(), "Stack trace should not be empty");
     println!("✅ Stack trace retrieved: {} frames", stack_trace.len());
 
@@ -532,9 +551,16 @@ async fn test_child_session_spawning() {
 
     let session = manager.get_session(&session_id).await.unwrap();
 
-    if let SessionMode::MultiSession { multi_session_manager, .. } = &session.session_mode {
+    if let SessionMode::MultiSession {
+        multi_session_manager,
+        ..
+    } = &session.session_mode
+    {
         let child_count = multi_session_manager.child_count().await;
-        assert!(child_count > 0, "At least one child session should be spawned");
+        assert!(
+            child_count > 0,
+            "At least one child session should be spawned"
+        );
         println!("✅ {} child session(s) spawned", child_count);
 
         let children = multi_session_manager.get_children().await;

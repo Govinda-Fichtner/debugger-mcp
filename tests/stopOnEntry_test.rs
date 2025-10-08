@@ -4,14 +4,13 @@
 /// 1. stopOnEntry not working - state shows "Running" instead of "Stopped"
 /// 2. wait_for_stop timing out when it should detect stopped state
 /// 3. Race condition between event handlers and manual state updates
-
 use debugger_mcp::debug::SessionManager;
 use debugger_mcp::mcp::tools::ToolsHandler;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
-use std::path::PathBuf;
 
 /// Helper to get path to fizzbuzz test fixture
 fn get_fizzbuzz_path() -> String {
@@ -66,8 +65,9 @@ async fn test_stopOnEntry_sets_stopped_state() {
 
     let start_result = timeout(
         Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_start", start_args)
-    ).await;
+        tools_handler.handle_tool("debugger_start", start_args),
+    )
+    .await;
 
     let start_response = match start_result {
         Ok(Ok(response)) => response,
@@ -124,7 +124,9 @@ async fn test_stopOnEntry_sets_stopped_state() {
 
     // Cleanup
     let disconnect_args = json!({"sessionId": session_id});
-    let _ = tools_handler.handle_tool("debugger_disconnect", disconnect_args).await;
+    let _ = tools_handler
+        .handle_tool("debugger_disconnect", disconnect_args)
+        .await;
 }
 
 /// TEST 2: Verify wait_for_stop works with stopOnEntry
@@ -155,8 +157,9 @@ async fn test_wait_for_stop_detects_stopOnEntry() {
 
     let start_response = timeout(
         Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_start", start_args)
-    ).await;
+        tools_handler.handle_tool("debugger_start", start_args),
+    )
+    .await;
 
     let start_response = match start_response {
         Ok(Ok(r)) => r,
@@ -179,8 +182,9 @@ async fn test_wait_for_stop_detects_stopOnEntry() {
 
     let wait_result = timeout(
         Duration::from_secs(6),
-        tools_handler.handle_tool("debugger_wait_for_stop", wait_args)
-    ).await;
+        tools_handler.handle_tool("debugger_wait_for_stop", wait_args),
+    )
+    .await;
 
     let wait_response = match wait_result {
         Ok(Ok(r)) => r,
@@ -211,7 +215,9 @@ async fn test_wait_for_stop_detects_stopOnEntry() {
 
     // Cleanup
     let disconnect_args = json!({"sessionId": session_id});
-    let _ = tools_handler.handle_tool("debugger_disconnect", disconnect_args).await;
+    let _ = tools_handler
+        .handle_tool("debugger_disconnect", disconnect_args)
+        .await;
 }
 
 /// TEST 3: Verify breakpoints work after stopOnEntry
@@ -246,8 +252,9 @@ async fn test_breakpoint_works_with_stopOnEntry() {
 
     let start_response = timeout(
         Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_start", start_args)
-    ).await;
+        tools_handler.handle_tool("debugger_start", start_args),
+    )
+    .await;
 
     let start_response = match start_response {
         Ok(Ok(r)) => r,
@@ -268,8 +275,9 @@ async fn test_breakpoint_works_with_stopOnEntry() {
 
     let wait_response = timeout(
         Duration::from_secs(6),
-        tools_handler.handle_tool("debugger_wait_for_stop", wait_args.clone())
-    ).await;
+        tools_handler.handle_tool("debugger_wait_for_stop", wait_args.clone()),
+    )
+    .await;
 
     match wait_response {
         Ok(Ok(r)) => {
@@ -278,10 +286,9 @@ async fn test_breakpoint_works_with_stopOnEntry() {
         _ => {
             println!("❌ BUG: wait_for_stop failed - program may have run to completion");
             // Cleanup and fail
-            let _ = tools_handler.handle_tool(
-                "debugger_disconnect",
-                json!({"sessionId": session_id})
-            ).await;
+            let _ = tools_handler
+                .handle_tool("debugger_disconnect", json!({"sessionId": session_id}))
+                .await;
             panic!("Failed to stop at entry");
         }
     }
@@ -313,8 +320,9 @@ async fn test_breakpoint_works_with_stopOnEntry() {
     // 5. Wait for breakpoint hit
     let wait2_response = timeout(
         Duration::from_secs(6),
-        tools_handler.handle_tool("debugger_wait_for_stop", wait_args)
-    ).await;
+        tools_handler.handle_tool("debugger_wait_for_stop", wait_args),
+    )
+    .await;
 
     let wait2_response = match wait2_response {
         Ok(Ok(r)) => r,
@@ -378,10 +386,9 @@ async fn test_breakpoint_works_with_stopOnEntry() {
     println!("✅ TEST PASSED: Complete debugging workflow works with stopOnEntry");
 
     // Cleanup
-    let _ = tools_handler.handle_tool(
-        "debugger_disconnect",
-        json!({"sessionId": session_id})
-    ).await;
+    let _ = tools_handler
+        .handle_tool("debugger_disconnect", json!({"sessionId": session_id}))
+        .await;
 }
 
 /// TEST 4: Verify state transitions are accurate throughout execution
@@ -411,8 +418,10 @@ async fn test_state_transitions_are_accurate() {
 
     let start_response = match timeout(
         Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_start", start_args)
-    ).await {
+        tools_handler.handle_tool("debugger_start", start_args),
+    )
+    .await
+    {
         Ok(Ok(r)) => r,
         _ => {
             println!("⚠️  Skipping: debugger_start failed");
@@ -465,8 +474,7 @@ async fn test_state_transitions_are_accurate() {
     println!("✅ TEST PASSED: State transitions are accurate");
 
     // Cleanup
-    let _ = tools_handler.handle_tool(
-        "debugger_disconnect",
-        json!({"sessionId": session_id})
-    ).await;
+    let _ = tools_handler
+        .handle_tool("debugger_disconnect", json!({"sessionId": session_id}))
+        .await;
 }

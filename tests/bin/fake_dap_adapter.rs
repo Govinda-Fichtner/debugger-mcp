@@ -29,7 +29,13 @@ impl FakeDapAdapter {
         }
     }
 
-    fn send_response(&mut self, request_seq: i32, command: &str, success: bool, body: Option<Value>) {
+    fn send_response(
+        &mut self,
+        request_seq: i32,
+        command: &str,
+        success: bool,
+        body: Option<Value>,
+    ) {
         let response = json!({
             "seq": self.seq,
             "type": "response",
@@ -104,20 +110,25 @@ impl FakeDapAdapter {
         self.send_response(request_seq, "launch", true, None);
 
         // Send a thread event to indicate the process started
-        self.send_event("thread", Some(json!({
-            "reason": "started",
-            "threadId": 1
-        })));
+        self.send_event(
+            "thread",
+            Some(json!({
+                "reason": "started",
+                "threadId": 1
+            })),
+        );
     }
 
     fn handle_set_breakpoints(&mut self, request_seq: i32, args: Option<Value>) {
         if let Some(args) = args {
-            let source_path = args.get("source")
+            let source_path = args
+                .get("source")
                 .and_then(|s| s.get("path"))
                 .and_then(|p| p.as_str())
                 .unwrap_or("unknown");
 
-            let breakpoints = args.get("breakpoints")
+            let breakpoints = args
+                .get("breakpoints")
                 .and_then(|b| b.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -141,9 +152,14 @@ impl FakeDapAdapter {
                 })
                 .unwrap_or_default();
 
-            self.send_response(request_seq, "setBreakpoints", true, Some(json!({
-                "breakpoints": breakpoints
-            })));
+            self.send_response(
+                request_seq,
+                "setBreakpoints",
+                true,
+                Some(json!({
+                    "breakpoints": breakpoints
+                })),
+            );
         } else {
             self.send_response(request_seq, "setBreakpoints", false, None);
         }
@@ -154,16 +170,24 @@ impl FakeDapAdapter {
     }
 
     fn handle_continue(&mut self, request_seq: i32, _args: Option<Value>) {
-        self.send_response(request_seq, "continue", true, Some(json!({
-            "allThreadsContinued": true
-        })));
+        self.send_response(
+            request_seq,
+            "continue",
+            true,
+            Some(json!({
+                "allThreadsContinued": true
+            })),
+        );
 
         // Simulate hitting a breakpoint
-        self.send_event("stopped", Some(json!({
-            "reason": "breakpoint",
-            "threadId": 1,
-            "allThreadsStopped": true
-        })));
+        self.send_event(
+            "stopped",
+            Some(json!({
+                "reason": "breakpoint",
+                "threadId": 1,
+                "allThreadsStopped": true
+            })),
+        );
     }
 
     fn handle_stack_trace(&mut self, request_seq: i32, _args: Option<Value>) {
@@ -187,18 +211,24 @@ impl FakeDapAdapter {
                 },
                 "line": 1,
                 "column": 1
-            })
+            }),
         ];
 
-        self.send_response(request_seq, "stackTrace", true, Some(json!({
-            "stackFrames": stack_frames,
-            "totalFrames": 2
-        })));
+        self.send_response(
+            request_seq,
+            "stackTrace",
+            true,
+            Some(json!({
+                "stackFrames": stack_frames,
+                "totalFrames": 2
+            })),
+        );
     }
 
     fn handle_evaluate(&mut self, request_seq: i32, args: Option<Value>) {
         if let Some(args) = args {
-            let expression = args.get("expression")
+            let expression = args
+                .get("expression")
                 .and_then(|e| e.as_str())
                 .unwrap_or("");
 
@@ -206,14 +236,19 @@ impl FakeDapAdapter {
             let result = match expression {
                 "x" => "42",
                 "y" => "10",
-                _ => "None"
+                _ => "None",
             };
 
-            self.send_response(request_seq, "evaluate", true, Some(json!({
-                "result": result,
-                "type": "int",
-                "variablesReference": 0
-            })));
+            self.send_response(
+                request_seq,
+                "evaluate",
+                true,
+                Some(json!({
+                    "result": result,
+                    "type": "int",
+                    "variablesReference": 0
+                })),
+            );
         } else {
             self.send_response(request_seq, "evaluate", false, None);
         }
@@ -222,9 +257,12 @@ impl FakeDapAdapter {
     fn handle_disconnect(&mut self, request_seq: i32, _args: Option<Value>) {
         self.send_response(request_seq, "disconnect", true, None);
         self.send_event("terminated", None);
-        self.send_event("exited", Some(json!({
-            "exitCode": 0
-        })));
+        self.send_event(
+            "exited",
+            Some(json!({
+                "exitCode": 0
+            })),
+        );
     }
 
     fn handle_request(&mut self, msg: Message) {

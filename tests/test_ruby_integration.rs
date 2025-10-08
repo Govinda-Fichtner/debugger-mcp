@@ -9,7 +9,6 @@
 /// 3. stopOnEntry flag handling (--stop-at-load vs --nonstop)
 /// 4. DAP communication via stdio (not socket mode)
 /// 5. Basic debugging workflow (start, breakpoint, continue, evaluate)
-
 use debugger_mcp::adapters::ruby::RubyAdapter;
 use debugger_mcp::debug::manager::SessionManager;
 use debugger_mcp::mcp::tools::ToolsHandler;
@@ -72,11 +71,13 @@ async fn test_ruby_session_creation() {
     });
 
     // This should spawn: rdbg --stop-at-load /workspace/fizzbuzz.rb
-    let result = tools_handler
-        .handle_tool("debugger_start", args)
-        .await;
+    let result = tools_handler.handle_tool("debugger_start", args).await;
 
-    assert!(result.is_ok(), "Ruby session creation failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Ruby session creation failed: {:?}",
+        result.err()
+    );
 
     let response = result.unwrap();
     assert!(response["sessionId"].is_string());
@@ -98,11 +99,13 @@ async fn test_ruby_session_with_program_args() {
     });
 
     // This should spawn: rdbg --nonstop /workspace/fizzbuzz.rb 50
-    let result = tools_handler
-        .handle_tool("debugger_start", args)
-        .await;
+    let result = tools_handler.handle_tool("debugger_start", args).await;
 
-    assert!(result.is_ok(), "Ruby session with args failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Ruby session with args failed: {:?}",
+        result.err()
+    );
 }
 
 /// Test that Ruby sessions can set breakpoints (requires Docker)
@@ -140,7 +143,11 @@ async fn test_ruby_breakpoint_setting() {
         .handle_tool("debugger_set_breakpoint", bp_args)
         .await;
 
-    assert!(bp_result.is_ok(), "Ruby breakpoint setting failed: {:?}", bp_result.err());
+    assert!(
+        bp_result.is_ok(),
+        "Ruby breakpoint setting failed: {:?}",
+        bp_result.err()
+    );
 
     let bp_response = bp_result.unwrap();
     assert_eq!(bp_response["verified"], true, "Breakpoint not verified");

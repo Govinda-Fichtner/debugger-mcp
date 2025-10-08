@@ -6,7 +6,6 @@
 /// 3. Connects to the TCP socket
 /// 4. Communicates via DAP protocol
 /// 5. Handles timeouts appropriately
-
 use debugger_mcp::adapters::ruby::RubyAdapter;
 use debugger_mcp::dap::socket_helper;
 use debugger_mcp::dap::transport::DapTransport;
@@ -54,7 +53,10 @@ async fn test_socket_helper_connect_success() {
     let result = socket_helper::connect_with_retry(port, Duration::from_secs(2)).await;
 
     assert!(result.is_ok(), "Should connect successfully");
-    assert!(start.elapsed() < Duration::from_millis(500), "Should connect quickly");
+    assert!(
+        start.elapsed() < Duration::from_millis(500),
+        "Should connect quickly"
+    );
 }
 
 /// Test 4: Socket helper - connect with retry (timeout case)
@@ -220,11 +222,7 @@ async fn test_ruby_adapter_spawn_real_rdbg() {
     // Spawn rdbg
     let result = RubyAdapter::spawn(test_script, &[], true).await;
 
-    assert!(
-        result.is_ok(),
-        "Failed to spawn rdbg: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Failed to spawn rdbg: {:?}", result.err());
 
     let session = result.unwrap();
 
@@ -277,26 +275,35 @@ async fn test_ruby_e2e_dap_communication() {
 
     // 3. Send initialize request
     let init_response = client
-        .send_request("initialize", Some(json!({
-            "clientID": "test",
-            "clientName": "Test Client",
-            "adapterID": "rdbg",
-            "linesStartAt1": true,
-            "columnsStartAt1": true,
-        })))
+        .send_request(
+            "initialize",
+            Some(json!({
+                "clientID": "test",
+                "clientName": "Test Client",
+                "adapterID": "rdbg",
+                "linesStartAt1": true,
+                "columnsStartAt1": true,
+            })),
+        )
         .await
         .expect("Initialize request failed");
 
     assert!(init_response.success, "Initialize should succeed");
-    assert!(init_response.body.is_some(), "Initialize should return capabilities");
+    assert!(
+        init_response.body.is_some(),
+        "Initialize should return capabilities"
+    );
 
     // 4. Send launch request
     let launch_response = client
-        .send_request("launch", Some(json!({
-            "program": test_script,
-            "stopOnEntry": true,
-            "localfs": true,
-        })))
+        .send_request(
+            "launch",
+            Some(json!({
+                "program": test_script,
+                "stopOnEntry": true,
+                "localfs": true,
+            })),
+        )
         .await
         .expect("Launch request failed");
 

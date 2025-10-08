@@ -14,10 +14,7 @@ async fn test_dap_client_with_real_debugpy() {
 
     println!("Spawning DAP client: {} {:?}", command, args);
 
-    let client_result = timeout(
-        Duration::from_secs(5),
-        DapClient::spawn(command, &args)
-    ).await;
+    let client_result = timeout(Duration::from_secs(5), DapClient::spawn(command, &args)).await;
 
     let client = match client_result {
         Ok(Ok(c)) => {
@@ -37,16 +34,15 @@ async fn test_dap_client_with_real_debugpy() {
     // Try to initialize
     println!("Sending initialize request...");
 
-    let init_result = timeout(
-        Duration::from_secs(5),
-        client.initialize("debugpy")
-    ).await;
+    let init_result = timeout(Duration::from_secs(5), client.initialize("debugpy")).await;
 
     match init_result {
         Ok(Ok(caps)) => {
             println!("✅ Initialize SUCCESS!");
-            println!("   Capabilities: supportsConfigurationDoneRequest={:?}",
-                     caps.supports_configuration_done_request);
+            println!(
+                "   Capabilities: supportsConfigurationDoneRequest={:?}",
+                caps.supports_configuration_done_request
+            );
         }
         Ok(Err(e)) => {
             println!("❌ Initialize failed: {}", e);
@@ -63,10 +59,7 @@ async fn test_dap_client_with_real_debugpy() {
     // Send configurationDone (DAP spec requires this after initialize)
     println!("Sending configurationDone...");
 
-    let config_result = timeout(
-        Duration::from_secs(5),
-        client.configuration_done()
-    ).await;
+    let config_result = timeout(Duration::from_secs(5), client.configuration_done()).await;
 
     match config_result {
         Ok(Ok(())) => {
@@ -99,10 +92,7 @@ async fn test_dap_client_with_real_debugpy() {
         "stopOnEntry": false,
     });
 
-    let launch_result = timeout(
-        Duration::from_secs(5),
-        client.launch(launch_args)
-    ).await;
+    let launch_result = timeout(Duration::from_secs(5), client.launch(launch_args)).await;
 
     match launch_result {
         Ok(Ok(())) => {

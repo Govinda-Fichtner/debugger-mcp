@@ -67,16 +67,16 @@
 //! - `src/dap/client.rs` - DapClient with reverse request handling
 //! - `docs/NODEJS_ALL_TESTS_PASSING.md` - Multi-session architecture details
 
-use crate::Result;
+use super::multi_session::MultiSessionManager;
+use super::state::{DebugState, SessionState};
 use crate::dap::client::DapClient;
 use crate::dap::types::{Source, SourceBreakpoint};
-use super::state::{SessionState, DebugState};
-use super::multi_session::MultiSessionManager;
+use crate::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// Session mode - determines how debugging operations are routed
 ///
@@ -88,9 +88,7 @@ use tracing::{error, info, warn};
 /// do actual debugging.
 pub enum SessionMode {
     /// Single session mode (Python, Ruby)
-    Single {
-        client: Arc<RwLock<DapClient>>,
-    },
+    Single { client: Arc<RwLock<DapClient>> },
     /// Multi-session mode (Node.js with vscode-js-debug)
     MultiSession {
         parent_client: Arc<RwLock<DapClient>>,
@@ -115,11 +113,7 @@ impl DebugSession {
     ///
     /// This is the default constructor for backward compatibility.
     /// For multi-session debugging (Node.js), use `new_with_mode()`.
-    pub async fn new(
-        language: String,
-        program: String,
-        client: DapClient,
-    ) -> Result<Self> {
+    pub async fn new(language: String, program: String, client: DapClient) -> Result<Self> {
         let id = Uuid::new_v4().to_string();
 
         Ok(Self {
@@ -186,9 +180,7 @@ impl DebugSession {
     /// Returns the sole client directly (Python, Ruby) - no routing needed.
     async fn get_debug_client(&self) -> Arc<RwLock<DapClient>> {
         match &self.session_mode {
-            SessionMode::Single { client } => {
-                client.clone()
-            }
+            SessionMode::Single { client } => client.clone(),
             SessionMode::MultiSession {
                 parent_client,
                 multi_session_manager,
@@ -224,7 +216,10 @@ impl DebugSession {
     ///
     /// Ok(()) if child session spawned successfully, Err otherwise
     pub async fn spawn_child_session(&self, target_id: String) -> Result<()> {
-        info!("🔄 [MULTI-SESSION] Spawning child session for target_id: {}", target_id);
+        info!(
+            "🔄 [MULTI-SESSION] Spawning child session for target_id: {}",
+            target_id
+        );
 
         // Only works in multi-session mode
         let (multi_session_manager, vscode_port) = match &self.session_mode {
@@ -241,7 +236,10 @@ impl DebugSession {
         };
 
         // 1. Connect to vscode-js-debug port (SAME as parent)
-        info!("   Connecting to vscode-js-debug on localhost:{}", vscode_port);
+        info!(
+            "   Connecting to vscode-js-debug on localhost:{}",
+            vscode_port
+        );
         let socket = tokio::net::TcpStream::connect(("127.0.0.1", vscode_port))
             .await
             .map_err(|e| {
@@ -259,7 +257,10 @@ impl DebugSession {
 
         // 3. Initialize child session
         let child_adapter_id = format!("nodejs-child-{}", &target_id);
-        info!("   Initializing child session with adapter_id: {}", child_adapter_id);
+        info!(
+            "   Initializing child session with adapter_id: {}",
+            child_adapter_id
+        );
         child_client.initialize(&child_adapter_id).await?;
         info!("   ✅ Child session initialized");
 
@@ -278,7 +279,9 @@ impl DebugSession {
         // Send launch request without waiting for response
         // vscode-js-debug won't send a launch response for child connections
         info!("   Sending child launch request (no response expected)...");
-        child_client.send_request_nowait("launch", Some(launch_args)).await?;
+        child_client
+            .send_request_nowait("launch", Some(launch_args))
+            .await?;
         info!("   ✅ Child launch request sent");
 
         // 5. Register event handlers for child (forward to parent state)
@@ -369,8 +372,12 @@ impl DebugSession {
         //    The child session is what actually runs the user's code, so it needs
         //    the entry breakpoint, not the parent.
         //    Use intelligent line detection to skip comments/imports.
-        let entry_line = crate::dap::client::DapClient::find_first_executable_line_javascript(&self.program);
-        info!("   Setting entry breakpoint on child at line {} of {}", entry_line, self.program);
+        let entry_line =
+            crate::dap::client::DapClient::find_first_executable_line_javascript(&self.program);
+        info!(
+            "   Setting entry breakpoint on child at line {} of {}",
+            entry_line, self.program
+        );
         let source = crate::dap::types::Source {
             path: Some(self.program.clone()),
             name: None,
@@ -382,10 +389,16 @@ impl DebugSession {
             condition: None,
             hit_condition: None,
         };
-        match child_client.set_breakpoints(source.clone(), vec![entry_bp]).await {
+        match child_client
+            .set_breakpoints(source.clone(), vec![entry_bp])
+            .await
+        {
             Ok(verified_bps) => {
                 if !verified_bps.is_empty() && verified_bps[0].verified {
-                    info!("   ✅ Entry breakpoint set and verified on child at line {}", entry_line);
+                    info!(
+                        "   ✅ Entry breakpoint set and verified on child at line {}",
+                        entry_line
+                    );
                 } else {
                     error!("   ❌ Entry breakpoint could not be verified on child");
                 }
@@ -399,7 +412,10 @@ impl DebugSession {
         info!("   Checking for pending breakpoints to copy to child...");
         let breakpoints = self.pending_breakpoints.read().await;
         if !breakpoints.is_empty() {
-            info!("   Found {} files with pending breakpoints", breakpoints.len());
+            info!(
+                "   Found {} files with pending breakpoints",
+                breakpoints.len()
+            );
             for (file, bp_list) in breakpoints.iter() {
                 info!("     File: {} has {} breakpoints", file, bp_list.len());
                 // Set breakpoints on child session
@@ -411,10 +427,17 @@ impl DebugSession {
 
                 match child_client.set_breakpoints(source, bp_list.clone()).await {
                     Ok(verified_bps) => {
-                        info!("     ✅ {} breakpoints set on child for {}", verified_bps.len(), file);
+                        info!(
+                            "     ✅ {} breakpoints set on child for {}",
+                            verified_bps.len(),
+                            file
+                        );
                     }
                     Err(e) => {
-                        error!("     ❌ Failed to set breakpoints on child for {}: {}", file, e);
+                        error!(
+                            "     ❌ Failed to set breakpoints on child for {}: {}",
+                            file, e
+                        );
                     }
                 }
             }
@@ -440,7 +463,10 @@ impl DebugSession {
 
         multi_session_manager.add_child(child).await;
 
-        info!("🎉 [MULTI-SESSION] Child session spawned successfully for target_id: {}", target_id);
+        info!(
+            "🎉 [MULTI-SESSION] Child session spawned successfully for target_id: {}",
+            target_id
+        );
         info!("   Operations will now be routed to child session");
 
         Ok(())
@@ -448,7 +474,11 @@ impl DebugSession {
 
     /// Initialize and launch using the proper DAP sequence
     /// This combines initialize and launch into one atomic operation
-    pub async fn initialize_and_launch(&self, adapter_id: &str, launch_args: serde_json::Value) -> Result<()> {
+    pub async fn initialize_and_launch(
+        &self,
+        adapter_id: &str,
+        launch_args: serde_json::Value,
+    ) -> Result<()> {
         {
             let mut state = self.state.write().await;
             state.set_state(DebugState::Initializing);
@@ -462,84 +492,99 @@ impl DebugSession {
 
         // Handler for 'stopped' events (breakpoints, steps, entry)
         let session_state = self.state.clone();
-        client.on_event("stopped", move |event| {
-            info!("📍 Received 'stopped' event: {:?}", event);
+        client
+            .on_event("stopped", move |event| {
+                info!("📍 Received 'stopped' event: {:?}", event);
 
-            if let Some(body) = &event.body {
-                let thread_id = body.get("threadId")
-                    .and_then(|v| v.as_i64())
-                    .map(|v| v as i32)
-                    .unwrap_or(1);
+                if let Some(body) = &event.body {
+                    let thread_id = body
+                        .get("threadId")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32)
+                        .unwrap_or(1);
 
-                let reason = body.get("reason")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
+                    let reason = body
+                        .get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
 
-                info!("   Thread: {}, Reason: {}", thread_id, reason);
+                    info!("   Thread: {}, Reason: {}", thread_id, reason);
 
-                // Update session state
-                let state_clone = session_state.clone();
-                tokio::spawn(async move {
-                    let mut state = state_clone.write().await;
-                    state.set_state(DebugState::Stopped { thread_id, reason: reason.clone() });
-                    info!("✅ Session state updated to Stopped (reason: {})", reason);
-                });
-            }
-        }).await;
-
-        // Handler for 'continued' events
-        let session_state = self.state.clone();
-        client.on_event("continued", move |event| {
-            info!("▶️  Received 'continued' event: {:?}", event);
-
-            let state_clone = session_state.clone();
-            tokio::spawn(async move {
-                let mut state = state_clone.write().await;
-                state.set_state(DebugState::Running);
-                info!("✅ Session state updated to Running");
-            });
-        }).await;
-
-        // Handler for 'terminated' events
-        let session_state = self.state.clone();
-        client.on_event("terminated", move |event| {
-            info!("🛑 Received 'terminated' event: {:?}", event);
-
-            let state_clone = session_state.clone();
-            tokio::spawn(async move {
-                let mut state = state_clone.write().await;
-                state.set_state(DebugState::Terminated);
-                info!("✅ Session state updated to Terminated");
-            });
-        }).await;
-
-        // Handler for 'exited' events
-        let session_state = self.state.clone();
-        client.on_event("exited", move |event| {
-            info!("🚪 Received 'exited' event: {:?}", event);
-
-            let state_clone = session_state.clone();
-            tokio::spawn(async move {
-                let mut state = state_clone.write().await;
-                state.set_state(DebugState::Terminated);
-                info!("✅ Session state updated to Terminated (exited)");
-            });
-        }).await;
-
-        // Handler for 'thread' events (track threads)
-        let session_state = self.state.clone();
-        client.on_event("thread", move |event| {
-            if let Some(body) = &event.body {
-                if let Some(thread_id) = body.get("threadId").and_then(|v| v.as_i64()) {
+                    // Update session state
                     let state_clone = session_state.clone();
                     tokio::spawn(async move {
                         let mut state = state_clone.write().await;
-                        state.add_thread(thread_id as i32);
+                        state.set_state(DebugState::Stopped {
+                            thread_id,
+                            reason: reason.clone(),
+                        });
+                        info!("✅ Session state updated to Stopped (reason: {})", reason);
                     });
                 }
-            }
-        }).await;
+            })
+            .await;
+
+        // Handler for 'continued' events
+        let session_state = self.state.clone();
+        client
+            .on_event("continued", move |event| {
+                info!("▶️  Received 'continued' event: {:?}", event);
+
+                let state_clone = session_state.clone();
+                tokio::spawn(async move {
+                    let mut state = state_clone.write().await;
+                    state.set_state(DebugState::Running);
+                    info!("✅ Session state updated to Running");
+                });
+            })
+            .await;
+
+        // Handler for 'terminated' events
+        let session_state = self.state.clone();
+        client
+            .on_event("terminated", move |event| {
+                info!("🛑 Received 'terminated' event: {:?}", event);
+
+                let state_clone = session_state.clone();
+                tokio::spawn(async move {
+                    let mut state = state_clone.write().await;
+                    state.set_state(DebugState::Terminated);
+                    info!("✅ Session state updated to Terminated");
+                });
+            })
+            .await;
+
+        // Handler for 'exited' events
+        let session_state = self.state.clone();
+        client
+            .on_event("exited", move |event| {
+                info!("🚪 Received 'exited' event: {:?}", event);
+
+                let state_clone = session_state.clone();
+                tokio::spawn(async move {
+                    let mut state = state_clone.write().await;
+                    state.set_state(DebugState::Terminated);
+                    info!("✅ Session state updated to Terminated (exited)");
+                });
+            })
+            .await;
+
+        // Handler for 'thread' events (track threads)
+        let session_state = self.state.clone();
+        client
+            .on_event("thread", move |event| {
+                if let Some(body) = &event.body {
+                    if let Some(thread_id) = body.get("threadId").and_then(|v| v.as_i64()) {
+                        let state_clone = session_state.clone();
+                        tokio::spawn(async move {
+                            let mut state = state_clone.write().await;
+                            state.add_thread(thread_id as i32);
+                        });
+                    }
+                }
+            })
+            .await;
 
         // Use the DapClient's event-driven initialize_and_launch method with timeout
         // This properly handles the 'initialized' event and configurationDone sequence
@@ -551,13 +596,19 @@ impl DebugSession {
             "nodejs" => Some("nodejs"),
             _ => None,
         };
-        client.initialize_and_launch_with_timeout(adapter_id, launch_args, adapter_type).await?;
+        client
+            .initialize_and_launch_with_timeout(adapter_id, launch_args, adapter_type)
+            .await?;
 
         // Apply pending breakpoints after initialization
         info!("🔧 Applying pending breakpoints after initialization");
         let pending = self.pending_breakpoints.read().await;
         for (source_path, breakpoints) in pending.iter() {
-            info!("  Applying {} breakpoint(s) for {}", breakpoints.len(), source_path);
+            info!(
+                "  Applying {} breakpoint(s) for {}",
+                breakpoints.len(),
+                source_path
+            );
             let source = Source {
                 name: None,
                 path: Some(source_path.clone()),
@@ -608,14 +659,23 @@ impl DebugSession {
         launch_args: serde_json::Value,
     ) {
         let session_id = self.id.clone();
-        info!("🚀 Starting async initialization for session {}", session_id);
+        info!(
+            "🚀 Starting async initialization for session {}",
+            session_id
+        );
 
         match self.initialize_and_launch(&adapter_id, launch_args).await {
             Ok(()) => {
-                info!("✅ Async initialization completed successfully for session {}", session_id);
+                info!(
+                    "✅ Async initialization completed successfully for session {}",
+                    session_id
+                );
             }
             Err(e) => {
-                info!("❌ Async initialization failed for session {}: {}", session_id, e);
+                info!(
+                    "❌ Async initialization failed for session {}: {}",
+                    session_id, e
+                );
                 let mut state = self.state.write().await;
                 state.set_state(DebugState::Failed {
                     error: format!("Initialization failed: {}", e),
@@ -668,7 +728,10 @@ impl DebugSession {
         // If still initializing, store as pending
         match current_state {
             DebugState::NotStarted | DebugState::Initializing => {
-                info!("📌 Session initializing, storing breakpoint as pending: {}:{}", source_path, line);
+                info!(
+                    "📌 Session initializing, storing breakpoint as pending: {}:{}",
+                    source_path, line
+                );
                 let mut pending = self.pending_breakpoints.write().await;
                 pending
                     .entry(source_path.clone())
@@ -687,7 +750,10 @@ impl DebugSession {
                 // Return true to indicate it will be set
                 Ok(true)
             }
-            DebugState::Running | DebugState::Stopped { .. } | DebugState::Initialized | DebugState::Launching => {
+            DebugState::Running
+            | DebugState::Stopped { .. }
+            | DebugState::Initialized
+            | DebugState::Launching => {
                 // Add to state
                 {
                     let mut state = self.state.write().await;
@@ -723,12 +789,9 @@ impl DebugSession {
                     Ok(false)
                 }
             }
-            DebugState::Terminated | DebugState::Failed { .. } => {
-                Err(crate::Error::InvalidState(format!(
-                    "Cannot set breakpoint in state: {:?}",
-                    current_state
-                )))
-            }
+            DebugState::Terminated | DebugState::Failed { .. } => Err(crate::Error::InvalidState(
+                format!("Cannot set breakpoint in state: {:?}", current_state),
+            )),
         }
     }
 
@@ -804,7 +867,10 @@ impl DebugSession {
         match client.disconnect_with_timeout().await {
             Ok(_) => info!("✅ Disconnect completed successfully"),
             Err(e) => {
-                warn!("⚠️  Disconnect timeout or error: {}, proceeding with cleanup", e);
+                warn!(
+                    "⚠️  Disconnect timeout or error: {}, proceeding with cleanup",
+                    e
+                );
                 // Continue anyway - state will be set to Terminated
             }
         }
@@ -848,23 +914,31 @@ mod tests {
     fn create_mock_with_response(response: Response) -> MockTestTransport {
         let mut mock = MockTestTransport::new();
         mock.expect_write_message().times(1).returning(|_| Ok(()));
-        mock.expect_read_message().times(1).return_once(move || Ok(Message::Response(response)));
-        mock.expect_read_message().returning(|| Err(Error::Dap("Connection closed".to_string())));
+        mock.expect_read_message()
+            .times(1)
+            .return_once(move || Ok(Message::Response(response)));
+        mock.expect_read_message()
+            .returning(|| Err(Error::Dap("Connection closed".to_string())));
         mock
     }
 
     fn create_empty_mock() -> MockTestTransport {
         let mut mock = MockTestTransport::new();
-        mock.expect_read_message().returning(|| Err(Error::Dap("Connection closed".to_string())));
+        mock.expect_read_message()
+            .returning(|| Err(Error::Dap("Connection closed".to_string())));
         mock
     }
 
     #[tokio::test]
     async fn test_session_new() {
         let mock_transport = create_empty_mock();
-        let client = DapClient::new_with_transport(Box::new(mock_transport), None).await.unwrap();
+        let client = DapClient::new_with_transport(Box::new(mock_transport), None)
+            .await
+            .unwrap();
 
-        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client).await.unwrap();
+        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client)
+            .await
+            .unwrap();
 
         assert_eq!(session.language, "python");
         assert_eq!(session.program, "test.py");
@@ -883,8 +957,12 @@ mod tests {
         };
 
         let mock_transport = create_mock_with_response(response);
-        let client = DapClient::new_with_transport(Box::new(mock_transport), None).await.unwrap();
-        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client).await.unwrap();
+        let client = DapClient::new_with_transport(Box::new(mock_transport), None)
+            .await
+            .unwrap();
+        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client)
+            .await
+            .unwrap();
 
         session.initialize("debugpy").await.unwrap();
 
@@ -913,8 +991,12 @@ mod tests {
     #[tokio::test]
     async fn test_session_get_state() {
         let mock_transport = create_empty_mock();
-        let client = DapClient::new_with_transport(Box::new(mock_transport), None).await.unwrap();
-        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client).await.unwrap();
+        let client = DapClient::new_with_transport(Box::new(mock_transport), None)
+            .await
+            .unwrap();
+        let session = DebugSession::new("python".to_string(), "test.py".to_string(), client)
+            .await
+            .unwrap();
 
         let state = session.get_state().await;
         assert_eq!(state, DebugState::NotStarted);

@@ -1,19 +1,21 @@
-use crate::{Error, Result};
 use super::transport::DapTransport;
 use super::transport_trait::DapTransportTrait;
 use super::types::*;
+use crate::{Error, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, Mutex, oneshot, Notify};
 use tokio::process::{Child, Command};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify, RwLock};
 use tracing::{debug, error, info, warn};
 
 type ResponseSender = oneshot::Sender<Response>;
 type EventNotifier = Arc<Notify>;
 type EventCallback = Arc<dyn Fn(Event) + Send + Sync>;
-type ChildSessionSpawnCallback = Arc<dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
+type ChildSessionSpawnCallback = Arc<
+    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync,
+>;
 
 /// DAP Client with event-driven architecture
 pub struct DapClient {
@@ -47,9 +49,13 @@ impl DapClient {
             .spawn()
             .map_err(|e| Error::Process(format!("Failed to spawn debug adapter: {}", e)))?;
 
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| Error::Process("Failed to get stdin".to_string()))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| Error::Process("Failed to get stdout".to_string()))?;
 
         let transport: Box<dyn DapTransportTrait> = Box::new(DapTransport::new(stdin, stdout));
@@ -102,10 +108,7 @@ impl DapClient {
         ));
 
         // Spawn message writer handler
-        tokio::spawn(Self::message_writer(
-            transport.clone(),
-            write_rx,
-        ));
+        tokio::spawn(Self::message_writer(transport.clone(), write_rx));
 
         Ok(client)
     }
@@ -164,11 +167,17 @@ impl DapClient {
                             warn!("Failed to send response to waiting request");
                         }
                     } else {
-                        warn!("Received response for unknown request: {}", resp.request_seq);
+                        warn!(
+                            "Received response for unknown request: {}",
+                            resp.request_seq
+                        );
                     }
                 }
                 Message::Event(event) => {
-                    info!("🎯 EVENT RECEIVED: '{}' with body: {:?}", event.event, event.body);
+                    info!(
+                        "🎯 EVENT RECEIVED: '{}' with body: {:?}",
+                        event.event, event.body
+                    );
 
                     // 1. Notify anyone waiting for this specific event (legacy wait_for_event)
                     let notifiers = event_notifiers.read().await;
@@ -181,7 +190,11 @@ impl DapClient {
                     // 2. Invoke registered event callbacks
                     let callbacks = event_callbacks.read().await;
                     if let Some(handlers) = callbacks.get(&event.event) {
-                        info!("  Found {} callback(s) for event '{}'", handlers.len(), event.event);
+                        info!(
+                            "  Found {} callback(s) for event '{}'",
+                            handlers.len(),
+                            event.event
+                        );
                         for (idx, callback) in handlers.iter().enumerate() {
                             info!("  Invoking callback {} for event '{}'", idx, event.event);
                             // Invoke callback with cloned event
@@ -193,7 +206,10 @@ impl DapClient {
                     }
                 }
                 Message::Request(req) => {
-                    info!("🔄 REVERSE REQUEST received: '{}' (seq {})", req.command, req.seq);
+                    info!(
+                        "🔄 REVERSE REQUEST received: '{}' (seq {})",
+                        req.command, req.seq
+                    );
                     info!("   Arguments: {:?}", req.arguments);
 
                     // vscode-js-debug sends reverse requests like 'startDebugging' or 'attachedChildSession'
@@ -201,7 +217,9 @@ impl DapClient {
 
                     // Handle startDebugging - extract __pendingTargetId and spawn child
                     if req.command == "startDebugging" {
-                        info!("   🎯 startDebugging request detected - extracting __pendingTargetId");
+                        info!(
+                            "   🎯 startDebugging request detected - extracting __pendingTargetId"
+                        );
                         if let Some(args) = &req.arguments {
                             if let Some(config) = args.get("configuration") {
                                 if let Some(target_id) = config.get("__pendingTargetId") {
@@ -209,17 +227,23 @@ impl DapClient {
                                         info!("   ✅ Found __pendingTargetId: {}", target_id_str);
 
                                         // Invoke callback to spawn child session
-                                        let callback_guard = child_session_spawn_callback.read().await;
+                                        let callback_guard =
+                                            child_session_spawn_callback.read().await;
                                         if let Some(callback) = callback_guard.as_ref() {
                                             info!("   📞 Invoking child session spawn callback with target_id: {}", target_id_str);
                                             let fut = callback(target_id_str.to_string());
                                             drop(callback_guard);
                                             tokio::spawn(fut);
                                         } else {
-                                            warn!("   ⚠️  No child session spawn callback registered");
+                                            warn!(
+                                                "   ⚠️  No child session spawn callback registered"
+                                            );
                                         }
                                     } else {
-                                        warn!("   ⚠️  __pendingTargetId is not a string: {:?}", target_id);
+                                        warn!(
+                                            "   ⚠️  __pendingTargetId is not a string: {:?}",
+                                            target_id
+                                        );
                                     }
                                 } else {
                                     warn!("   ⚠️  No __pendingTargetId in configuration");
@@ -240,13 +264,17 @@ impl DapClient {
                         body: None,
                     };
 
-                    info!("   Sending success response to reverse request '{}'", req.command);
+                    info!(
+                        "   Sending success response to reverse request '{}'",
+                        req.command
+                    );
 
                     // Send response back via transport (don't use write channel to avoid deadlock)
                     let transport_clone = transport.clone();
                     tokio::spawn(async move {
                         let mut transport = transport_clone.lock().await;
-                        if let Err(e) = transport.write_message(&Message::Response(response)).await {
+                        if let Err(e) = transport.write_message(&Message::Response(response)).await
+                        {
                             error!("Failed to send reverse request response: {}", e);
                         }
                     });
@@ -332,7 +360,10 @@ impl DapClient {
     /// ```
     pub async fn on_child_session_spawn<F>(&self, callback: F)
     where
-        F: Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync + 'static,
+        F: Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+            + Send
+            + Sync
+            + 'static,
     {
         let mut callback_guard = self.child_session_spawn_callback.write().await;
         *callback_guard = Some(Arc::new(callback));
@@ -340,11 +371,16 @@ impl DapClient {
     }
 
     /// Wait for a specific DAP event with a timeout (legacy method)
-    pub async fn wait_for_event(&self, event_name: &str, timeout: tokio::time::Duration) -> Result<()> {
+    pub async fn wait_for_event(
+        &self,
+        event_name: &str,
+        timeout: tokio::time::Duration,
+    ) -> Result<()> {
         let notifier = {
             let mut notifiers = self.event_notifiers.write().await;
             // Create or get existing notifier for this event
-            notifiers.entry(event_name.to_string())
+            notifiers
+                .entry(event_name.to_string())
                 .or_insert_with(|| Arc::new(Notify::new()))
                 .clone()
         };
@@ -363,7 +399,11 @@ impl DapClient {
 
     /// Send a request without waiting for response (fire-and-forget)
     /// Useful when you'll handle the response via another mechanism
-    pub async fn send_request_nowait(&self, command: &str, arguments: Option<Value>) -> Result<i32> {
+    pub async fn send_request_nowait(
+        &self,
+        command: &str,
+        arguments: Option<Value>,
+    ) -> Result<i32> {
         debug!("send_request_nowait: Starting for command '{}'", command);
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
 
@@ -373,9 +413,15 @@ impl DapClient {
             arguments,
         };
 
-        debug!("send_request_nowait: Acquiring transport lock for command '{}'", command);
+        debug!(
+            "send_request_nowait: Acquiring transport lock for command '{}'",
+            command
+        );
         let mut transport = self.transport.lock().await;
-        debug!("send_request_nowait: Writing {} request (seq {})", command, seq);
+        debug!(
+            "send_request_nowait: Writing {} request (seq {})",
+            command, seq
+        );
         transport.write_message(&Message::Request(request)).await?;
         debug!("send_request_nowait: Message written successfully");
         drop(transport);
@@ -387,7 +433,10 @@ impl DapClient {
     pub async fn send_request(&self, command: &str, arguments: Option<Value>) -> Result<Response> {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst);
 
-        info!("✉️  send_request: Sending '{}' request (seq {})", command, seq);
+        info!(
+            "✉️  send_request: Sending '{}' request (seq {})",
+            command, seq
+        );
 
         let request = Request {
             seq,
@@ -400,18 +449,26 @@ impl DapClient {
         {
             let mut pending = self.pending_requests.write().await;
             pending.insert(seq, tx);
-            info!("✉️  send_request: Registered pending request for seq {}", seq);
+            info!(
+                "✉️  send_request: Registered pending request for seq {}",
+                seq
+            );
         }
 
         info!("✉️  send_request: Sending message to write channel");
-        self.write_tx.send(Message::Request(request))
+        self.write_tx
+            .send(Message::Request(request))
             .map_err(|_| Error::Dap("Write channel closed".to_string()))?;
 
         info!("✉️  send_request: Waiting for response to seq {}", seq);
-        let response = rx.await
+        let response = rx
+            .await
             .map_err(|_| Error::Dap("Request cancelled or connection closed".to_string()))?;
 
-        info!("✅ send_request: Received response for '{}' (seq {}), success: {}", command, seq, response.success);
+        info!(
+            "✅ send_request: Received response for '{}' (seq {}), success: {}",
+            command, seq, response.success
+        );
         Ok(response)
     }
 
@@ -422,15 +479,28 @@ impl DapClient {
         arguments: Option<Value>,
         timeout: std::time::Duration,
     ) -> Result<Response> {
-        info!("⏱️  send_request_with_timeout: '{}' with timeout {:?}", command, timeout);
+        info!(
+            "⏱️  send_request_with_timeout: '{}' with timeout {:?}",
+            command, timeout
+        );
 
         tokio::time::timeout(timeout, self.send_request(command, arguments))
             .await
-            .map_err(|_| Error::Dap(format!("Request '{}' timed out after {:?}", command, timeout)))?
+            .map_err(|_| {
+                Error::Dap(format!(
+                    "Request '{}' timed out after {:?}",
+                    command, timeout
+                ))
+            })?
     }
 
     /// Send a request with a callback for the response
-    pub async fn send_request_async<F>(&self, command: &str, arguments: Option<Value>, callback: F) -> Result<i32>
+    pub async fn send_request_async<F>(
+        &self,
+        command: &str,
+        arguments: Option<Value>,
+        callback: F,
+    ) -> Result<i32>
     where
         F: FnOnce(Result<Response>) + Send + 'static,
     {
@@ -451,20 +521,32 @@ impl DapClient {
             pending.insert(seq, tx);
         }
 
-        debug!("send_request_async: Sending {} request (seq {}) to write channel", command, seq);
-        self.write_tx.send(Message::Request(request))
+        debug!(
+            "send_request_async: Sending {} request (seq {}) to write channel",
+            command, seq
+        );
+        self.write_tx
+            .send(Message::Request(request))
             .map_err(|_| Error::Dap("Write channel closed".to_string()))?;
         debug!("send_request_async: Request queued");
 
         // Spawn task to wait for response and invoke callback
         tokio::spawn(async move {
-            debug!("send_request_async callback task: Waiting for response seq {}", seq);
+            debug!(
+                "send_request_async callback task: Waiting for response seq {}",
+                seq
+            );
             match rx.await {
                 Ok(response) => {
-                    debug!("send_request_async callback task: Got response for seq {}", seq);
+                    debug!(
+                        "send_request_async callback task: Got response for seq {}",
+                        seq
+                    );
                     callback(Ok(response))
-                },
-                Err(_) => callback(Err(Error::Dap("Request cancelled or connection closed".to_string()))),
+                }
+                Err(_) => callback(Err(Error::Dap(
+                    "Request cancelled or connection closed".to_string(),
+                ))),
             }
         });
 
@@ -483,15 +565,24 @@ impl DapClient {
             path_format: Some("path".to_string()),
         };
 
-        let response = self.send_request("initialize", Some(serde_json::to_value(args)?)).await?;
-        
+        let response = self
+            .send_request("initialize", Some(serde_json::to_value(args)?))
+            .await?;
+
         if !response.success {
-            return Err(Error::Dap(format!("Initialize failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "Initialize failed: {:?}",
+                response.message
+            )));
         }
 
-        let caps: Capabilities = response.body
+        let caps: Capabilities = response
+            .body
             .ok_or_else(|| Error::Dap("No capabilities in initialize response".to_string()))
-            .and_then(|v| serde_json::from_value(v).map_err(|e| Error::Dap(format!("Failed to parse capabilities: {}", e))))?;
+            .and_then(|v| {
+                serde_json::from_value(v)
+                    .map_err(|e| Error::Dap(format!("Failed to parse capabilities: {}", e)))
+            })?;
 
         Ok(caps)
     }
@@ -522,10 +613,14 @@ impl DapClient {
         // Step 1: Send initialize request and get capabilities
         info!("Sending initialize request to adapter");
         let capabilities = self.initialize(adapter_id).await?;
-        debug!("Adapter capabilities: supportsConfigurationDoneRequest={:?}",
-               capabilities.supports_configuration_done_request);
+        debug!(
+            "Adapter capabilities: supportsConfigurationDoneRequest={:?}",
+            capabilities.supports_configuration_done_request
+        );
 
-        let config_done_supported = capabilities.supports_configuration_done_request.unwrap_or(false);
+        let config_done_supported = capabilities
+            .supports_configuration_done_request
+            .unwrap_or(false);
 
         // Check if we need stopOnEntry workaround (Ruby and Node.js)
         // - Ruby (rdbg): Doesn't honor --stop-at-load in socket mode
@@ -535,11 +630,16 @@ impl DapClient {
 
         // Debug logging to trace workaround detection
         info!("🔍 Workaround detection: adapter_type = {:?}", adapter_type);
-        info!("🔍 Launch args: {}", serde_json::to_string_pretty(&launch_args).unwrap_or_else(|_| "invalid json".to_string()));
+        info!(
+            "🔍 Launch args: {}",
+            serde_json::to_string_pretty(&launch_args)
+                .unwrap_or_else(|_| "invalid json".to_string())
+        );
 
         let adapter_type_str = adapter_type.unwrap_or("");
         let needs_entry_breakpoint = adapter_type_str == "ruby" || adapter_type_str == "nodejs";
-        let stop_on_entry = launch_args.get("stopOnEntry")
+        let stop_on_entry = launch_args
+            .get("stopOnEntry")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
         let needs_workaround = needs_entry_breakpoint && stop_on_entry;
@@ -548,12 +648,16 @@ impl DapClient {
               adapter_type_str, needs_entry_breakpoint, stop_on_entry, needs_workaround);
 
         if needs_workaround {
-            info!("🔧 {} stopOnEntry workaround will be applied (entry breakpoint)", adapter_type_str);
+            info!(
+                "🔧 {} stopOnEntry workaround will be applied (entry breakpoint)",
+                adapter_type_str
+            );
         }
 
         // Extract program path before moving launch_args (for entry breakpoint workaround)
         let program_path_for_breakpoint = if needs_workaround {
-            launch_args.get("program")
+            launch_args
+                .get("program")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
         } else {
@@ -586,11 +690,14 @@ impl DapClient {
                     let _ = sender.send(());
                 }
             });
-        }).await;
+        })
+        .await;
 
         // Step 3: Send launch request (doesn't wait for response yet)
         info!("Sending launch request with args: {:?}", launch_args);
-        let launch_seq = self.send_request_nowait("launch", Some(launch_args)).await?;
+        let launch_seq = self
+            .send_request_nowait("launch", Some(launch_args))
+            .await?;
         info!("Launch request sent with seq {}", launch_seq);
 
         // Step 4: Wait for 'initialized' event signal
@@ -603,8 +710,13 @@ impl DapClient {
                     // Entry breakpoint workaround: Set breakpoint BEFORE configurationDone
                     // This follows the correct DAP sequence (setBreakpoints must be before configurationDone)
                     if needs_workaround {
-                        info!("🔧 Applying {} stopOnEntry workaround: setting entry breakpoint", adapter_type_str);
-                        info!("   (Per DAP spec: breakpoints must be set BEFORE configurationDone)");
+                        info!(
+                            "🔧 Applying {} stopOnEntry workaround: setting entry breakpoint",
+                            adapter_type_str
+                        );
+                        info!(
+                            "   (Per DAP spec: breakpoints must be set BEFORE configurationDone)"
+                        );
 
                         match program_path_for_breakpoint.as_deref() {
                             Some(path) => {
@@ -635,9 +747,15 @@ impl DapClient {
                                     Ok(bps) => {
                                         if let Some(bp) = bps.first() {
                                             if bp.verified {
-                                                info!("✅ Entry breakpoint set at line {} (verified)", entry_line);
+                                                info!(
+                                                    "✅ Entry breakpoint set at line {} (verified)",
+                                                    entry_line
+                                                );
                                             } else {
-                                                warn!("⚠️  Entry breakpoint not verified at line {}", entry_line);
+                                                warn!(
+                                                    "⚠️  Entry breakpoint not verified at line {}",
+                                                    entry_line
+                                                );
                                                 warn!("   Program may not stop - check if line is executable");
                                             }
                                         }
@@ -657,7 +775,9 @@ impl DapClient {
                 }
                 Ok(Err(_)) => {
                     error!("❌ 'initialized' event signal was cancelled");
-                    return Err(Error::Dap("'initialized' event signal was cancelled".to_string()));
+                    return Err(Error::Dap(
+                        "'initialized' event signal was cancelled".to_string(),
+                    ));
                 }
                 Err(_) => {
                     error!("❌ Timeout waiting for 'initialized' event (5s)");
@@ -705,18 +825,32 @@ impl DapClient {
 
     pub async fn configuration_done(&self) -> Result<()> {
         let response = self.send_request("configurationDone", None).await?;
-        
+
         if !response.success {
-            return Err(Error::Dap(format!("ConfigurationDone failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "ConfigurationDone failed: {:?}",
+                response.message
+            )));
         }
 
         Ok(())
     }
 
-    pub async fn set_breakpoints(&self, source: Source, breakpoints: Vec<SourceBreakpoint>) -> Result<Vec<Breakpoint>> {
-        info!("🔧 set_breakpoints: Starting for source {:?}, {} breakpoints", source.path, breakpoints.len());
+    pub async fn set_breakpoints(
+        &self,
+        source: Source,
+        breakpoints: Vec<SourceBreakpoint>,
+    ) -> Result<Vec<Breakpoint>> {
+        info!(
+            "🔧 set_breakpoints: Starting for source {:?}, {} breakpoints",
+            source.path,
+            breakpoints.len()
+        );
         for (i, bp) in breakpoints.iter().enumerate() {
-            info!("  Breakpoint {}: line {}, condition: {:?}", i, bp.line, bp.condition);
+            info!(
+                "  Breakpoint {}: line {}, condition: {:?}",
+                i, bp.line, bp.condition
+            );
         }
 
         let args = SetBreakpointsArguments {
@@ -726,11 +860,19 @@ impl DapClient {
         };
 
         info!("🔧 set_breakpoints: Sending setBreakpoints request...");
-        let response = self.send_request("setBreakpoints", Some(serde_json::to_value(args)?)).await?;
-        info!("🔧 set_breakpoints: Received response, success: {}", response.success);
-        
+        let response = self
+            .send_request("setBreakpoints", Some(serde_json::to_value(args)?))
+            .await?;
+        info!(
+            "🔧 set_breakpoints: Received response, success: {}",
+            response.success
+        );
+
         if !response.success {
-            return Err(Error::Dap(format!("SetBreakpoints failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "SetBreakpoints failed: {:?}",
+                response.message
+            )));
         }
 
         #[derive(serde::Deserialize)]
@@ -738,13 +880,23 @@ impl DapClient {
             breakpoints: Vec<Breakpoint>,
         }
 
-        let body: SetBreakpointsResponse = response.body
+        let body: SetBreakpointsResponse = response
+            .body
             .ok_or_else(|| Error::Dap("No breakpoints in response".to_string()))
-            .and_then(|v| serde_json::from_value(v).map_err(|e| Error::Dap(format!("Failed to parse breakpoints: {}", e))))?;
+            .and_then(|v| {
+                serde_json::from_value(v)
+                    .map_err(|e| Error::Dap(format!("Failed to parse breakpoints: {}", e)))
+            })?;
 
-        info!("✅ set_breakpoints: Success, {} breakpoints verified", body.breakpoints.len());
+        info!(
+            "✅ set_breakpoints: Success, {} breakpoints verified",
+            body.breakpoints.len()
+        );
         for (i, bp) in body.breakpoints.iter().enumerate() {
-            info!("  Breakpoint {}: id={:?}, verified={}, line={:?}", i, bp.id, bp.verified, bp.line);
+            info!(
+                "  Breakpoint {}: id={:?}, verified={}, line={:?}",
+                i, bp.id, bp.verified, bp.line
+            );
         }
 
         Ok(body.breakpoints)
@@ -753,10 +905,15 @@ impl DapClient {
     pub async fn continue_execution(&self, thread_id: i32) -> Result<()> {
         let args = ContinueArguments { thread_id };
 
-        let response = self.send_request("continue", Some(serde_json::to_value(args)?)).await?;
+        let response = self
+            .send_request("continue", Some(serde_json::to_value(args)?))
+            .await?;
 
         if !response.success {
-            return Err(Error::Dap(format!("Continue failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "Continue failed: {:?}",
+                response.message
+            )));
         }
 
         Ok(())
@@ -774,7 +931,10 @@ impl DapClient {
         let content = match fs::read_to_string(program_path) {
             Ok(c) => c,
             Err(e) => {
-                warn!("Could not read {} for line detection: {}, using line 1", program_path, e);
+                warn!(
+                    "Could not read {} for line detection: {}, using line 1",
+                    program_path, e
+                );
                 return 1;
             }
         };
@@ -830,7 +990,10 @@ impl DapClient {
         let content = match fs::read_to_string(program_path) {
             Ok(c) => c,
             Err(e) => {
-                warn!("Could not read {} for line detection: {}, using line 1", program_path, e);
+                warn!(
+                    "Could not read {} for line detection: {}, using line 1",
+                    program_path, e
+                );
                 return 1;
             }
         };
@@ -869,8 +1032,11 @@ impl DapClient {
             }
 
             // Skip import/require statements (not executable, just declarations)
-            if trimmed.starts_with("import ") || trimmed.starts_with("export ")
-                || trimmed.starts_with("require(") || trimmed.starts_with("const ") && trimmed.contains("require(") {
+            if trimmed.starts_with("import ")
+                || trimmed.starts_with("export ")
+                || trimmed.starts_with("require(")
+                || trimmed.starts_with("const ") && trimmed.contains("require(")
+            {
                 continue;
             }
 
@@ -880,7 +1046,9 @@ impl DapClient {
             }
 
             // Skip function declarations (look for first line OUTSIDE function)
-            if trimmed.starts_with("function ") || trimmed.starts_with("const ") && trimmed.contains("=>") {
+            if trimmed.starts_with("function ")
+                || trimmed.starts_with("const ") && trimmed.contains("=>")
+            {
                 // Skip function declarations - we want module-level code
                 continue;
             }
@@ -891,8 +1059,11 @@ impl DapClient {
             }
 
             // Skip variable declarations without initialization
-            if (trimmed.starts_with("let ") || trimmed.starts_with("var ") || trimmed.starts_with("const "))
-                && !trimmed.contains('=') {
+            if (trimmed.starts_with("let ")
+                || trimmed.starts_with("var ")
+                || trimmed.starts_with("const "))
+                && !trimmed.contains('=')
+            {
                 continue;
             }
 
@@ -915,10 +1086,15 @@ impl DapClient {
     pub async fn next(&self, thread_id: i32) -> Result<()> {
         let args = NextArguments { thread_id };
 
-        let response = self.send_request("next", Some(serde_json::to_value(args)?)).await?;
+        let response = self
+            .send_request("next", Some(serde_json::to_value(args)?))
+            .await?;
 
         if !response.success {
-            return Err(Error::Dap(format!("Next (step over) failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "Next (step over) failed: {:?}",
+                response.message
+            )));
         }
 
         Ok(())
@@ -927,7 +1103,9 @@ impl DapClient {
     pub async fn step_in(&self, thread_id: i32) -> Result<()> {
         let args = StepInArguments { thread_id };
 
-        let response = self.send_request("stepIn", Some(serde_json::to_value(args)?)).await?;
+        let response = self
+            .send_request("stepIn", Some(serde_json::to_value(args)?))
+            .await?;
 
         if !response.success {
             return Err(Error::Dap(format!("StepIn failed: {:?}", response.message)));
@@ -939,10 +1117,15 @@ impl DapClient {
     pub async fn step_out(&self, thread_id: i32) -> Result<()> {
         let args = StepOutArguments { thread_id };
 
-        let response = self.send_request("stepOut", Some(serde_json::to_value(args)?)).await?;
+        let response = self
+            .send_request("stepOut", Some(serde_json::to_value(args)?))
+            .await?;
 
         if !response.success {
-            return Err(Error::Dap(format!("StepOut failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "StepOut failed: {:?}",
+                response.message
+            )));
         }
 
         Ok(())
@@ -955,10 +1138,15 @@ impl DapClient {
             levels: None,
         };
 
-        let response = self.send_request("stackTrace", Some(serde_json::to_value(args)?)).await?;
-        
+        let response = self
+            .send_request("stackTrace", Some(serde_json::to_value(args)?))
+            .await?;
+
         if !response.success {
-            return Err(Error::Dap(format!("StackTrace failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "StackTrace failed: {:?}",
+                response.message
+            )));
         }
 
         #[derive(serde::Deserialize)]
@@ -967,9 +1155,13 @@ impl DapClient {
             stack_frames: Vec<StackFrame>,
         }
 
-        let body: StackTraceResponse = response.body
+        let body: StackTraceResponse = response
+            .body
             .ok_or_else(|| Error::Dap("No stack frames in response".to_string()))
-            .and_then(|v| serde_json::from_value(v).map_err(|e| Error::Dap(format!("Failed to parse stack frames: {}", e))))?;
+            .and_then(|v| {
+                serde_json::from_value(v)
+                    .map_err(|e| Error::Dap(format!("Failed to parse stack frames: {}", e)))
+            })?;
 
         Ok(body.stack_frames)
     }
@@ -999,13 +1191,18 @@ impl DapClient {
         let args = EvaluateArguments {
             expression: expression.to_string(),
             frame_id,
-            context: Some("watch".to_string()),  // Use "watch" for code expression evaluation, not "repl" (LLDB commands)
+            context: Some("watch".to_string()), // Use "watch" for code expression evaluation, not "repl" (LLDB commands)
         };
 
-        let response = self.send_request("evaluate", Some(serde_json::to_value(args)?)).await?;
+        let response = self
+            .send_request("evaluate", Some(serde_json::to_value(args)?))
+            .await?;
 
         if !response.success {
-            return Err(Error::Dap(format!("Evaluate failed: {:?}", response.message)));
+            return Err(Error::Dap(format!(
+                "Evaluate failed: {:?}",
+                response.message
+            )));
         }
 
         #[derive(serde::Deserialize)]
@@ -1013,9 +1210,13 @@ impl DapClient {
             result: String,
         }
 
-        let body: EvaluateResponse = response.body
+        let body: EvaluateResponse = response
+            .body
             .ok_or_else(|| Error::Dap("No result in evaluate response".to_string()))
-            .and_then(|v| serde_json::from_value(v).map_err(|e| Error::Dap(format!("Failed to parse evaluate result: {}", e))))?;
+            .and_then(|v| {
+                serde_json::from_value(v)
+                    .map_err(|e| Error::Dap(format!("Failed to parse evaluate result: {}", e)))
+            })?;
 
         Ok(body.result)
     }
@@ -1063,7 +1264,10 @@ impl DapClient {
         tokio::time::timeout(timeout, self.disconnect())
             .await
             .map_err(|_| {
-                warn!("Disconnect timed out after {:?}, proceeding anyway", timeout);
+                warn!(
+                    "Disconnect timed out after {:?}, proceeding anyway",
+                    timeout
+                );
                 Error::Dap(format!("Disconnect timed out after {:?}", timeout))
             })?
     }
@@ -1084,17 +1288,22 @@ impl DapClient {
 
         tokio::time::timeout(
             timeout,
-            self.initialize_and_launch(adapter_id, launch_args, adapter_type)
+            self.initialize_and_launch(adapter_id, launch_args, adapter_type),
         )
-            .await
-            .map_err(|_| Error::Dap(format!("Initialize and launch timed out after {:?}", timeout)))?
+        .await
+        .map_err(|_| {
+            Error::Dap(format!(
+                "Initialize and launch timed out after {:?}",
+                timeout
+            ))
+        })?
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::transport_trait::DapTransportTrait;
+    use super::*;
     use mockall::mock;
     use serde_json::json;
 
@@ -1113,9 +1322,7 @@ mod tests {
         let mut mock = MockTestTransport::new();
 
         // Expect write
-        mock.expect_write_message()
-            .times(1)
-            .returning(|_| Ok(()));
+        mock.expect_write_message().times(1).returning(|_| Ok(()));
 
         // Return response once
         mock.expect_read_message()
@@ -1140,23 +1347,20 @@ mod tests {
             .returning(|_| Ok(()));
 
         // Return initialize response, then error to stop message loop
-        mock_transport
-            .expect_read_message()
-            .times(1)
-            .returning(|| {
-                Ok(Message::Response(Response {
-                    seq: 1,
-                    request_seq: 1,
-                    command: "initialize".to_string(),
-                    success: true,
-                    message: None,
-                    body: Some(json!({
-                        "supportsConfigurationDoneRequest": true,
-                        "supportsFunctionBreakpoints": false,
-                        "supportsConditionalBreakpoints": true,
-                    })),
-                }))
-            });
+        mock_transport.expect_read_message().times(1).returning(|| {
+            Ok(Message::Response(Response {
+                seq: 1,
+                request_seq: 1,
+                command: "initialize".to_string(),
+                success: true,
+                message: None,
+                body: Some(json!({
+                    "supportsConfigurationDoneRequest": true,
+                    "supportsFunctionBreakpoints": false,
+                    "supportsConditionalBreakpoints": true,
+                })),
+            }))
+        });
 
         // Second read returns error to stop background task
         mock_transport

@@ -1,6 +1,6 @@
 use debugger_mcp::debug::SessionManager;
-use debugger_mcp::mcp::tools::ToolsHandler;
 use debugger_mcp::mcp::resources::ResourcesHandler;
+use debugger_mcp::mcp::tools::ToolsHandler;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -86,9 +86,7 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         let fizzbuzz_str = fizzbuzz_path.to_string_lossy().to_string();
 
         // Check if rdbg is available
-        let rdbg_check = std::process::Command::new("rdbg")
-            .arg("--version")
-            .output();
+        let rdbg_check = std::process::Command::new("rdbg").arg("--version").output();
 
         if rdbg_check.is_err() || !rdbg_check.unwrap().status.success() {
             println!("⚠️  Skipping Ruby FizzBuzz test: rdbg not installed");
@@ -109,8 +107,9 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         let start_result = timeout(
             Duration::from_secs(30),
-            tools_handler.handle_tool("debugger_start", start_args)
-        ).await;
+            tools_handler.handle_tool("debugger_start", start_args),
+        )
+        .await;
 
         // If adapter spawn fails or times out, skip test gracefully
         let start_result = match start_result {
@@ -148,8 +147,9 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         let bp_result = timeout(
             Duration::from_secs(10),
-            tools_handler.handle_tool("debugger_set_breakpoint", bp_args)
-        ).await;
+            tools_handler.handle_tool("debugger_set_breakpoint", bp_args),
+        )
+        .await;
 
         match bp_result {
             Err(_) => {
@@ -173,10 +173,15 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-        let continue_result = tools_handler.handle_tool("debugger_continue", continue_args).await;
+        let continue_result = tools_handler
+            .handle_tool("debugger_continue", continue_args)
+            .await;
 
         if continue_result.is_err() {
-            println!("⚠️  Continue execution may have issues: {:?}", continue_result);
+            println!(
+                "⚠️  Continue execution may have issues: {:?}",
+                continue_result
+            );
         } else {
             println!("✅ Execution continued");
         }
@@ -191,11 +196,16 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             "sessionId": session_id
         });
 
-        let stack_result = tools_handler.handle_tool("debugger_stack_trace", stack_args).await;
+        let stack_result = tools_handler
+            .handle_tool("debugger_stack_trace", stack_args)
+            .await;
 
         if let Ok(stack_response) = stack_result {
             let frames = &stack_response["stackFrames"];
-            println!("✅ Stack trace retrieved: {} frames", frames.as_array().map(|a| a.len()).unwrap_or(0));
+            println!(
+                "✅ Stack trace retrieved: {} frames",
+                frames.as_array().map(|a| a.len()).unwrap_or(0)
+            );
 
             if let Some(frames_array) = frames.as_array() {
                 if !frames_array.is_empty() {
@@ -215,7 +225,9 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             "frameId": null
         });
 
-        let eval_result = tools_handler.handle_tool("debugger_evaluate", eval_args).await;
+        let eval_result = tools_handler
+            .handle_tool("debugger_evaluate", eval_args)
+            .await;
 
         if let Ok(eval_response) = eval_result {
             let result = &eval_response["result"];
@@ -256,8 +268,9 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         let disconnect_result = timeout(
             Duration::from_secs(5),
-            tools_handler.handle_tool("debugger_disconnect", disconnect_args)
-        ).await;
+            tools_handler.handle_tool("debugger_disconnect", disconnect_args),
+        )
+        .await;
 
         if let Ok(Ok(_)) = disconnect_result {
             println!("✅ Session disconnected successfully");
@@ -276,10 +289,13 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         }
 
         println!("\n🎉 Ruby FizzBuzz integration test completed!");
-        println!("   Note: Some warnings are expected due to async timing and DAP adapter behavior");
+        println!(
+            "   Note: Some warnings are expected due to async timing and DAP adapter behavior"
+        );
 
         Ok(())
-    }).await;
+    })
+    .await;
 
     match test_result {
         Ok(Ok(())) => {

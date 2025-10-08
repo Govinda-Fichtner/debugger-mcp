@@ -1,10 +1,9 @@
+use debugger_mcp::adapters::logging::DebugAdapterLogger;
+use debugger_mcp::adapters::nodejs::NodeJsAdapter;
 /// Test to verify the two-tier logging architecture works correctly
 /// across all language adapters (Python, Ruby, Node.js)
-
 use debugger_mcp::adapters::python::PythonAdapter;
 use debugger_mcp::adapters::ruby::RubyAdapter;
-use debugger_mcp::adapters::nodejs::NodeJsAdapter;
-use debugger_mcp::adapters::logging::DebugAdapterLogger;
 
 #[test]
 fn test_python_adapter_logging_metadata() {
@@ -96,9 +95,7 @@ fn test_all_adapters_implement_trait() {
 #[test]
 fn test_logging_methods_dont_panic() {
     // Initialize tracing subscriber for this test
-    let _ = tracing_subscriber::fmt()
-        .with_test_writer()
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     // Test Python
     let python = PythonAdapter;
@@ -131,9 +128,7 @@ fn test_logging_methods_dont_panic() {
 #[test]
 fn test_error_logging_methods_dont_panic() {
     // Initialize tracing subscriber for this test
-    let _ = tracing_subscriber::fmt()
-        .with_test_writer()
-        .try_init();
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
     // Create a mock error
     let error = std::io::Error::new(std::io::ErrorKind::NotFound, "test error");

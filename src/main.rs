@@ -32,8 +32,8 @@ async fn main() -> Result<()> {
         Commands::Serve { verbose, log_level } => {
             // Initialize tracing
             let level = if verbose { "debug" } else { &log_level };
-            let filter = EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(level));
+            let filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
             tracing_subscriber::fmt()
                 .with_env_filter(filter)

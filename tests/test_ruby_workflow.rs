@@ -4,11 +4,10 @@
 /// and DebugSession - the actual APIs that the MCP server uses.
 ///
 /// See docs/TEST_COVERAGE_GAP_ANALYSIS.md for why these are critical.
-
 use debugger_mcp::debug::manager::SessionManager;
 use debugger_mcp::debug::state::DebugState;
-use std::time::Duration;
 use std::io::Write;
+use std::time::Duration;
 use tokio::time::sleep;
 
 /// Test 1: Full session lifecycle (CRITICAL - would have caught the bugs!)
@@ -66,7 +65,10 @@ async fn test_ruby_full_session_lifecycle() {
         }
     }
 
-    println!("✅ Session reached Stopped state after {} attempts", attempts);
+    println!(
+        "✅ Session reached Stopped state after {} attempts",
+        attempts
+    );
 
     // Get session and verify we can interact
     let session = manager.get_session(&session_id).await.unwrap();
@@ -96,7 +98,13 @@ async fn test_ruby_state_transitions() {
     let manager = SessionManager::new();
 
     let session_id = manager
-        .create_session("ruby", test_script.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
@@ -140,7 +148,13 @@ async fn test_ruby_breakpoint_workflow() {
 
     let manager = SessionManager::new();
     let session_id = manager
-        .create_session("ruby", test_script.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
@@ -156,7 +170,10 @@ async fn test_ruby_breakpoint_workflow() {
     let session = manager.get_session(&session_id).await.unwrap();
 
     // Set breakpoint on line 2
-    let bp_set = session.set_breakpoint(test_script.to_string(), 2).await.unwrap();
+    let bp_set = session
+        .set_breakpoint(test_script.to_string(), 2)
+        .await
+        .unwrap();
     assert!(bp_set, "Breakpoint should be set");
 
     // Continue - should hit breakpoint
@@ -186,7 +203,13 @@ async fn test_ruby_variable_evaluation() {
 
     let manager = SessionManager::new();
     let session_id = manager
-        .create_session("ruby", test_script.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
@@ -230,14 +253,20 @@ async fn test_ruby_step_commands() {
     writeln!(file, "def helper").unwrap();
     writeln!(file, "  x = 1").unwrap();
     writeln!(file, "end").unwrap();
-    writeln!(file, "").unwrap();
+    writeln!(file).unwrap();
     writeln!(file, "helper").unwrap();
     writeln!(file, "puts 'done'").unwrap();
     drop(file);
 
     let manager = SessionManager::new();
     let session_id = manager
-        .create_session("ruby", test_script.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
@@ -297,12 +326,24 @@ async fn test_ruby_multiple_sessions() {
 
     // Start two sessions
     let session_id1 = manager
-        .create_session("ruby", test_script1.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script1.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
     let session_id2 = manager
-        .create_session("ruby", test_script2.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script2.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 
@@ -361,7 +402,13 @@ async fn test_ruby_session_performance() {
     let start = std::time::Instant::now();
 
     let session_id = manager
-        .create_session("ruby", test_script.to_string(), vec![], Some("/tmp".to_string()), true)
+        .create_session(
+            "ruby",
+            test_script.to_string(),
+            vec![],
+            Some("/tmp".to_string()),
+            true,
+        )
         .await
         .unwrap();
 

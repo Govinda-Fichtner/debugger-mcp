@@ -1,5 +1,5 @@
-use tracing::{debug, info};
 use std::error::Error;
+use tracing::{debug, info};
 
 /// Trait defining the logging contract for all debug adapters
 ///

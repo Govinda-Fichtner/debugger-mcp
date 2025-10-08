@@ -62,14 +62,14 @@
 //! - https://github.com/microsoft/vscode-js-debug - Upstream project
 //! - DAP spec: https://microsoft.github.io/debug-adapter-protocol/
 
-use serde_json::{json, Value};
-use crate::{Result, Error};
+use super::logging::DebugAdapterLogger;
 use crate::dap::socket_helper;
+use crate::{Error, Result};
+use serde_json::{json, Value};
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
-use std::time::Duration;
 use tracing::{error, info};
-use super::logging::DebugAdapterLogger;
 
 /// Node.js vscode-js-debug adapter configuration
 ///
@@ -118,7 +118,8 @@ impl NodeJsAdapter {
 
         Err(Error::Process(
             "vscode-js-debug not found. Please install from: \
-             https://github.com/microsoft/vscode-js-debug/releases/latest".to_string()
+             https://github.com/microsoft/vscode-js-debug/releases/latest"
+                .to_string(),
         ))
     }
 
@@ -157,25 +158,33 @@ impl NodeJsAdapter {
 
         // 3. Spawn vscode-js-debug DAP server
         let child = Command::new("node")
-            .args(&[
+            .args([
                 &dap_server_path,
                 &port.to_string(),
                 "127.0.0.1", // IPv4 explicit
             ])
             .spawn()
-            .map_err(|e| Error::Process(format!(
-                "Failed to spawn vscode-js-debug: {}. Is Node.js installed?", e
-            )))?;
+            .map_err(|e| {
+                Error::Process(format!(
+                    "Failed to spawn vscode-js-debug: {}. Is Node.js installed?",
+                    e
+                ))
+            })?;
 
         // 4. Connect to DAP server (with 2 second timeout)
         let socket = socket_helper::connect_with_retry(port, Duration::from_secs(2))
             .await
-            .map_err(|e| Error::Process(format!(
-                "Failed to connect to vscode-js-debug on port {}: {}",
-                port, e
-            )))?;
+            .map_err(|e| {
+                Error::Process(format!(
+                    "Failed to connect to vscode-js-debug on port {}: {}",
+                    port, e
+                ))
+            })?;
 
-        info!("✅ Connected to vscode-js-debug DAP server on port {}", port);
+        info!(
+            "✅ Connected to vscode-js-debug DAP server on port {}",
+            port
+        );
 
         Ok(NodeJsDebugSession {
             process: child,
@@ -322,7 +331,10 @@ impl DebugAdapterLogger for NodeJsAdapter {
 /// Helper to log Node.js-specific connection success with port information
 impl NodeJsDebugSession {
     pub fn log_connection_success_with_details(&self) {
-        info!("✅ [NODEJS] Connected to vscode-js-debug on port {}", self.port);
+        info!(
+            "✅ [NODEJS] Connected to vscode-js-debug on port {}",
+            self.port
+        );
         info!("   Socket: localhost:{}", self.port);
         info!("   Process ID: {:?}", self.process.id());
         info!("   Architecture: Parent session (child sessions spawned dynamically)");
@@ -351,7 +363,7 @@ mod tests {
 
         // We can't test dap_server_command() directly if vscode-js-debug
         // isn't installed, so we'll test the structure manually
-        let expected_structure = vec![
+        let expected_structure = [
             "node".to_string(),
             "/path/to/dapDebugServer.js".to_string(),
             "8123".to_string(),

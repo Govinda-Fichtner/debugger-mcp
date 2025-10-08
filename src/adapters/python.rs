@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
 use super::logging::DebugAdapterLogger;
-use tracing::error;
+use serde_json::{json, Value};
 use std::error::Error;
+use tracing::error;
 
 /// Python debugpy adapter configuration
 pub struct PythonAdapter;

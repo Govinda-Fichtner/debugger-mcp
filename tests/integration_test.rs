@@ -1,11 +1,11 @@
-use debugger_mcp::McpServer;
 use debugger_mcp::debug::SessionManager;
-use debugger_mcp::mcp::tools::ToolsHandler;
 use debugger_mcp::mcp::resources::ResourcesHandler;
+use debugger_mcp::mcp::tools::ToolsHandler;
+use debugger_mcp::McpServer;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::path::PathBuf;
 
 mod helpers;
 use helpers::log_validator::LogValidator;
@@ -54,8 +54,7 @@ async fn test_fizzbuzz_debugging_integration() {
         .finish()
         .with(log_validator.layer());
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set subscriber");
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
     // Wrap entire test in timeout
     let test_result = timeout(Duration::from_secs(30), async {
@@ -96,8 +95,9 @@ async fn test_fizzbuzz_debugging_integration() {
 
         let start_result = timeout(
             Duration::from_secs(30),
-            tools_handler.handle_tool("debugger_start", start_args)
-        ).await;
+            tools_handler.handle_tool("debugger_start", start_args),
+        )
+        .await;
 
         // If adapter spawn fails or times out, skip test gracefully
         let start_result = match start_result {
@@ -117,123 +117,136 @@ async fn test_fizzbuzz_debugging_integration() {
             }
             Ok(response) => response,
         };
-    let session_id = start_response["sessionId"].as_str().unwrap().to_string();
+        let session_id = start_response["sessionId"].as_str().unwrap().to_string();
 
-    println!("✅ Debug session started: {}", session_id);
+        println!("✅ Debug session started: {}", session_id);
 
-    // Give debugger a moment to stop at entry
-    tokio::time::sleep(Duration::from_millis(200)).await;
+        // Give debugger a moment to stop at entry
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // 2. Set breakpoint at fizzbuzz function (line 18 where "FizzBuzz" is returned)
-    println!("🎯 Setting breakpoint at line 18");
+        // 2. Set breakpoint at fizzbuzz function (line 18 where "FizzBuzz" is returned)
+        println!("🎯 Setting breakpoint at line 18");
 
-    let bp_args = json!({
-        "sessionId": session_id,
-        "sourcePath": fizzbuzz_str,
-        "line": 18
-    });
+        let bp_args = json!({
+            "sessionId": session_id,
+            "sourcePath": fizzbuzz_str,
+            "line": 18
+        });
 
-    let bp_result = timeout(
-        Duration::from_secs(10),
-        tools_handler.handle_tool("debugger_set_breakpoint", bp_args)
-    ).await;
-
-    match bp_result {
-        Err(_) => {
-            println!("⚠️  Breakpoint set timed out after 10 seconds");
-        }
-        Ok(Err(e)) => {
-            println!("⚠️  Breakpoint set failed: {:?}", e);
-        }
-        Ok(Ok(bp_response)) => {
-            let verified = bp_response["verified"].as_bool().unwrap_or(false);
-            println!("✅ Breakpoint set, verified: {}", verified);
-        }
-    }
-
-    // 3. Continue execution (program will run and hit breakpoint)
-    println!("▶️  Continuing execution...");
-
-    let continue_args = json!({
-        "sessionId": session_id
-    });
-
-    // Give the program a moment to start and hit breakpoint
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    let continue_result = tools_handler.handle_tool("debugger_continue", continue_args).await;
-
-    if continue_result.is_err() {
-        println!("⚠️  Continue execution may have issues: {:?}", continue_result);
-    } else {
-        println!("✅ Execution continued");
-    }
-
-    // Give time for the program to reach breakpoint
-    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-    // 4. Get stack trace (if stopped at breakpoint)
-    println!("📚 Getting stack trace...");
-
-    let stack_args = json!({
-        "sessionId": session_id
-    });
-
-    let stack_result = tools_handler.handle_tool("debugger_stack_trace", stack_args).await;
-
-    if let Ok(stack_response) = stack_result {
-        let frames = &stack_response["stackFrames"];
-        println!("✅ Stack trace retrieved: {} frames", frames.as_array().map(|a| a.len()).unwrap_or(0));
-
-        if let Some(frames_array) = frames.as_array() {
-            if !frames_array.is_empty() {
-                println!("   Top frame: {}", frames_array[0]);
-            }
-        }
-    } else {
-        println!("⚠️  Stack trace not available (program may not be stopped)");
-    }
-
-    // 5. Evaluate expression (get value of 'n')
-    println!("🔍 Evaluating expression 'n'...");
-
-    let eval_args = json!({
-        "sessionId": session_id,
-        "expression": "n",
-        "frameId": null
-    });
-
-    let eval_result = tools_handler.handle_tool("debugger_evaluate", eval_args).await;
-
-    if let Ok(eval_response) = eval_result {
-        let result = &eval_response["result"];
-        println!("✅ Evaluation result: {}", result);
-    } else {
-        println!("⚠️  Expression evaluation not available");
-    }
-
-    // 6. Test resource queries
-    println!("📦 Testing resource queries...");
-
-    let resources_handler = ResourcesHandler::new(Arc::clone(&session_manager));
-
-    // List all sessions
-    let sessions_list = resources_handler.read_resource("debugger://sessions").await;
-    if let Ok(contents) = sessions_list {
-        println!("✅ Sessions resource: {}", contents.uri);
-        if let Some(text) = contents.text {
-            println!("   Content: {}", text.lines().next().unwrap_or(""));
-        }
-    }
-
-    // Get session details
-    let session_details = resources_handler
-        .read_resource(&format!("debugger://sessions/{}", session_id))
+        let bp_result = timeout(
+            Duration::from_secs(10),
+            tools_handler.handle_tool("debugger_set_breakpoint", bp_args),
+        )
         .await;
 
-    if let Ok(_contents) = session_details {
-        println!("✅ Session details resource retrieved");
-    }
+        match bp_result {
+            Err(_) => {
+                println!("⚠️  Breakpoint set timed out after 10 seconds");
+            }
+            Ok(Err(e)) => {
+                println!("⚠️  Breakpoint set failed: {:?}", e);
+            }
+            Ok(Ok(bp_response)) => {
+                let verified = bp_response["verified"].as_bool().unwrap_or(false);
+                println!("✅ Breakpoint set, verified: {}", verified);
+            }
+        }
+
+        // 3. Continue execution (program will run and hit breakpoint)
+        println!("▶️  Continuing execution...");
+
+        let continue_args = json!({
+            "sessionId": session_id
+        });
+
+        // Give the program a moment to start and hit breakpoint
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        let continue_result = tools_handler
+            .handle_tool("debugger_continue", continue_args)
+            .await;
+
+        if continue_result.is_err() {
+            println!(
+                "⚠️  Continue execution may have issues: {:?}",
+                continue_result
+            );
+        } else {
+            println!("✅ Execution continued");
+        }
+
+        // Give time for the program to reach breakpoint
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        // 4. Get stack trace (if stopped at breakpoint)
+        println!("📚 Getting stack trace...");
+
+        let stack_args = json!({
+            "sessionId": session_id
+        });
+
+        let stack_result = tools_handler
+            .handle_tool("debugger_stack_trace", stack_args)
+            .await;
+
+        if let Ok(stack_response) = stack_result {
+            let frames = &stack_response["stackFrames"];
+            println!(
+                "✅ Stack trace retrieved: {} frames",
+                frames.as_array().map(|a| a.len()).unwrap_or(0)
+            );
+
+            if let Some(frames_array) = frames.as_array() {
+                if !frames_array.is_empty() {
+                    println!("   Top frame: {}", frames_array[0]);
+                }
+            }
+        } else {
+            println!("⚠️  Stack trace not available (program may not be stopped)");
+        }
+
+        // 5. Evaluate expression (get value of 'n')
+        println!("🔍 Evaluating expression 'n'...");
+
+        let eval_args = json!({
+            "sessionId": session_id,
+            "expression": "n",
+            "frameId": null
+        });
+
+        let eval_result = tools_handler
+            .handle_tool("debugger_evaluate", eval_args)
+            .await;
+
+        if let Ok(eval_response) = eval_result {
+            let result = &eval_response["result"];
+            println!("✅ Evaluation result: {}", result);
+        } else {
+            println!("⚠️  Expression evaluation not available");
+        }
+
+        // 6. Test resource queries
+        println!("📦 Testing resource queries...");
+
+        let resources_handler = ResourcesHandler::new(Arc::clone(&session_manager));
+
+        // List all sessions
+        let sessions_list = resources_handler.read_resource("debugger://sessions").await;
+        if let Ok(contents) = sessions_list {
+            println!("✅ Sessions resource: {}", contents.uri);
+            if let Some(text) = contents.text {
+                println!("   Content: {}", text.lines().next().unwrap_or(""));
+            }
+        }
+
+        // Get session details
+        let session_details = resources_handler
+            .read_resource(&format!("debugger://sessions/{}", session_id))
+            .await;
+
+        if let Ok(_contents) = session_details {
+            println!("✅ Session details resource retrieved");
+        }
 
         // 7. Disconnect and cleanup
         println!("🔌 Disconnecting session...");
@@ -244,8 +257,9 @@ async fn test_fizzbuzz_debugging_integration() {
 
         let disconnect_result = timeout(
             Duration::from_secs(5),
-            tools_handler.handle_tool("debugger_disconnect", disconnect_args)
-        ).await;
+            tools_handler.handle_tool("debugger_disconnect", disconnect_args),
+        )
+        .await;
 
         if let Ok(Ok(_)) = disconnect_result {
             println!("✅ Session disconnected successfully");
@@ -264,10 +278,13 @@ async fn test_fizzbuzz_debugging_integration() {
         }
 
         println!("\n🎉 FizzBuzz integration test completed!");
-        println!("   Note: Some warnings are expected due to async timing and DAP adapter behavior");
+        println!(
+            "   Note: Some warnings are expected due to async timing and DAP adapter behavior"
+        );
 
         Ok(())
-    }).await;
+    })
+    .await;
 
     match test_result {
         Ok(Ok(())) => {
@@ -347,7 +364,10 @@ async fn test_resources_empty_state() {
     assert_eq!(resources[0].uri, "debugger://sessions");
 
     // Read sessions list (should be empty)
-    let contents = resources_handler.read_resource("debugger://sessions").await.unwrap();
+    let contents = resources_handler
+        .read_resource("debugger://sessions")
+        .await
+        .unwrap();
     assert_eq!(contents.uri, "debugger://sessions");
     assert!(contents.text.is_some());
 
@@ -367,10 +387,7 @@ async fn test_tools_list() {
     assert_eq!(tools.len(), 12);
 
     // Verify all tools are present
-    let tool_names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
     assert!(tool_names.contains(&"debugger_start"));
     assert!(tool_names.contains(&"debugger_set_breakpoint"));

@@ -25,12 +25,11 @@
 /// 4. We match the child connection to the pending target ID
 ///
 /// This module manages accepting multiple connections on the same port.
-
 use crate::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
 
@@ -78,7 +77,12 @@ impl MultiConnectionListener {
         // Wait for parent connection with timeout
         let parent_socket = timeout(Duration::from_secs(5), listener.accept())
             .await
-            .map_err(|_| Error::Process(format!("Timeout waiting for parent connection on port {}", port)))?
+            .map_err(|_| {
+                Error::Process(format!(
+                    "Timeout waiting for parent connection on port {}",
+                    port
+                ))
+            })?
             .map_err(|e| Error::Process(format!("Failed to accept parent connection: {}", e)))?
             .0;
 
@@ -126,7 +130,10 @@ impl MultiConnectionListener {
         target_id: &str,
         timeout_duration: Duration,
     ) -> Result<TcpStream> {
-        info!("⏳ Waiting for child connection with target_id: {}", target_id);
+        info!(
+            "⏳ Waiting for child connection with target_id: {}",
+            target_id
+        );
 
         let result = timeout(timeout_duration, async {
             let mut rx = self.child_rx.lock().await;
@@ -136,7 +143,10 @@ impl MultiConnectionListener {
                         info!("✅ Child connection matched: {}", target_id);
                         return Ok(socket);
                     } else {
-                        warn!("⚠️  Received child connection with wrong target_id: {} (expected: {})", id, target_id);
+                        warn!(
+                            "⚠️  Received child connection with wrong target_id: {} (expected: {})",
+                            id, target_id
+                        );
                     }
                 } else {
                     return Err(Error::Process(
@@ -220,7 +230,11 @@ impl MultiConnectionListener {
         pending.retain(|id, child| {
             let age = now.duration_since(child.created_at);
             if age.as_secs() > 30 {
-                warn!("🧹 Cleaning up expired pending child: {} (age: {}s)", id, age.as_secs());
+                warn!(
+                    "🧹 Cleaning up expired pending child: {} (age: {}s)",
+                    id,
+                    age.as_secs()
+                );
                 false
             } else {
                 true

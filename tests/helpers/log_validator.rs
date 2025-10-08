@@ -91,34 +91,49 @@ impl LogValidator {
             // Initialization
             ("Spawning DAP client", "DAP client spawn"),
             ("Sending initialize request", "Initialize request"),
-            ("send_request: Sending 'initialize'", "Initialize send_request"),
+            (
+                "send_request: Sending 'initialize'",
+                "Initialize send_request",
+            ),
             ("message_writer: Task started", "Writer task started"),
             ("message_writer: Lock acquired", "Writer acquires lock"),
-
             // Events
             ("EVENT RECEIVED: 'initialized'", "Initialized event"),
             ("EVENT RECEIVED: 'stopped'", "Stopped event"),
-            ("Received 'initialized' event - signaling", "Initialized callback"),
-
+            (
+                "Received 'initialized' event - signaling",
+                "Initialized callback",
+            ),
             // Configuration
             ("Sending configurationDone", "ConfigurationDone request"),
-            ("send_request: Received response for 'configurationDone'", "ConfigurationDone response"),
-
+            (
+                "send_request: Received response for 'configurationDone'",
+                "ConfigurationDone response",
+            ),
             // Breakpoints
             ("set_breakpoints: Starting", "Breakpoint operation start"),
-            ("set_breakpoints: Sending setBreakpoints request", "Breakpoint request send"),
-            ("send_request: Sending 'setBreakpoints'", "setBreakpoints send_request"),
-            ("send_request: Received response for 'setBreakpoints'", "setBreakpoints response"),
+            (
+                "set_breakpoints: Sending setBreakpoints request",
+                "Breakpoint request send",
+            ),
+            (
+                "send_request: Sending 'setBreakpoints'",
+                "setBreakpoints send_request",
+            ),
+            (
+                "send_request: Received response for 'setBreakpoints'",
+                "setBreakpoints response",
+            ),
             ("set_breakpoints: Success", "Breakpoint success"),
             ("verified=true", "Breakpoint verified"),
-
             // Execution
             ("send_request: Sending 'continue'", "Continue request"),
-            ("send_request: Received response for 'continue'", "Continue response"),
-
+            (
+                "send_request: Received response for 'continue'",
+                "Continue response",
+            ),
             // Stack trace
             ("send_request: Sending 'stackTrace'", "StackTrace request"),
-
             // Cleanup
             ("send_request: Sending 'disconnect'", "Disconnect request"),
             // Note: "message_writer: Task exiting" is optional - may be logged after validation
@@ -126,7 +141,9 @@ impl LogValidator {
 
         for (pattern, description) in expected_patterns {
             if !logs.iter().any(|log| log.message.contains(pattern)) {
-                result.missing_logs.push(format!("{}: '{}'", description, pattern));
+                result
+                    .missing_logs
+                    .push(format!("{}: '{}'", description, pattern));
             } else {
                 result.found_logs.push(description.to_string());
             }
@@ -145,16 +162,25 @@ impl LogValidator {
         for log in logs {
             // Check for proper emoji usage in key operations
             if log.message.contains("message_reader") && !log.message.contains("📖") {
-                issues.push(format!("Message reader log missing 📖 emoji: {}", log.message));
+                issues.push(format!(
+                    "Message reader log missing 📖 emoji: {}",
+                    log.message
+                ));
             }
             if log.message.contains("message_writer") && !log.message.contains("📝") {
-                issues.push(format!("Message writer log missing 📝 emoji: {}", log.message));
+                issues.push(format!(
+                    "Message writer log missing 📝 emoji: {}",
+                    log.message
+                ));
             }
             if log.message.contains("EVENT RECEIVED") && !log.message.contains("🎯") {
                 issues.push(format!("Event log missing 🎯 emoji: {}", log.message));
             }
             if log.message.contains("set_breakpoints: Starting") && !log.message.contains("🔧") {
-                issues.push(format!("Breakpoint start log missing 🔧 emoji: {}", log.message));
+                issues.push(format!(
+                    "Breakpoint start log missing 🔧 emoji: {}",
+                    log.message
+                ));
             }
             if log.message.contains("set_breakpoints: Success") && !log.message.contains("✅") {
                 issues.push(format!("Success log missing ✅ emoji: {}", log.message));
@@ -164,10 +190,14 @@ impl LogValidator {
             }
 
             // Check log level appropriateness
-            if log.message.contains("Failed") || log.message.contains("failed") {
-                if log.level != Level::ERROR && log.level != Level::WARN {
-                    issues.push(format!("Failure message should be ERROR or WARN: {}", log.message));
-                }
+            if (log.message.contains("Failed") || log.message.contains("failed"))
+                && log.level != Level::ERROR
+                && log.level != Level::WARN
+            {
+                issues.push(format!(
+                    "Failure message should be ERROR or WARN: {}",
+                    log.message
+                ));
             }
         }
 
@@ -179,9 +209,15 @@ impl LogValidator {
         println!("\n📊 Log Validation Summary");
         println!("═══════════════════════════════════════════════");
         println!("✅ Found {} expected log patterns", result.found_logs.len());
-        println!("❌ Missing {} expected log patterns", result.missing_logs.len());
+        println!(
+            "❌ Missing {} expected log patterns",
+            result.missing_logs.len()
+        );
         println!("⚠️  Quality issues: {}", result.quality_issues.len());
-        println!("📝 Total logs captured: {}", self.logs.lock().unwrap().len());
+        println!(
+            "📝 Total logs captured: {}",
+            self.logs.lock().unwrap().len()
+        );
 
         if !result.missing_logs.is_empty() {
             println!("\n❌ Missing Logs:");

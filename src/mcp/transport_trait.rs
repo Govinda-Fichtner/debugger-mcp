@@ -1,5 +1,5 @@
-use crate::Result;
 use super::protocol::JsonRpcMessage;
+use crate::Result;
 use async_trait::async_trait;
 
 /// Trait for MCP transport layer to enable testing with mocks

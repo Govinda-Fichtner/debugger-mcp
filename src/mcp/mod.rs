@@ -1,18 +1,18 @@
-pub mod transport;
-pub mod transport_trait;
 pub mod protocol;
 pub mod resources;
 pub mod tools;
+pub mod transport;
+pub mod transport_trait;
 
-use crate::Result;
 use crate::debug::SessionManager;
-use transport::StdioTransport;
+use crate::Result;
 use protocol::ProtocolHandler;
-use tools::ToolsHandler;
 use resources::ResourcesHandler;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tools::ToolsHandler;
+use tracing::{error, info};
+use transport::StdioTransport;
 
 pub struct McpServer {
     transport: StdioTransport,

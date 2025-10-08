@@ -1,5 +1,5 @@
-use crate::Result;
 use super::types::Message;
+use crate::Result;
 use async_trait::async_trait;
 
 /// Trait for DAP transport layer to enable testing with mocks

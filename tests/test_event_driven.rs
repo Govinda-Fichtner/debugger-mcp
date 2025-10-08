@@ -36,7 +36,10 @@ async fn test_event_driven_launch() {
     });
 
     println!("3. Calling initialize_and_launch...");
-    match client.initialize_and_launch("debugpy", launch_args, Some("python")).await {
+    match client
+        .initialize_and_launch("debugpy", launch_args, Some("python"))
+        .await
+    {
         Ok(_) => {
             println!("✅ SUCCESS: initialize_and_launch completed!");
         }

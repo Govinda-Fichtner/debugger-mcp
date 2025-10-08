@@ -10,7 +10,8 @@ pub fn find_free_port() -> Result<u16> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| Error::Process(format!("Failed to bind to port: {}", e)))?;
 
-    let port = listener.local_addr()
+    let port = listener
+        .local_addr()
         .map_err(|e| Error::Process(format!("Failed to get local address: {}", e)))?
         .port();
 
@@ -31,7 +32,11 @@ pub async fn connect_with_retry(port: u16, timeout: Duration) -> Result<TcpStrea
     loop {
         match TcpStream::connect(("127.0.0.1", port)).await {
             Ok(stream) => {
-                info!("Connected to 127.0.0.1:{} after {:?}", port, start.elapsed());
+                info!(
+                    "Connected to 127.0.0.1:{} after {:?}",
+                    port,
+                    start.elapsed()
+                );
                 return Ok(stream);
             }
             Err(e) => {

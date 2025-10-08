@@ -1,5 +1,5 @@
-use crate::{Error, Result};
 use crate::debug::SessionManager;
+use crate::{Error, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -114,7 +114,13 @@ impl ToolsHandler {
 
         let manager = self.session_manager.read().await;
         let session_id = manager
-            .create_session(&args.language, args.program, args.args, args.cwd, args.stop_on_entry)
+            .create_session(
+                &args.language,
+                args.program,
+                args.args,
+                args.cwd,
+                args.stop_on_entry,
+            )
             .await?;
 
         Ok(json!({
@@ -136,18 +142,20 @@ impl ToolsHandler {
             crate::debug::state::DebugState::Initialized => ("Initialized", json!({})),
             crate::debug::state::DebugState::Launching => ("Launching", json!({})),
             crate::debug::state::DebugState::Running => ("Running", json!({})),
-            crate::debug::state::DebugState::Stopped { thread_id, reason } => {
-                ("Stopped", json!({
+            crate::debug::state::DebugState::Stopped { thread_id, reason } => (
+                "Stopped",
+                json!({
                     "threadId": thread_id,
                     "reason": reason
-                }))
-            }
+                }),
+            ),
             crate::debug::state::DebugState::Terminated => ("Terminated", json!({})),
-            crate::debug::state::DebugState::Failed { error } => {
-                ("Failed", json!({
+            crate::debug::state::DebugState::Failed { error } => (
+                "Failed",
+                json!({
                     "error": error
-                }))
-            }
+                }),
+            ),
         };
 
         Ok(json!({
@@ -159,10 +167,10 @@ impl ToolsHandler {
 
     async fn debugger_set_breakpoint(&self, arguments: Value) -> Result<Value> {
         let args: SetBreakpointArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.read().await;
         let session = manager.get_session(&args.session_id).await?;
-        
+
         let verified = session
             .set_breakpoint(args.source_path.clone(), args.line)
             .await?;
@@ -176,10 +184,10 @@ impl ToolsHandler {
 
     async fn debugger_continue(&self, arguments: Value) -> Result<Value> {
         let args: ContinueArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.read().await;
         let session = manager.get_session(&args.session_id).await?;
-        
+
         session.continue_execution().await?;
 
         Ok(json!({
@@ -267,8 +275,7 @@ impl ToolsHandler {
             if start.elapsed() > timeout {
                 return Err(Error::InvalidState(format!(
                     "Timeout waiting for program to stop ({}ms). Current state: {:?}",
-                    args.timeout_ms,
-                    state
+                    args.timeout_ms, state
                 )));
             }
 
@@ -315,7 +322,8 @@ impl ToolsHandler {
             thread_id
         } else {
             return Err(Error::InvalidState(
-                "Cannot step while program is running. The program must be stopped first.".to_string()
+                "Cannot step while program is running. The program must be stopped first."
+                    .to_string(),
             ));
         };
 
@@ -340,7 +348,8 @@ impl ToolsHandler {
             thread_id
         } else {
             return Err(Error::InvalidState(
-                "Cannot step while program is running. The program must be stopped first.".to_string()
+                "Cannot step while program is running. The program must be stopped first."
+                    .to_string(),
             ));
         };
 
@@ -365,7 +374,8 @@ impl ToolsHandler {
             thread_id
         } else {
             return Err(Error::InvalidState(
-                "Cannot step while program is running. The program must be stopped first.".to_string()
+                "Cannot step while program is running. The program must be stopped first."
+                    .to_string(),
             ));
         };
 
@@ -380,7 +390,7 @@ impl ToolsHandler {
 
     async fn debugger_disconnect(&self, arguments: Value) -> Result<Value> {
         let args: DisconnectArgs = serde_json::from_value(arguments)?;
-        
+
         let manager = self.session_manager.write().await;
         manager.remove_session(&args.session_id).await?;
 
@@ -783,10 +793,7 @@ mod tests {
         assert_eq!(tools.len(), 12); // Updated from 7 to 12
 
         // Verify tool names
-        let tool_names: Vec<&str> = tools
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
+        let tool_names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
 
         // Original tools
         assert!(tool_names.contains(&"debugger_start"));
@@ -849,7 +856,9 @@ mod tests {
         let handler = ToolsHandler::new(manager);
 
         // Invalid JSON for debugger_start
-        let result = handler.handle_tool("debugger_start", json!({"invalid": "data"})).await;
+        let result = handler
+            .handle_tool("debugger_start", json!({"invalid": "data"}))
+            .await;
         assert!(result.is_err());
     }
 
@@ -994,7 +1003,9 @@ mod tests {
         let handler = ToolsHandler::new(manager);
 
         // Missing required fields
-        let result = handler.handle_tool("debugger_start", json!({"language": "python"})).await;
+        let result = handler
+            .handle_tool("debugger_start", json!({"language": "python"}))
+            .await;
         assert!(result.is_err());
     }
 
@@ -1004,7 +1015,9 @@ mod tests {
         let handler = ToolsHandler::new(manager);
 
         // Missing required fields
-        let result = handler.handle_tool("debugger_set_breakpoint", json!({"sessionId": "test"})).await;
+        let result = handler
+            .handle_tool("debugger_set_breakpoint", json!({"sessionId": "test"}))
+            .await;
         assert!(result.is_err());
     }
 
@@ -1034,7 +1047,9 @@ mod tests {
         let handler = ToolsHandler::new(manager);
 
         // Missing required fields
-        let result = handler.handle_tool("debugger_evaluate", json!({"sessionId": "test"})).await;
+        let result = handler
+            .handle_tool("debugger_evaluate", json!({"sessionId": "test"}))
+            .await;
         assert!(result.is_err());
     }
 

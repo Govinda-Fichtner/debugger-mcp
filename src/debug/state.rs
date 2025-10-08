@@ -54,11 +54,8 @@ impl SessionState {
             id: None,
             verified: false,
         };
-        
-        self.breakpoints
-            .entry(source)
-            .or_default()
-            .push(bp);
+
+        self.breakpoints.entry(source).or_default().push(bp);
     }
 
     pub fn update_breakpoint(&mut self, source: &str, line: i32, id: i32, verified: bool) {
@@ -71,10 +68,7 @@ impl SessionState {
     }
 
     pub fn get_breakpoints(&self, source: &str) -> Vec<Breakpoint> {
-        self.breakpoints
-            .get(source)
-            .cloned()
-            .unwrap_or_default()
+        self.breakpoints.get(source).cloned().unwrap_or_default()
     }
 
     pub fn add_thread(&mut self, thread_id: i32) {
@@ -107,7 +101,7 @@ mod tests {
     fn test_add_breakpoint() {
         let mut state = SessionState::new();
         state.add_breakpoint("test.py".to_string(), 10);
-        
+
         let bps = state.get_breakpoints("test.py");
         assert_eq!(bps.len(), 1);
         assert_eq!(bps[0].line, 10);
@@ -119,7 +113,7 @@ mod tests {
         let mut state = SessionState::new();
         state.add_breakpoint("test.py".to_string(), 10);
         state.update_breakpoint("test.py", 10, 1, true);
-        
+
         let bps = state.get_breakpoints("test.py");
         assert_eq!(bps[0].id, Some(1));
         assert!(bps[0].verified);
@@ -131,7 +125,7 @@ mod tests {
         state.add_thread(1);
         state.add_thread(2);
         state.add_thread(1); // Duplicate should not be added
-        
+
         assert_eq!(state.threads.len(), 2);
         assert!(state.threads.contains(&1));
         assert!(state.threads.contains(&2));
@@ -150,7 +144,7 @@ mod tests {
             thread_id: 1,
             reason: "breakpoint".to_string(),
         };
-        
+
         if let DebugState::Stopped { thread_id, reason } = state {
             assert_eq!(thread_id, 1);
             assert_eq!(reason, "breakpoint");
