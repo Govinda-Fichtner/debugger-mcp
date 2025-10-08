@@ -147,8 +147,8 @@ jobs:
           # Run tests and capture output
           cargo nextest run --lib --no-fail-fast 2>&1 | tee nextest-output.txt
 
-          # Extract summary line for parsing (handle leading spaces)
-          grep -E "^\s*Summary \[" nextest-output.txt > nextest-summary.txt || echo "Summary [0s] 0 tests run: 0 passed, 0 skipped" > nextest-summary.txt
+          # Strip ANSI codes first, then extract summary line
+          sed 's/\x1b\[[0-9;]*m//g' nextest-output.txt | grep "Summary \[" > nextest-summary.txt || echo "Summary [0s] 0 tests run: 0 passed, 0 skipped" > nextest-summary.txt
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -166,17 +166,15 @@ jobs:
           echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Parse nextest summary output
-          # Example with ANSI codes: "[32;1m     Summary[0m [   0.565s] [1m171[0m tests run: [1m171[0m [32;1mpassed[0m, [1m1[0m [33;1mskipped[0m"
+          # Parse nextest summary output (already stripped of ANSI codes in previous step)
           if [ -f nextest-summary.txt ]; then
-            # Strip ANSI color codes first
-            SUMMARY_LINE=$(cat nextest-summary.txt | sed 's/\x1b\[[0-9;]*m//g')
+            SUMMARY_LINE=$(cat nextest-summary.txt)
 
-            # Extract numbers using awk (more reliable than grep -P)
-            TOTAL_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="tests" && $(i+1)=="run:") print $(i-1)}' || echo "0")
-            PASSED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed,") print $(i-1)}' || echo "0")
-            FAILED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed,") print $(i-1)}' || echo "0")
-            SKIPPED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="skipped" || $i=="skipped,") print $(i-1)}' || echo "0")
+            # Extract numbers using awk
+            TOTAL_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="tests" && $(i+1)=="run:") print $(i-1)}')
+            PASSED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed,") print $(i-1)}')
+            FAILED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed,") print $(i-1)}')
+            SKIPPED_TESTS=$(echo "$SUMMARY_LINE" | awk '{for(i=1;i<=NF;i++) if($i=="skipped") print $(i-1)}')
 
             # Default to 0 if empty
             TOTAL_TESTS=${TOTAL_TESTS:-0}
