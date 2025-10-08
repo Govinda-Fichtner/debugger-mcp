@@ -137,9 +137,11 @@ repos:
         verbose: true
 
       # All tests including integration (on push)
+      # Note: Some integration tests require specific environment setup
+      # CI runs these separately with proper environment
       - id: cargo-test-all
         name: cargo test (all tests)
-        entry: bash -c 'source $HOME/.cargo/env && cargo test --all-targets'
+        entry: bash -c 'source $HOME/.cargo/env && cargo test --lib'
         language: system
         types: [rust]
         pass_filenames: false
