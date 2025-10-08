@@ -166,11 +166,6 @@ pre-commit install --install-hooks
 pre-commit install --hook-type commit-msg
 pre-commit install --hook-type pre-push
 
-# Configure local author validation (PRIVATE - never committed)
-# Replace with YOUR name and email
-git config --local author.name "Your Name"
-git config --local author.email "your.email@example.com"
-
 # Verify installation
 pre-commit --version
 ls -la .git/hooks/
@@ -178,8 +173,6 @@ ls -la .git/hooks/
 # Run all hooks against all files (optional - tests setup)
 pre-commit run --all-files
 ```
-
-**Privacy Note**: The `.git/hooks/pre-commit-local` hook validates your commits use the correct author. Your email is stored only in `.git/config` (local to your machine) and is never committed to the repository.
 
 **Expected output**:
 ```

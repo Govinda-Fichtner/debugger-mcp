@@ -105,6 +105,15 @@ repos:
   # ===================
   # Commit Message
   # ===================
+  - repo: local
+    hooks:
+      # Prevent Claude Code attribution in commit messages
+      - id: prevent-claude-attribution
+        name: prevent claude attribution
+        entry: .pre-commit-hooks/prevent-claude-attribution.sh
+        language: script
+        stages: [commit-msg]
+
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v3.13.0
     hooks:
