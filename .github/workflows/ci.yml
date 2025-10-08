@@ -414,15 +414,18 @@ jobs:
       - name: Run cargo-deny
         continue-on-error: true
         run: |
-          cargo deny check --format json > cargo-deny.json 2>&1 || true
-          cargo deny check || true
+          # Run cargo-deny and capture output (no JSON format - not supported)
+          cargo deny check 2>&1 | tee cargo-deny-output.txt
+          echo "Exit code: $?" > cargo-deny-status.txt
 
       - name: Upload dependency check report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dependency-check-report
-          path: cargo-deny.json
+          path: |
+            cargo-deny-output.txt
+            cargo-deny-status.txt
           retention-days: 90
 
       - name: Generate Dependency Summary
@@ -431,11 +434,18 @@ jobs:
           echo "## 🔍 Dependency Check (cargo-deny)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ -f cargo-deny.json ]; then
-            # cargo-deny JSON structure varies, use basic parsing
-            # Count errors and warnings
-            ERRORS=$(grep -c '"type":"error"' cargo-deny.json 2>/dev/null || echo 0)
-            WARNINGS=$(grep -c '"type":"warning"' cargo-deny.json 2>/dev/null || echo 0)
+          if [ -f cargo-deny-output.txt ]; then
+            # Strip ANSI codes for parsing
+            sed 's/\x1b\[[0-9;]*m//g' cargo-deny-output.txt > cargo-deny-clean.txt
+
+            # Count errors and warnings from clean output
+            # grep returns exit code 1 when no matches, so use || true to handle it
+            ERRORS=$(grep -c "error" cargo-deny-clean.txt || true)
+            WARNINGS=$(grep -c "warning" cargo-deny-clean.txt || true)
+
+            # Default to 0 if empty
+            ERRORS=${ERRORS:-0}
+            WARNINGS=${WARNINGS:-0}
 
             echo "| Check Result | Count |" >> $GITHUB_STEP_SUMMARY
             echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
@@ -443,10 +453,16 @@ jobs:
             echo "| ⚠️ Warnings | $WARNINGS |" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
-            if [ "$ERRORS" -gt 0 ]; then
-              echo "⚠️ **Dependency issues detected!** (Non-blocking)" >> $GITHUB_STEP_SUMMARY
+            # Check exit code
+            if [ -f cargo-deny-status.txt ]; then
+              EXIT_CODE=$(cat cargo-deny-status.txt | grep -oE '[0-9]+' || echo 0)
+              if [ "$EXIT_CODE" = "0" ]; then
+                echo "✅ **All dependency checks passed**" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "⚠️ **Dependency issues detected!** (Non-blocking)" >> $GITHUB_STEP_SUMMARY
+              fi
             else
-              echo "✅ **All dependency checks passed**" >> $GITHUB_STEP_SUMMARY
+              echo "ℹ️ **Dependency check completed**" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "❌ Dependency check not available" >> $GITHUB_STEP_SUMMARY
