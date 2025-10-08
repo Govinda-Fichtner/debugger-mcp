@@ -41,19 +41,6 @@ repos:
         name: Check for case conflicts
 
   # ===================
-  # Git Author Validation
-  # ===================
-  - repo: local
-    hooks:
-      # Validate git author configuration
-      - id: check-author
-        name: check git author
-        entry: bash -c 'if [ "$(git config user.name)" != "Govinda Fichtner" ] || [ "$(git config user.email)" != "govinda.fichtner@googlemail.com" ]; then echo "❌ Wrong author config"; exit 1; fi'
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-
-  # ===================
   # Rust Code Quality
   # ===================
   - repo: local
