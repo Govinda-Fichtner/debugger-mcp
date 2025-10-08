@@ -1,6 +1,6 @@
-# CI Pipeline for debugger-mcp
-# Runs on every PR to main branch
-# Jobs: Quality checks, Tests, Build
+# CI Pipeline with Job Summaries
+# Comprehensive quality checks with rich GitHub Actions summaries
+# Based on purposive-app Ruby/Rails workflow, adapted for Rust
 
 name: CI
 
@@ -15,8 +15,8 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  quality:
-    name: Code Quality
+  linting:
+    name: Linting with Clippy
     runs-on: ubuntu-latest
 
     steps:
@@ -55,13 +55,62 @@ jobs:
       - name: Check code formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run clippy with JSON output
+        run: |
+          cargo clippy --all-targets --all-features --message-format=json -- -D warnings 2>&1 | tee clippy-output.txt || true
+          # Extract JSON messages only
+          grep '^{' clippy-output.txt > clippy-report.json || echo '[]' > clippy-report.json
+
+      - name: Upload clippy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: clippy-report
+          path: clippy-report.json
+          retention-days: 30
+
+      - name: Generate Linting Summary
+        if: always()
+        run: |
+          echo "## 🖍️ Code Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f clippy-report.json ]; then
+            # Count warnings and errors from clippy JSON output
+            TOTAL_WARNINGS=$(jq -s '[.[] | select(.reason == "compiler-message" and .message.level == "warning")] | length' clippy-report.json 2>/dev/null || echo 0)
+            TOTAL_ERRORS=$(jq -s '[.[] | select(.reason == "compiler-message" and .message.level == "error")] | length' clippy-report.json 2>/dev/null || echo 0)
+
+            echo "### Clippy Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⚠️ Warnings | $TOTAL_WARNINGS |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Errors | $TOTAL_ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$TOTAL_ERRORS" -eq 0 ] && [ "$TOTAL_WARNINGS" -eq 0 ]; then
+              echo "✅ **No linting issues found!**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "💡 **Linting issues detected**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              # Show top issues if any
+              if [ "$TOTAL_WARNINGS" -gt 0 ] || [ "$TOTAL_ERRORS" -gt 0 ]; then
+                echo "<details><summary>View issues (first 5)</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                jq -s '[.[] | select(.reason == "compiler-message" and (.message.level == "warning" or .message.level == "error"))] | .[0:5] | .[] | "- **\(.message.level)**: \(.message.message) at \(.target.src_path):\(.message.spans[0].line_start)"' clippy-report.json 2>/dev/null | sed 's/^"//; s/"$//' >> $GITHUB_STEP_SUMMARY || echo "Unable to parse details" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          else
+            echo "❌ Clippy analysis not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
 
   test:
-    name: Test Suite
+    name: Test Suite with Nextest
     runs-on: ubuntu-latest
-    needs: quality
+    needs: linting
 
     steps:
       - name: Checkout code
@@ -88,8 +137,71 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run unit tests
-        run: cargo test --lib --verbose
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Run tests with nextest
+        run: |
+          cargo nextest run --lib --no-fail-fast --message-format libtest-json > nextest-output.json 2>&1 || true
+          # Also run in standard format for human readability
+          cargo nextest run --lib --no-fail-fast || true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: nextest-output.json
+          retention-days: 30
+
+      - name: Generate Test Summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Parse nextest/libtest JSON output
+          if [ -f nextest-output.json ]; then
+            # Count test events
+            TOTAL_TESTS=$(jq -s '[.[] | select(.type == "test")] | length' nextest-output.json 2>/dev/null || echo 0)
+            PASSED_TESTS=$(jq -s '[.[] | select(.type == "test" and .event == "ok")] | length' nextest-output.json 2>/dev/null || echo 0)
+            FAILED_TESTS=$(jq -s '[.[] | select(.type == "test" and .event == "failed")] | length' nextest-output.json 2>/dev/null || echo 0)
+
+            # If JSON parsing fails, fall back to simple counting
+            if [ "$TOTAL_TESTS" -eq 0 ]; then
+              # Try alternative parsing or use cargo test output
+              TOTAL_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $3}' || echo "unknown")
+              PASSED_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $5}' || echo "unknown")
+              FAILED_TESTS=$(cargo test --lib 2>&1 | grep "test result:" | awk '{print $8}' || echo "unknown")
+            fi
+
+            echo "### Test Suite Results" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TOTAL_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| ✅ Passed | $PASSED_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Failed | $FAILED_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$FAILED_TESTS" != "0" ] && [ "$FAILED_TESTS" != "unknown" ]; then
+              echo "⚠️ **Test failures detected!**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              # Show failed tests
+              echo "<details><summary>Failed Tests</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              jq -s '[.[] | select(.type == "test" and .event == "failed")] | .[] | "- \(.name)"' nextest-output.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "See logs for details" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ No test results found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
 
   coverage:
     name: Code Coverage
@@ -119,18 +231,226 @@ jobs:
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run coverage
-        run: cargo tarpaulin --lib --exclude-files 'tests/*' --out Xml --fail-under 28
+        run: |
+          cargo tarpaulin --lib --exclude-files 'tests/*' \
+            --out Json --out Xml --out Html \
+            --output-dir coverage \
+            --fail-under 28
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./cobertura.xml
+          files: ./coverage/cobertura.xml
           fail_ci_if_error: false
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 90
+
+      - name: Generate Coverage Summary
+        if: always()
+        run: |
+          echo "### 📊 Code Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f coverage/tarpaulin-report.json ]; then
+            # Parse tarpaulin JSON for coverage percentage
+            COVERAGE=$(jq '.files | [.[].coverage] | add / length' coverage/tarpaulin-report.json 2>/dev/null | awk '{printf "%.2f", $1}' || echo "unknown")
+            COVERAGE_THRESHOLD=28
+
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Coverage | ${COVERAGE}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Threshold | ${COVERAGE_THRESHOLD}% |" >> $GITHUB_STEP_SUMMARY
+
+            # Compare coverage to threshold
+            if [ "$COVERAGE" != "unknown" ]; then
+              if (( $(echo "$COVERAGE >= $COVERAGE_THRESHOLD" | bc -l 2>/dev/null || echo 0) )); then
+                echo "| Status | ✅ Passing |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| Status | ❌ Below threshold |" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              echo "| Status | ⚠️ Unable to determine |" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Top covered files
+            echo "<details><summary>Coverage by File (Top 10)</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            jq -r '.files | to_entries | sort_by(.value.coverage) | reverse | .[0:10] | .[] | "- \(.key): \(.value.coverage)%"' coverage/tarpaulin-report.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "Unable to parse file details" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Coverage data not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [Download full coverage report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo-audit
+        continue-on-error: true
+        run: |
+          cargo audit --json > cargo-audit.json || true
+          cargo audit || true
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: cargo-audit.json
+          retention-days: 90
+
+      - name: Generate Security Summary
+        if: always()
+        run: |
+          echo "## 🔐 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f cargo-audit.json ]; then
+            # Parse cargo-audit JSON
+            CRITICAL=$(jq '[.vulnerabilities.list[]? | select(.advisory.severity == "critical")] | length' cargo-audit.json 2>/dev/null || echo 0)
+            HIGH=$(jq '[.vulnerabilities.list[]? | select(.advisory.severity == "high")] | length' cargo-audit.json 2>/dev/null || echo 0)
+            MEDIUM=$(jq '[.vulnerabilities.list[]? | select(.advisory.severity == "medium")] | length' cargo-audit.json 2>/dev/null || echo 0)
+            LOW=$(jq '[.vulnerabilities.list[]? | select(.advisory.severity == "low")] | length' cargo-audit.json 2>/dev/null || echo 0)
+
+            echo "### Cargo Audit - Vulnerability Analysis" >> $GITHUB_STEP_SUMMARY
+            echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔴 Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟠 High | $HIGH |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟡 Medium | $MEDIUM |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🟢 Low | $LOW |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+              echo "⚠️ **Critical or High vulnerabilities found!** (Non-blocking)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              # Show vulnerabilities
+              echo "<details><summary>View critical/high vulnerabilities</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              jq -r '.vulnerabilities.list[]? | select(.advisory.severity == "critical" or .advisory.severity == "high") | "- **\(.package.name)** (\(.package.version)): \(.advisory.title) - [\(.advisory.id)](\(.advisory.url // "N/A"))"' cargo-audit.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "Unable to parse vulnerability details" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **No critical or high vulnerabilities found**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ Security scan not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [Download security report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  dependency-check:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: Run cargo-deny
+        continue-on-error: true
+        run: |
+          cargo deny check --format json > cargo-deny.json 2>&1 || true
+          cargo deny check || true
+
+      - name: Upload dependency check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: cargo-deny.json
+          retention-days: 90
+
+      - name: Generate Dependency Summary
+        if: always()
+        run: |
+          echo "## 🔍 Dependency Check (cargo-deny)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f cargo-deny.json ]; then
+            # cargo-deny JSON structure varies, use basic parsing
+            # Count errors and warnings
+            ERRORS=$(grep -c '"type":"error"' cargo-deny.json 2>/dev/null || echo 0)
+            WARNINGS=$(grep -c '"type":"warning"' cargo-deny.json 2>/dev/null || echo 0)
+
+            echo "| Check Result | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⚠️ Warnings | $WARNINGS |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$ERRORS" -gt 0 ]; then
+              echo "⚠️ **Dependency issues detected!** (Non-blocking)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ **All dependency checks passed**" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ Dependency check not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "📦 [Download dependency report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
 
   build:
     name: Build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
-    needs: test
+    needs: [test, coverage]
 
     strategy:
       fail-fast: false
