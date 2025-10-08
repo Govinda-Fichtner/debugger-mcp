@@ -1,6 +1,6 @@
 # Integration Tests Workflow
 # Runs comprehensive integration tests for all supported languages in Docker
-# Generates combined code coverage including both unit and integration tests
+# Note: Coverage collection temporarily disabled due to cargo-tarpaulin edition2024 dependency
 
 name: Integration Tests
 
@@ -45,51 +45,21 @@ jobs:
           cache-to: type=gha,mode=max,scope=integration-tests
           load: true
 
-      - name: Run integration tests with coverage
+      - name: Run integration tests
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
             debugger-mcp:integration-tests \
-            cargo tarpaulin \
-              --all \
-              --ignore-panics \
-              --exclude-files 'tests/bin/*' \
-              --out Json --out Xml --out Html \
-              --output-dir coverage-integration \
-              -- --include-ignored 2>&1 | tee integration-test-output.txt || true
+            cargo test --all -- --include-ignored --nocapture 2>&1 | tee integration-test-output.txt || true
 
-      - name: Check if coverage was generated
-        id: check_coverage
-        run: |
-          if [ -f coverage-integration/cobertura.xml ]; then
-            echo "coverage_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Coverage report generated"
-          else
-            echo "coverage_exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Coverage report not found"
-          fi
-
-      - name: Upload integration coverage to Codecov
-        if: steps.check_coverage.outputs.coverage_exists == 'true'
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage-integration/cobertura.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-          flags: integration-tests
-          name: integration-tests
-          verbose: true
-
-      - name: Upload combined coverage reports
+      - name: Upload test output
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: integration-coverage-report
-          path: |
-            coverage-integration/
-            integration-test-output.txt
-          retention-days: 90
+          name: integration-test-output
+          path: integration-test-output.txt
+          retention-days: 30
 
       - name: Parse test results
         if: always()
@@ -121,14 +91,10 @@ jobs:
             for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
           }' integration-test-clean.txt | tail -1 || echo "0")
 
-          # Extract coverage percentage if available
-          COVERAGE=$(grep -oP '\d+\.\d+% coverage' integration-test-clean.txt | grep -oP '\d+\.\d+' | tail -1 || echo "unknown")
-
           echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "ignored_tests=${IGNORED_TESTS:-0}" >> $GITHUB_OUTPUT
-          echo "coverage=${COVERAGE:-unknown}" >> $GITHUB_OUTPUT
 
       - name: Generate Integration Test Summary
         if: always()
@@ -160,12 +126,6 @@ jobs:
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Code Coverage (Combined)" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Coverage | ${{ steps.parse_results.outputs.coverage }}% |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
           echo "### Languages Tested" >> $GITHUB_STEP_SUMMARY
           echo "- 🐍 Python (debugpy)" >> $GITHUB_STEP_SUMMARY
           echo "- 💎 Ruby (rdbg/debug gem)" >> $GITHUB_STEP_SUMMARY

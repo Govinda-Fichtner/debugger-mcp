@@ -4,10 +4,13 @@
 # Build: docker build -f Dockerfile.integration-tests -t debugger-mcp:integration-tests .
 # Run:   docker run --rm -v $(pwd):/workspace debugger-mcp:integration-tests
 
-FROM rust:1.70-slim-bookworm AS base
+FROM rust:1.83-slim-bookworm AS base
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Workaround for clock skew: use only main repo, skip security/updates
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
     curl \
     git \
     build-essential \
@@ -24,9 +27,13 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go 1.21.0
+# Install Go 1.21.0 (detect architecture)
 ARG GO_VERSION=1.21.0
-RUN curl -L https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xz
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then GOARCH="amd64"; \
+    elif [ "$ARCH" = "arm64" ]; then GOARCH="arm64"; \
+    else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -L https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 # Install Python debugpy
@@ -41,28 +48,19 @@ RUN cd /tmp && \
     curl -L https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz | tar -xzf - && \
     chmod +x /tmp/js-debug/src/dapDebugServer.js
 
-# Install Rust LLDB component (for CodeLLDB)
-RUN rustup component add lldb
+# Note: LLDB is already installed via apt (lldb package)
+# rustup lldb component not available on all architectures
 
 # Install Go Delve debugger
 RUN go install github.com/go-delve/delve/cmd/dlv@latest
 
-# Install cargo-nextest for faster parallel test execution
-RUN cargo install cargo-nextest
-
-# Install cargo-tarpaulin for code coverage
-RUN cargo install cargo-tarpaulin
+# Note: Skipping cargo-nextest and cargo-tarpaulin due to edition2024 dependency issues
+# These tools require Rust 1.86+ which is not yet stable
+# We'll use standard cargo test for now (still runs tests in parallel)
 
 # Set working directory
 WORKDIR /workspace
 
-# Default command: run all tests including ignored integration tests with coverage
-CMD ["cargo", "tarpaulin", \
-     "--all", \
-     "--ignore-panics", \
-     "--exclude-files", "tests/bin/*", \
-     "--out", "Json", \
-     "--out", "Xml", \
-     "--out", "Html", \
-     "--output-dir", "coverage-integration", \
-     "--", "--include-ignored"]
+# Default command: run all tests including ignored integration tests
+# Note: No coverage collection due to cargo-tarpaulin edition2024 dependency
+CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture"]
