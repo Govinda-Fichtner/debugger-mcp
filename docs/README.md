@@ -18,6 +18,34 @@ Get up and running:
 
 ---
 
+### [**PRE_COMMIT_SETUP.md**](./PRE_COMMIT_SETUP.md) 🔧
+**Pre-commit hooks setup and usage guide**
+
+Code quality automation:
+- Hook stages (pre-commit, commit-msg, pre-push)
+- Tool details (clippy, rustfmt, gitleaks, cargo-audit, cargo-deny)
+- Installation and configuration
+- Troubleshooting guide
+- Commit message template
+
+**Use this** to set up automated code quality checks.
+
+---
+
+### [**INSTALLATION_CHECKLIST.md**](./INSTALLATION_CHECKLIST.md) ✓
+**Tool installation checklist for Debian/Ubuntu**
+
+Step-by-step installation:
+- Rust components (rustfmt, clippy)
+- Cargo tools (tarpaulin, audit, deny)
+- Secret scanner (gitleaks)
+- Verification steps
+- Quick reference commands
+
+**Follow this** for complete tool installation.
+
+---
+
 ### [**DOCKER.md**](./DOCKER.md) 🐳
 **Docker deployment guide**
 
@@ -150,8 +178,9 @@ Complete technology evaluation:
 ### For Developers
 1. Read **Technology Stack** (Section 4) in proposal
 2. Study [COMPONENTS.md](./architecture/COMPONENTS.md) fully
-3. Review **Implementation Plan** (Section 9) for phasing
-4. Reference research docs for protocol details
+3. **Set up pre-commit hooks** using [PRE_COMMIT_SETUP.md](./PRE_COMMIT_SETUP.md)
+4. Review **Implementation Plan** (Section 9) for phasing
+5. Reference research docs for protocol details
 
 ### For AI/ML Engineers
 1. Read **MCP Interface Design** (Section 5) - how AI agents interact

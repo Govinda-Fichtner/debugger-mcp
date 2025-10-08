@@ -136,6 +136,16 @@ AI Agent (Claude Desktop, etc.)
 Following [Conventional Commits](https://www.conventionalcommits.org/) and
 [Tim Pope's guidelines](https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html):
 
+**🚨 CRITICAL: NO AUTOMATED ATTRIBUTION**
+
+**NEVER add these to commit messages:**
+- ❌ `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- ❌ `Co-Authored-By: Claude <noreply@anthropic.com>`
+- ❌ Any similar automated attribution or tool references
+
+**Reason**: This pollutes git history and GitHub contributor attribution.
+Clean commits reflect actual human authorship.
+
 **Format:**
 ```
 <type>(<scope>): <subject>

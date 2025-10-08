@@ -266,6 +266,11 @@ Claude:
 git clone https://github.com/yourusername/debugger_mcp
 cd debugger_mcp
 
+# Install pre-commit hooks (recommended)
+pre-commit install --install-hooks
+pre-commit install --hook-type commit-msg
+pre-commit install --hook-type pre-push
+
 # Run tests
 cargo test
 
@@ -276,13 +281,37 @@ cargo run -- serve
 cargo run -- serve --verbose
 ```
 
+### Pre-commit Hooks
+
+The project uses automated git hooks to ensure code quality:
+
+- **Rust linting** (clippy, rustfmt)
+- **Security scanning** (gitleaks, cargo-audit, cargo-deny)
+- **Test execution** (unit tests on commit, all tests on push)
+- **Code coverage** (60% minimum threshold)
+- **Commit message validation** (Conventional Commits + Tim Pope guidelines)
+
+**Setup**: See [Pre-commit Setup Guide](docs/PRE_COMMIT_SETUP.md) for detailed installation instructions.
+
+**Quick install**:
+```bash
+# Install required tools
+rustup component add clippy rustfmt
+cargo install cargo-tarpaulin cargo-audit cargo-deny
+# Install gitleaks (see setup guide for instructions)
+
+# Activate hooks
+pre-commit install --install-hooks
+```
+
 ### Development Workflow
 
 1. Read [Getting Started](GETTING_STARTED.md)
 2. Follow [MVP Implementation Plan](docs/MVP_IMPLEMENTATION_PLAN.md)
-3. Write tests first (TDD)
-4. Implement features
-5. Run integration tests
+3. **Set up pre-commit hooks** (see [Pre-commit Setup](docs/PRE_COMMIT_SETUP.md))
+4. Write tests first (TDD)
+5. Implement features
+6. Run integration tests
 
 **Key Integration Test**: FizzBuzz debugging scenario
 - Tests all core features (breakpoints, stepping, variables)
@@ -303,6 +332,7 @@ cargo run -- serve --verbose
 
 ### For Developers
 - [Getting Started Guide](GETTING_STARTED.md)
+- [Pre-commit Setup Guide](docs/PRE_COMMIT_SETUP.md) - Code quality automation
 - [TDD Workflow](docs/MVP_IMPLEMENTATION_PLAN.md#tdd-workflow)
 - [Component Details](docs/architecture/COMPONENTS.md)
 

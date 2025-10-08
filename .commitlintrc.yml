@@ -1,0 +1,111 @@
+# Commitlint configuration for debugger-mcp
+# Enforces Conventional Commits + Tim Pope's guidelines
+# See: https://www.conventionalcommits.org/
+# See: https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
+
+extends:
+  - '@commitizen/cz-conventional-changelog'
+
+rules:
+  # Type enforcement (Conventional Commits)
+  type-enum:
+    - 2
+    - always
+    - - feat      # New feature
+      - fix       # Bug fix
+      - docs      # Documentation only
+      - style     # Code style (formatting, whitespace)
+      - refactor  # Code restructuring without feature/fix
+      - perf      # Performance improvements
+      - test      # Adding/updating tests
+      - chore     # Maintenance tasks
+      - revert    # Revert previous commit
+      - ci        # CI/CD changes
+      - build     # Build system changes
+
+  # Type must be lowercase
+  type-case:
+    - 2
+    - always
+    - lower-case
+
+  # Type is required
+  type-empty:
+    - 2
+    - never
+
+  # Scope is optional but must be lowercase if present
+  scope-case:
+    - 2
+    - always
+    - lower-case
+
+  # Subject is required
+  subject-empty:
+    - 2
+    - never
+
+  # Subject must be lowercase (Tim Pope: "Capitalize the subject line")
+  # We'll warn but not error to allow flexibility
+  subject-case:
+    - 1
+    - always
+    - lower-case
+
+  # Subject max length: 50 chars (Tim Pope's rule)
+  # Format: "type(scope): subject" means type+scope+": " uses ~15 chars
+  # So subject itself should be ~50 chars total for the first line
+  subject-max-length:
+    - 2
+    - always
+    - 50
+
+  # Subject must not end with period (Conventional Commits)
+  subject-full-stop:
+    - 2
+    - never
+    - '.'
+
+  # Body: 72 character line wrapping (Tim Pope's rule)
+  body-max-line-length:
+    - 2
+    - always
+    - 72
+
+  # Body should be separated from subject by blank line
+  body-leading-blank:
+    - 2
+    - always
+
+  # Footer should be separated from body by blank line
+  footer-leading-blank:
+    - 2
+    - always
+
+  # Use imperative mood ("Add feature" not "Added feature")
+  # This is enforced by the type-enum validation
+  subject-exclamation-mark:
+    - 0  # Allow ! for breaking changes
+
+# Example valid commit messages:
+#
+# feat(dap): add breakpoint verification
+#
+# Implement DAP breakpoint verification to ensure breakpoints
+# are actually set before continuing execution.
+#
+# - Add verification state to breakpoint model
+# - Implement retry logic for unverified breakpoints
+# - Add timeout handling (30s max)
+#
+# Closes #42
+#
+# ---
+#
+# fix(nodejs): correct Docker adapter path
+#
+# The vscode-js-debug adapter is installed at /usr/local/lib/
+# vscode-js-debug/ but code looked for /usr/local/lib/js-debug/.
+# This caused all Node.js debugging to fail in Docker containers.
+#
+# Refs #38

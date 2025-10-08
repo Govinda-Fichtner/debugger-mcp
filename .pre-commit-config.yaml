@@ -1,0 +1,151 @@
+# Pre-commit hooks for debugger-mcp
+# See https://pre-commit.com for more information
+
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+
+repos:
+  # ===================
+  # File Format Checks
+  # ===================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Fix line endings and whitespace
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+        args: ['--fix=lf']
+
+      # File format validation
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-json
+        name: Check JSON syntax
+
+      # Prevent large files
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=500']
+
+      # Merge conflict markers
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+
+      # Case conflicts
+      - id: check-case-conflict
+        name: Check for case conflicts
+
+  # ===================
+  # Git Author Validation
+  # ===================
+  - repo: local
+    hooks:
+      # Validate git author configuration
+      - id: check-author
+        name: check git author
+        entry: bash -c 'if [ "$(git config user.name)" != "Govinda Fichtner" ] || [ "$(git config user.email)" != "govinda.fichtner@googlemail.com" ]; then echo "❌ Wrong author config"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ===================
+  # Rust Code Quality
+  # ===================
+  - repo: local
+    hooks:
+      # Rust formatting check
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'source $HOME/.cargo/env && cargo fmt --all -- --check'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Rust linting
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'source $HOME/.cargo/env && cargo clippy --all-targets --all-features -- -D warnings'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Fast unit tests (quick feedback)
+      - id: cargo-test-lib
+        name: cargo test (unit tests only)
+        entry: bash -c 'source $HOME/.cargo/env && cargo test --lib'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-commit]
+        verbose: true
+
+  # ===================
+  # Security Scanning
+  # ===================
+  - repo: local
+    hooks:
+      # Secret scanning
+      - id: gitleaks
+        name: gitleaks (secret scanner)
+        entry: gitleaks protect --verbose --redact --staged
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Security audit
+      - id: cargo-audit
+        name: cargo audit (security vulnerabilities)
+        entry: bash -c 'source $HOME/.cargo/env && cargo audit'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Dependency policy enforcement
+      - id: cargo-deny
+        name: cargo deny (dependency checks)
+        entry: bash -c 'source $HOME/.cargo/env && cargo deny check'
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ===================
+  # Commit Message
+  # ===================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        name: commitizen (commit message check)
+        stages: [commit-msg]
+
+  # ===================
+  # Coverage & Testing (on push, not commit)
+  # ===================
+  - repo: local
+    hooks:
+      # Code coverage check (slower, runs on push)
+      - id: cargo-tarpaulin
+        name: cargo tarpaulin (code coverage)
+        entry: bash -c 'source $HOME/.cargo/env && cargo tarpaulin --lib --exclude-files "tests/*" --out Stdout --fail-under 60'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
+
+      # All tests including integration (on push)
+      - id: cargo-test-all
+        name: cargo test (all tests)
+        entry: bash -c 'source $HOME/.cargo/env && cargo test --all-targets'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+        verbose: true
