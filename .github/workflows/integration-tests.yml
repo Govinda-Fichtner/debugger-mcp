@@ -47,12 +47,18 @@ jobs:
 
       - name: Run integration tests
         run: |
+          # Run tests and capture output
+          # Docker container will write to /workspace/integration-test-output.txt
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
             -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
             debugger-mcp:integration-tests \
-            cargo test --all -- --include-ignored --nocapture 2>&1 | tee integration-test-output.txt || true
+            bash -c 'cargo test --all -- --include-ignored --nocapture 2>&1 | tee /workspace/integration-test-output.txt; chmod 666 /workspace/integration-test-output.txt || true' || true
+
+          # Ensure file exists and is readable
+          touch integration-test-output.txt
+          chmod 644 integration-test-output.txt
 
       - name: Upload test output
         uses: actions/upload-artifact@v4
