@@ -14,8 +14,9 @@ if [ "$(id -u)" = "0" ]; then
     fi
 
     # Switch to testuser and run the command
-    # Pass all arguments properly using su with shell wrapper
-    exec su testuser -c 'cd /workspace && exec "$@"' sh "$@"
+    # Export all arguments as environment variable to pass through su
+    export DOCKER_CMD="$*"
+    exec su testuser -c 'cd /workspace && eval "$DOCKER_CMD"'
 else
     # Already running as testuser, just execute the command
     cd /workspace
