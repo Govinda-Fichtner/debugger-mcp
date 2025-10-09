@@ -56,18 +56,18 @@ jobs:
 
       - name: Run integration tests
         run: |
-          # Run tests and capture output
+          # Run tests and capture output inside Docker container
           # The release binary is already built with the correct GLIBC version
-          # Save output to file with proper permissions
+          # Write output to workspace which is mounted as volume
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
             -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
             debugger-mcp:integration-tests \
-            cargo test --all -- --include-ignored --nocapture > integration-test-output.txt 2>&1 || true
+            sh -c 'cd /workspace && cargo test --all -- --include-ignored --nocapture > integration-test-output.txt 2>&1 || true'
 
-          # Ensure file exists
-          test -f integration-test-output.txt || touch integration-test-output.txt
+          # Ensure file exists and is readable on host
+          test -f integration-test-output.txt || echo "Warning: Output file not created" > integration-test-output.txt
 
       - name: Upload test output
         uses: actions/upload-artifact@v4
