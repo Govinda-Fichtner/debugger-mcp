@@ -72,6 +72,17 @@ RUN go install github.com/go-delve/delve/cmd/dlv@latest
 # Set working directory
 WORKDIR /workspace
 
+# Create non-root user for running tests
+# Claude Code CLI refuses to run with --dangerously-skip-permissions as root for security
+RUN useradd -m -s /bin/bash testuser
+
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Use entrypoint to handle permissions and user switching
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
 # Default command: run all tests including ignored integration tests
 # Note: No coverage collection due to cargo-tarpaulin edition2024 dependency
 CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture"]
