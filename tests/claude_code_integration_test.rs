@@ -26,8 +26,8 @@ async fn test_claude_code_integration() {
     let test_dir = temp_dir.path();
     println!("   Test directory: {}", test_dir.display());
 
-    // 3. Build the MCP server binary
-    println!("\n🔨 Step 3: Building MCP server...");
+    // 3. Verify the MCP server binary exists
+    println!("\n🔨 Step 3: Verifying MCP server binary...");
 
     // For integration tests, CARGO_MANIFEST_DIR IS the workspace root
     // (it points to the directory containing Cargo.toml)
@@ -35,26 +35,24 @@ async fn test_claude_code_integration() {
 
     println!("   Workspace root: {}", workspace_root.display());
 
-    let cargo_build = Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .current_dir(&workspace_root)
-        .output()
-        .expect("Failed to run cargo build");
-
-    assert!(
-        cargo_build.status.success(),
-        "❌ Failed to build MCP server:\n{}",
-        String::from_utf8_lossy(&cargo_build.stderr)
-    );
-    println!("✅ MCP server built successfully");
-
+    // The binary should be pre-built (either by CI or manually)
+    // This ensures the binary matches the Docker container's GLIBC version
     let binary_path = workspace_root.join("target/release/debugger_mcp");
+
     assert!(
         binary_path.exists(),
-        "❌ Binary not found at {}",
+        "❌ Binary not found at {}\n\n\
+         The integration test expects a pre-built binary.\n\
+         \n\
+         To fix this:\n\
+         - Local development: Run 'cargo build --release' first\n\
+         - CI: The workflow builds inside Docker automatically\n\
+         \n\
+         This ensures the binary uses the correct GLIBC version for Docker.",
         binary_path.display()
     );
+
+    println!("✅ MCP server binary found: {}", binary_path.display());
 
     // 4. Create fizzbuzz.py test file
     println!("\n📝 Step 4: Creating fizzbuzz.py test file...");

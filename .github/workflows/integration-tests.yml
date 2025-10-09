@@ -45,10 +45,19 @@ jobs:
           cache-to: type=gha,mode=max,scope=integration-tests
           load: true
 
+      - name: Build release binary inside Docker
+        run: |
+          # Build the release binary inside Docker to ensure correct GLIBC version
+          # This binary will be used by the Claude Code integration test
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            debugger-mcp:integration-tests \
+            cargo build --release
+
       - name: Run integration tests
         run: |
           # Run tests and capture output
-          # Redirect output through the host instead of writing from inside container
+          # The release binary is already built with the correct GLIBC version
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
