@@ -36,8 +36,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -L https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz | tar -C /usr/local -xz
 ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
-# Install Python debugpy
-RUN python3 -m pip install --break-system-packages debugpy
+# Install Python debugpy and create python symlink
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    python3 -m pip install --break-system-packages debugpy
 
 # Install Ruby debug gem
 RUN gem install debug
