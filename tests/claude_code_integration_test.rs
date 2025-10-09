@@ -97,13 +97,26 @@ if __name__ == "__main__":
 
 You are testing the Debugger MCP server integration. Your task is to:
 
-1. Start a debugging session for the fizzbuzz.py program
-2. Poll for session state until ready
-3. Set a breakpoint at line 21 (where the bug is)
-4. Continue execution
-5. Document ALL MCP JSON-RPC protocol messages you send and receive
+1. List available MCP server tools and resources
+2. Start a debugging session for the fizzbuzz.py program
+3. Poll for session state until ready
+4. Set a breakpoint at line 21 (where the bug is)
+5. Continue execution
+6. Document ALL MCP JSON-RPC protocol messages you send and receive
 
 ## Steps
+
+### Step 0: List Available MCP Tools
+
+FIRST, list all available MCP server tools and resources you have access to.
+This helps verify the debugger MCP server is properly connected.
+
+Example question: "Can you list the mcp server tools you have available?"
+
+Document in your report:
+- How many debugger tools are available
+- The names of the debugger tools
+- Any resources exposed by the debugger server
 
 ### Step 1: Start Debugging Session
 
