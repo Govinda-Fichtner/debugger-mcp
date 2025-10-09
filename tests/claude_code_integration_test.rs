@@ -6,7 +6,6 @@ use tempfile::TempDir;
 
 /// Test that validates the MCP server works with Claude Code
 #[tokio::test]
-#[ignore]
 async fn test_claude_code_integration() {
     println!("\n🚀 Starting Claude Code Integration Test");
     println!("════════════════════════════════════════════════════════════════");
@@ -30,16 +29,16 @@ async fn test_claude_code_integration() {
     // 3. Build the MCP server binary
     println!("\n🔨 Step 3: Building MCP server...");
 
-    // Get the workspace root (works both locally and in Docker)
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir.parent().unwrap_or(&manifest_dir);
+    // For integration tests, CARGO_MANIFEST_DIR IS the workspace root
+    // (it points to the directory containing Cargo.toml)
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     println!("   Workspace root: {}", workspace_root.display());
 
     let cargo_build = Command::new("cargo")
         .arg("build")
         .arg("--release")
-        .current_dir(workspace_root)
+        .current_dir(&workspace_root)
         .output()
         .expect("Failed to run cargo build");
 

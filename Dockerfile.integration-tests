@@ -49,6 +49,10 @@ RUN gem install debug
 #   docker run -e ANTHROPIC_API_KEY=your_key_here debugger-mcp:integration-tests
 RUN npm install -g @anthropic-ai/claude-code
 
+# Ensure npm global binaries are in PATH
+# npm on Debian installs global binaries to /usr/local/lib/node_modules/.bin
+ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
+
 # Install Node.js vscode-js-debug from official tarball
 # Tests expect js-debug at /tmp/js-debug/src/dapDebugServer.js
 RUN cd /tmp && \
