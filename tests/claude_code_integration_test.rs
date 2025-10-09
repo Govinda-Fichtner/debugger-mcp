@@ -168,37 +168,83 @@ The report should include:
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
     println!("✅ Created prompt at {}", prompt_path.display());
 
-    // 6. Create MCP server configuration file
-    println!("\n⚙️  Step 6: Creating MCP server configuration...");
+    // 6. Register MCP server with Claude CLI
+    println!("\n⚙️  Step 6: Registering MCP server with Claude CLI...");
 
-    let mcp_config_path = test_dir.join("mcp_config.json");
+    // Build MCP server configuration JSON
     let mcp_config = json!({
-        "mcpServers": {
-            "debugger-test": {
-                "command": binary_path,
-                "args": [],
-                "env": {}
-            }
-        }
+        "command": binary_path.to_str().unwrap(),
+        "args": []
     });
 
-    fs::write(
-        &mcp_config_path,
-        serde_json::to_string_pretty(&mcp_config).expect("Failed to serialize MCP config"),
-    )
-    .expect("Failed to write MCP config");
-
-    println!(
-        "✅ MCP server configuration created at {}",
-        mcp_config_path.display()
-    );
+    let mcp_config_str = serde_json::to_string(&mcp_config).expect("Failed to serialize config");
     println!(
         "   Config: {}",
         serde_json::to_string_pretty(&mcp_config).unwrap()
     );
 
-    // 7. Run Claude with the prompt
-    println!("\n🤖 Step 7: Running Claude Code with debugging task...");
+    // Register the MCP server using claude mcp add-json
+    let register_output = Command::new("claude")
+        .arg("mcp")
+        .arg("add-json")
+        .arg("debugger-test")
+        .arg(&mcp_config_str)
+        .output()
+        .expect("Failed to register MCP server");
+
+    if !register_output.status.success() {
+        eprintln!(
+            "❌ Failed to register MCP server:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&register_output.stdout),
+            String::from_utf8_lossy(&register_output.stderr)
+        );
+        panic!("MCP server registration failed");
+    }
+    println!("✅ MCP server 'debugger-test' registered");
+
+    // 7. Verify MCP server is configured
+    println!("\n🔍 Step 7: Verifying MCP server configuration...");
+
+    let list_output = Command::new("claude")
+        .arg("mcp")
+        .arg("list")
+        .output()
+        .expect("Failed to list MCP servers");
+
+    let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+    println!("   MCP servers configured:");
+    println!("{}", list_stdout);
+
+    assert!(
+        list_stdout.contains("debugger-test"),
+        "❌ MCP server 'debugger-test' not found in claude mcp list output"
+    );
+    println!("✅ MCP server 'debugger-test' is properly configured");
+
+    // 8. Test MCP server connection
+    println!("\n🔌 Step 8: Testing MCP server connection...");
+
+    // Use a simple test to verify the server starts and responds
+    let test_connection = Command::new("claude")
+        .arg("test connection")
+        .arg("--print")
+        .arg("--dangerously-skip-permissions")
+        .current_dir(test_dir)
+        .output()
+        .expect("Failed to test connection");
+
+    let test_stdout = String::from_utf8_lossy(&test_connection.stdout);
+    let test_stderr = String::from_utf8_lossy(&test_connection.stderr);
+
+    if !test_connection.status.success() {
+        println!("⚠️  Connection test output:");
+        println!("stdout: {}", test_stdout);
+        println!("stderr: {}", test_stderr);
+    }
+    println!("✅ MCP server connection test completed");
+
+    // 9. Run Claude with the debugging prompt
+    println!("\n🤖 Step 9: Running Claude Code with debugging task...");
     println!("   This may take 30-60 seconds...");
 
     // Read the prompt from the file
@@ -208,9 +254,6 @@ The report should include:
         .arg(&prompt_text) // Prompt comes first
         .arg("--print")
         .arg("--dangerously-skip-permissions") // For automated testing
-        .arg("--mcp-config")
-        .arg(mcp_config_path.to_str().unwrap())
-        .arg("--debug") // Enable debug logging
         .current_dir(test_dir)
         .output()
         .expect("Failed to run claude");
@@ -226,8 +269,8 @@ The report should include:
         println!("{}", stderr);
     }
 
-    // 8. Check if protocol log was created
-    println!("\n📋 Step 8: Validating protocol documentation...");
+    // 10. Check if protocol log was created
+    println!("\n📋 Step 10: Validating protocol documentation...");
     let protocol_log_path = test_dir.join("mcp_protocol_log.md");
 
     assert!(
@@ -240,8 +283,8 @@ The report should include:
 
     println!("✅ Protocol log created ({} bytes)", protocol_log.len());
 
-    // 9. Validate protocol log contents
-    println!("\n🔍 Step 9: Analyzing protocol log...");
+    // 11. Validate protocol log contents
+    println!("\n🔍 Step 11: Analyzing protocol log...");
 
     // Check for key operations
     let has_debugger_start = protocol_log.contains("debugger_start");
@@ -278,12 +321,21 @@ The report should include:
     println!("{}", protocol_log);
     println!("════════════════════════════════════════════════════════════════");
 
-    // 10. Cleanup (temp dir will be automatically deleted)
-    println!("\n🧹 Step 10: Cleanup...");
+    // 12. Cleanup MCP server and temp directory
+    println!("\n🧹 Step 12: Cleanup...");
+
+    // Remove the MCP server registration
+    let _remove_output = Command::new("claude")
+        .arg("mcp")
+        .arg("remove")
+        .arg("debugger-test")
+        .output();
+
+    println!("✅ MCP server 'debugger-test' removed");
     println!("✅ Temporary directory will be automatically cleaned up");
 
-    // 11. Assertions
-    println!("\n✅ Step 11: Final Validations...");
+    // 13. Assertions
+    println!("\n✅ Step 13: Final Validations...");
 
     assert!(
         has_debugger_start,
