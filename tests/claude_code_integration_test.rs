@@ -172,9 +172,10 @@ The report should include:
     println!("\n⚙️  Step 6: Registering MCP server with Claude CLI...");
 
     // Build MCP server configuration JSON
+    // CRITICAL: Must include "serve" subcommand for STDIO communication
     let mcp_config = json!({
         "command": binary_path.to_str().unwrap(),
-        "args": []
+        "args": ["serve"]
     });
 
     let mcp_config_str = serde_json::to_string(&mcp_config).expect("Failed to serialize config");
@@ -202,8 +203,8 @@ The report should include:
     }
     println!("✅ MCP server 'debugger-test' registered");
 
-    // 7. Verify MCP server is configured
-    println!("\n🔍 Step 7: Verifying MCP server configuration...");
+    // 7. Verify MCP server is configured and connected
+    println!("\n🔍 Step 7: Verifying MCP server configuration and connection...");
 
     let list_output = Command::new("claude")
         .arg("mcp")
@@ -212,36 +213,69 @@ The report should include:
         .expect("Failed to list MCP servers");
 
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
-    println!("   MCP servers configured:");
+    println!("   MCP server status:");
+    println!("════════════════════════════════════════════════════════════════");
     println!("{}", list_stdout);
+    println!("════════════════════════════════════════════════════════════════");
 
+    // Check that debugger-test exists
     assert!(
         list_stdout.contains("debugger-test"),
         "❌ MCP server 'debugger-test' not found in claude mcp list output"
     );
-    println!("✅ MCP server 'debugger-test' is properly configured");
 
-    // 8. Test MCP server connection
-    println!("\n🔌 Step 8: Testing MCP server connection...");
+    // CRITICAL: Check for "✓ Connected" status
+    let is_connected = list_stdout.contains("✓ Connected");
 
-    // Use a simple test to verify the server starts and responds
-    let test_connection = Command::new("claude")
-        .arg("test connection")
+    if !is_connected {
+        eprintln!("\n❌ MCP server 'debugger-test' is NOT connected!");
+        eprintln!("   Output shows: {}", list_stdout);
+
+        if list_stdout.contains("✗") {
+            eprintln!("   Connection failed - check MCP server binary can start");
+        }
+
+        panic!("MCP server must show '✓ Connected' status before running integration test");
+    }
+
+    println!("✅ MCP server 'debugger-test' is properly configured and connected");
+
+    // 8. Verify Claude CLI authentication
+    println!("\n🔐 Step 8: Verifying Claude CLI authentication...");
+
+    // Check if ANTHROPIC_API_KEY is set
+    let api_key =
+        std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY environment variable not set");
+
+    assert!(
+        !api_key.is_empty() && api_key.starts_with("sk-ant-"),
+        "❌ ANTHROPIC_API_KEY must be set and start with 'sk-ant-'"
+    );
+
+    println!(
+        "✅ ANTHROPIC_API_KEY is configured (length: {} chars)",
+        api_key.len()
+    );
+
+    // Test authentication with a simple prompt
+    let auth_test = Command::new("claude")
+        .arg("say 'authenticated'")
         .arg("--print")
         .arg("--dangerously-skip-permissions")
         .current_dir(test_dir)
         .output()
-        .expect("Failed to test connection");
+        .expect("Failed to test authentication");
 
-    let test_stdout = String::from_utf8_lossy(&test_connection.stdout);
-    let test_stderr = String::from_utf8_lossy(&test_connection.stderr);
+    let auth_stdout = String::from_utf8_lossy(&auth_test.stdout);
 
-    if !test_connection.status.success() {
-        println!("⚠️  Connection test output:");
-        println!("stdout: {}", test_stdout);
-        println!("stderr: {}", test_stderr);
+    if !auth_test.status.success() || auth_stdout.contains("Invalid API key") {
+        eprintln!("❌ Claude CLI authentication failed:");
+        eprintln!("stdout: {}", auth_stdout);
+        eprintln!("stderr: {}", String::from_utf8_lossy(&auth_test.stderr));
+        panic!("Authentication failed - please check ANTHROPIC_API_KEY is valid");
     }
-    println!("✅ MCP server connection test completed");
+
+    println!("✅ Claude CLI authenticated successfully");
 
     // 9. Run Claude with the debugging prompt
     println!("\n🤖 Step 9: Running Claude Code with debugging task...");

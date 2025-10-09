@@ -15,8 +15,9 @@ if [ "$(id -u)" = "0" ]; then
 
     # Switch to testuser and run the command
     # Export all arguments as environment variable to pass through su
+    # Preserve ANTHROPIC_API_KEY for Claude CLI authentication
     export DOCKER_CMD="$*"
-    exec su testuser -c 'cd /workspace && eval "$DOCKER_CMD"'
+    exec su testuser -c "export ANTHROPIC_API_KEY='$ANTHROPIC_API_KEY'; cd /workspace && eval \"\$DOCKER_CMD\""
 else
     # Already running as testuser, just execute the command
     cd /workspace
