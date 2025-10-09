@@ -284,6 +284,19 @@ The report should include:
     // Read the prompt from the file
     let prompt_text = fs::read_to_string(&prompt_path).expect("Failed to read prompt file");
 
+    // Print the command for debugging
+    println!("\n📝 Claude CLI Command:");
+    println!("   cd {}", test_dir.display());
+    println!("   claude \\");
+    println!("     \"<prompt-from-file>\" \\");
+    println!("     --print \\");
+    println!("     --dangerously-skip-permissions");
+    println!("\n   Prompt length: {} chars", prompt_text.len());
+    println!(
+        "   Prompt first 200 chars: {}",
+        &prompt_text.chars().take(200).collect::<String>()
+    );
+
     let claude_output = Command::new("claude")
         .arg(&prompt_text) // Prompt comes first
         .arg("--print")
