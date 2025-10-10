@@ -78,7 +78,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
 ENV PATH="/usr/local/lib/codelldb/adapter:${PATH}"
 
 # Install Go Delve debugger
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+RUN go install github.com/go-delve/delve/cmd/dlv@latest && \
+    cp /root/go/bin/dlv /usr/local/bin/dlv && \
+    chmod +x /usr/local/bin/dlv
 
 # Note: Skipping cargo-nextest and cargo-tarpaulin due to edition2024 dependency issues
 # These tools require Rust 1.86+ which is not yet stable

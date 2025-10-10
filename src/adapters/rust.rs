@@ -567,6 +567,12 @@ impl RustAdapter {
             "program": binary_path,  // Compiled binary, not source
             "args": args,
             "stopOnEntry": stop_on_entry,
+            // Add console mode for better process control (similar to Python's internalConsole)
+            "terminal": "console",
+            // Ensure STDIO is properly handled - prevents issues on ARM64
+            "stdio": [null, null, null],
+            // Explicitly set source path to help with breakpoint resolution
+            "sourceMap": {".": "."},
         });
 
         if let Some(cwd_path) = cwd {
