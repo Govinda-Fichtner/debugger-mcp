@@ -142,16 +142,30 @@ I'll diff each pair in next step to determine:
 
 ### Level 5: E2E Tests (Heaviest, Docker + External Tools)
 
+**CORRECTION: We have 6 E2E tests, not 1!**
+
+#### Per-Language E2E Tests (5 tests - in matrix CI)
+Each matrix language test file has **4 tests**, where **test #4 is an E2E test**:
+
+| Language | File | Test #4 Name | Status |
+|----------|------|--------------|--------|
+| Python | `python_integration_test.rs` | `test_python_claude_code_integration` | ✅ Working |
+| Ruby | `ruby_integration_test.rs` | `test_ruby_claude_code_integration` | ✅ Working |
+| Node.js | `nodejs_integration_test.rs` | `test_nodejs_claude_code_integration` | ✅ Working |
+| Go | `go_integration_test.rs` | `test_go_claude_code_integration` | ⚠️ Implemented, not fully working yet |
+| Rust | `rust_integration_test.rs` | `test_rust_claude_code_integration` | ⚠️ Implemented, not fully working yet |
+
+#### Standalone Comprehensive E2E Test (1 test)
 | File | Lines | Tests | Purpose | Keep? |
 |------|-------|-------|---------|-------|
-| `claude_code_integration_test.rs` | 580 | 1 | Full E2E with Claude CLI | ✅ Yes |
+| `claude_code_integration_test.rs` | 580 | 1 | Full orchestration (9 steps): CLI check → binary verification → prompt creation → MCP registration → authentication → execution | ✅ Yes |
 
 **Analysis:**
-- Tests the full MCP server → Claude Code CLI workflow
-- Highest confidence test (exercises real-world usage)
-- Slow but essential
-- **Note:** Each language matrix test also has a Claude Code integration test (4th test in each file)
-- **Recommendation:** Keep, move to `tests/integration/e2e/`
+- **Per-language E2E tests (test #4 in each matrix file):** Test language-specific Claude Code CLI integration
+- **Standalone comprehensive test:** Tests full orchestration with extensive validation
+- **Total:** 6 E2E tests (5 per-language + 1 comprehensive)
+- Python, Ruby, Node.js E2E tests are working; Go and Rust need tooling fixes
+- **Recommendation:** Keep all 6, organize in folder structure
 
 ---
 
