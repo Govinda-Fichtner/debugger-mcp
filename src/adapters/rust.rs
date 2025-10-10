@@ -88,11 +88,16 @@ impl RustAdapter {
     /// Get CodeLLDB command path
     ///
     /// Checks multiple locations in order:
-    /// 1. /usr/local/bin/codelldb (Docker container)
-    /// 2. /usr/bin/codelldb (system install)
-    /// 3. codelldb (in PATH)
+    /// 1. /usr/local/lib/codelldb/adapter/codelldb (Docker container - new location)
+    /// 2. /usr/local/bin/codelldb (Docker container - old location)
+    /// 3. /usr/bin/codelldb (system install)
+    /// 4. codelldb (in PATH)
     pub fn command() -> String {
-        let locations = vec!["/usr/local/bin/codelldb", "/usr/bin/codelldb"];
+        let locations = vec![
+            "/usr/local/lib/codelldb/adapter/codelldb",
+            "/usr/local/bin/codelldb",
+            "/usr/bin/codelldb",
+        ];
 
         for location in locations {
             if Path::new(location).exists() {
