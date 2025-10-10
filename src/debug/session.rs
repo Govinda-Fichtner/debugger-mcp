@@ -589,11 +589,12 @@ impl DebugSession {
         // Use the DapClient's event-driven initialize_and_launch method with timeout
         // This properly handles the 'initialized' event and configurationDone sequence
         // Timeout: 7s (2s for init + 5s for launch, as per TIMEOUT_IMPLEMENTATION.md)
-        // Pass adapter type for language-specific workarounds (e.g., Ruby stopOnEntry fix)
+        // Pass adapter type for language-specific workarounds (e.g., Ruby/Go stopOnEntry fix)
         let adapter_type = match self.language.as_str() {
             "python" => Some("python"),
             "ruby" => Some("ruby"),
             "nodejs" => Some("nodejs"),
+            "go" => Some("go"),
             _ => None,
         };
         client

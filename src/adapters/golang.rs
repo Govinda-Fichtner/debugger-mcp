@@ -155,11 +155,11 @@ impl DebugAdapterLogger for GoAdapter {
     }
 
     fn requires_workaround(&self) -> bool {
-        false
+        true // Go/Delve needs entry breakpoint workaround like Ruby
     }
 
     fn workaround_reason(&self) -> Option<&str> {
-        None
+        Some("Delve doesn't reliably stop at breakpoints without an entry breakpoint set first. Similar to Ruby's rdbg issue.")
     }
 
     fn log_spawn_error(&self, error: &dyn std::error::Error) {
@@ -311,7 +311,11 @@ mod tests {
         assert_eq!(adapter.transport_type(), "TCP Socket");
         assert_eq!(adapter.adapter_id(), "delve");
         assert_eq!(adapter.command_line(), "dlv dap --listen=127.0.0.1:<PORT>");
-        assert!(!adapter.requires_workaround());
-        assert_eq!(adapter.workaround_reason(), None);
+        assert!(adapter.requires_workaround()); // Go needs entry breakpoint workaround
+        assert!(adapter.workaround_reason().is_some());
+        assert!(adapter
+            .workaround_reason()
+            .unwrap()
+            .contains("entry breakpoint"));
     }
 }

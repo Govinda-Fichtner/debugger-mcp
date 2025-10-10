@@ -120,7 +120,8 @@ async fn test_go_fizzbuzz_debugging_integration() {
             return Ok(());
         }
 
-        // 1. Start debugger session with stopOnEntry
+        // 1. Start debugger session with stopOnEntry to allow breakpoint setting
+        // This is the standard DAP pattern for short programs like FizzBuzz
         println!("🔧 Starting Go debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
@@ -128,7 +129,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
             "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
-            "stopOnEntry": true
+            "stopOnEntry": true  // Stop at entry to allow breakpoint setting before execution
         });
 
         let start_result = timeout(
@@ -158,7 +159,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
         println!("✅ Go debug session started: {}", session_id);
 
         // Give debugger a moment to stop at entry
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         // 2. Set breakpoint at fizzbuzz function (line 13)
         println!("🎯 Setting breakpoint at line 13");
@@ -188,30 +189,36 @@ async fn test_go_fizzbuzz_debugging_integration() {
             }
         }
 
-        // 3. Continue execution
+        // 3. Continue execution (program will run and hit breakpoint)
         println!("▶️  Continuing execution...");
 
         let continue_args = json!({
             "sessionId": session_id
         });
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let continue_result = tools_handler
-            .handle_tool("debugger_continue", continue_args)
-            .await;
+        let continue_result = timeout(
+            Duration::from_secs(5),
+            tools_handler.handle_tool("debugger_continue", continue_args),
+        )
+        .await;
 
-        if continue_result.is_err() {
-            println!(
-                "⚠️  Continue execution may have issues: {:?}",
-                continue_result
-            );
-        } else {
-            println!("✅ Execution continued");
+        match continue_result {
+            Ok(Ok(_)) => {
+                println!("✅ Execution continued");
+            }
+            Ok(Err(e)) => {
+                println!("⚠️  Continue failed: {:?}", e);
+            }
+            Err(_) => {
+                println!("⚠️  Continue timed out");
+            }
         }
 
-        // Give time for the program to reach breakpoint
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        // Wait for breakpoint to be hit
+        println!("⏳ Waiting for breakpoint to be hit...");
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
         // 4. Get stack trace
         println!("📚 Getting stack trace...");

@@ -637,7 +637,8 @@ impl DapClient {
         );
 
         let adapter_type_str = adapter_type.unwrap_or("");
-        let needs_entry_breakpoint = adapter_type_str == "ruby" || adapter_type_str == "nodejs";
+        let needs_entry_breakpoint =
+            adapter_type_str == "ruby" || adapter_type_str == "nodejs" || adapter_type_str == "go";
         let stop_on_entry = launch_args
             .get("stopOnEntry")
             .and_then(|v| v.as_bool())
@@ -723,6 +724,8 @@ impl DapClient {
                                 // Find first executable line based on language
                                 let entry_line = if adapter_type_str == "ruby" {
                                     Self::find_first_executable_line_ruby(path)
+                                } else if adapter_type_str == "go" {
+                                    Self::find_first_executable_line_go(path)
                                 } else {
                                     Self::find_first_executable_line_javascript(path)
                                 };
@@ -971,6 +974,78 @@ impl DapClient {
             // Found first executable line!
             info!("  First executable line detected: {}", line_num + 1);
             return line_num + 1; // DAP uses 1-indexed lines
+        }
+
+        // Fallback: No executable line found, use line 1
+        warn!("No executable line found in {}, using line 1", program_path);
+        1
+    }
+
+    /// Find the first executable line in a Go source file
+    ///
+    /// Skips package declarations, imports, comments, and function signatures
+    /// to find the first actual executable line (typically inside main function).
+    ///
+    /// Returns line number (1-indexed) or 1 as fallback.
+    fn find_first_executable_line_go(program_path: &str) -> usize {
+        use std::fs;
+
+        let content = match fs::read_to_string(program_path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(
+                    "Could not read {} for line detection: {}, using line 1",
+                    program_path, e
+                );
+                return 1;
+            }
+        };
+
+        let mut in_func_main = false;
+
+        for (line_num, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Skip package declaration
+            if trimmed.starts_with("package ") {
+                continue;
+            }
+
+            // Skip import statements (single line and multi-line)
+            if trimmed.starts_with("import ") || trimmed.starts_with("import(") {
+                continue;
+            }
+
+            // Skip comments (// and /*)
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue;
+            }
+
+            // Detect main function
+            if trimmed.starts_with("func main()") {
+                in_func_main = true;
+                continue;
+            }
+
+            // If we're inside main function, find first executable line
+            if in_func_main {
+                // Skip opening brace, comments, and variable declarations without initialization
+                if trimmed == "{" || trimmed.starts_with("//") || trimmed.starts_with("var ") {
+                    continue;
+                }
+
+                // Found first executable line inside main!
+                info!(
+                    "  First executable line detected (Go main): {}",
+                    line_num + 1
+                );
+                return line_num + 1; // DAP uses 1-indexed lines
+            }
         }
 
         // Fallback: No executable line found, use line 1
