@@ -103,7 +103,7 @@ jobs:
         include:
           # Language-specific metadata
           - language: python
-            test_file: integration_test
+            test_file: python_integration_test
             emoji: 🐍
             adapter: debugpy
           - language: ruby
