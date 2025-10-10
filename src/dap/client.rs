@@ -637,8 +637,10 @@ impl DapClient {
         );
 
         let adapter_type_str = adapter_type.unwrap_or("");
-        let needs_entry_breakpoint =
-            adapter_type_str == "ruby" || adapter_type_str == "nodejs" || adapter_type_str == "go";
+        // NOTE: Go/Delve does NOT use entry breakpoint workaround
+        // Delve's setBreakpoints request clears ALL previous breakpoints, so the entry breakpoint
+        // would be removed when the user sets their first breakpoint
+        let needs_entry_breakpoint = adapter_type_str == "ruby" || adapter_type_str == "nodejs";
         let stop_on_entry = launch_args
             .get("stopOnEntry")
             .and_then(|v| v.as_bool())
