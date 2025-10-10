@@ -44,13 +44,13 @@ analyze_language() {
 
     # Stack trace: Accept multiple patterns for different test scenarios
     # "Stack trace retrieved: N frames" (from fizzbuzz test)
-    # "Retrieved stack trace with N frames" (from claude_code test)
-    local stack_trace=$(grep -iEc "Stack trace retrieved:|Retrieved stack trace with" "$file" || true)
+    # "Retrieved complete stack traces" or "Retrieved stack trace with N frames" (from claude_code test)
+    local stack_trace=$(grep -iEc "Stack trace retrieved:|Retrieved.*stack trace" "$file" || true)
 
     # Evaluation: Accept multiple patterns for different test scenarios
     # "Evaluation result:" (from fizzbuzz test)
-    # "Evaluated variable" or "Evaluated expression" (from claude_code test)
-    local evaluation=$(grep -iEc "Evaluation result:|Evaluated variable|Evaluated expression" "$file" || true)
+    # "Evaluated variable" or "Evaluated expression" or "Inspected variable" (from claude_code test)
+    local evaluation=$(grep -iEc "Evaluation result:|Evaluated variable|Evaluated expression|Inspected variable" "$file" || true)
 
     local disconnect=$(grep -ic "Session disconnected successfully" "$file" || true)
 
