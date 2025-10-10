@@ -610,6 +610,22 @@ impl DapClient {
         launch_args: Value,
         adapter_type: Option<&str>,
     ) -> Result<()> {
+        self.initialize_and_launch_with_pending(
+            adapter_id,
+            launch_args,
+            adapter_type,
+            HashMap::new(),
+        )
+        .await
+    }
+
+    pub async fn initialize_and_launch_with_pending(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+        adapter_type: Option<&str>,
+        pending_breakpoints: HashMap<String, Vec<SourceBreakpoint>>,
+    ) -> Result<()> {
         // Step 1: Send initialize request and get capabilities
         info!("Sending initialize request to adapter");
         let capabilities = self.initialize(adapter_id).await?;
@@ -709,6 +725,47 @@ impl DapClient {
             match tokio::time::timeout(tokio::time::Duration::from_secs(5), init_rx).await {
                 Ok(Ok(())) => {
                     info!("✅ Received 'initialized' event signal");
+
+                    // Apply pending breakpoints BEFORE configurationDone (correct DAP sequence)
+                    if !pending_breakpoints.is_empty() {
+                        info!(
+                            "🔧 Applying {} pending breakpoints before configurationDone",
+                            pending_breakpoints.len()
+                        );
+                        for (source_path, breakpoints) in &pending_breakpoints {
+                            info!(
+                                "  Setting {} breakpoints for {}",
+                                breakpoints.len(),
+                                source_path
+                            );
+                            let source = Source {
+                                path: Some(source_path.clone()),
+                                name: None,
+                                source_reference: None,
+                            };
+                            match self.set_breakpoints(source, breakpoints.clone()).await {
+                                Ok(bps) => {
+                                    info!("  ✅ Set {} breakpoints for {}", bps.len(), source_path);
+                                    for bp in bps {
+                                        if bp.verified {
+                                            info!("    Line {}: verified", bp.line.unwrap_or(0));
+                                        } else {
+                                            warn!(
+                                                "    Line {}: NOT verified",
+                                                bp.line.unwrap_or(0)
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "  ⚠️  Failed to set breakpoints for {}: {}",
+                                        source_path, e
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     // Entry breakpoint workaround: Set breakpoint BEFORE configurationDone
                     // This follows the correct DAP sequence (setBreakpoints must be before configurationDone)
@@ -1357,6 +1414,22 @@ impl DapClient {
         launch_args: Value,
         adapter_type: Option<&str>,
     ) -> Result<()> {
+        self.initialize_and_launch_with_timeout_and_pending(
+            adapter_id,
+            launch_args,
+            adapter_type,
+            HashMap::new(),
+        )
+        .await
+    }
+
+    pub async fn initialize_and_launch_with_timeout_and_pending(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+        adapter_type: Option<&str>,
+        pending_breakpoints: HashMap<String, Vec<SourceBreakpoint>>,
+    ) -> Result<()> {
         let timeout = std::time::Duration::from_secs(7);
         info!("⏱️  initialize_and_launch_with_timeout: Starting with 7s timeout");
         if let Some(atype) = adapter_type {
@@ -1365,7 +1438,12 @@ impl DapClient {
 
         tokio::time::timeout(
             timeout,
-            self.initialize_and_launch(adapter_id, launch_args, adapter_type),
+            self.initialize_and_launch_with_pending(
+                adapter_id,
+                launch_args,
+                adapter_type,
+                pending_breakpoints,
+            ),
         )
         .await
         .map_err(|_| {

@@ -120,8 +120,9 @@ async fn test_go_fizzbuzz_debugging_integration() {
             return Ok(());
         }
 
-        // 1. Start debugger session with stopOnEntry to allow breakpoint setting
-        // This is the standard DAP pattern for short programs like FizzBuzz
+        // 1. Start debugger session
+        // Pending breakpoints will be applied after 'initialized' event, before configurationDone
+        // This is the correct DAP sequence that works reliably for all debuggers including Delve
         println!("🔧 Starting Go debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
@@ -129,7 +130,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
             "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
-            "stopOnEntry": false  // Don't stop - program won't run until we call continue
+            "stopOnEntry": false  // Use pending breakpoints instead of stopOnEntry
         });
 
         let start_result = timeout(
@@ -156,28 +157,19 @@ async fn test_go_fizzbuzz_debugging_integration() {
         };
 
         let session_id = start_response["sessionId"].as_str().unwrap().to_string();
-        println!("✅ Go debug session started (initializing): {}", session_id);
+        println!("✅ Go debug session started: {}", session_id);
 
-        // Give spawned async task time to begin executing (tokio::spawn doesn't guarantee immediate execution)
-        println!("⏳ Waiting 50ms for async task to start...");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // IMPORTANT: Wait a moment to ensure the async initialization task has started
+        // and the session state is "Initializing". This ensures the breakpoint will be
+        // stored as pending and passed to the DAP client during initialization.
+        // Without this delay, the breakpoint might be set after initialization completes,
+        // causing it to miss the correct DAP sequence (after 'initialized', before configurationDone).
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Check session state before setting breakpoint
-        let state_args = json!({ "sessionId": session_id });
-        if let Ok(state_response) = tools_handler
-            .handle_tool("debugger_session_state", state_args)
-            .await
-        {
-            println!(
-                "📊 Session state before breakpoint: {}",
-                state_response["state"].as_str().unwrap_or("unknown")
-            );
-        }
-
-        // 2. Set breakpoint IMMEDIATELY (while still initializing)
-        //    This will be stored as a pending breakpoint if initialization hasn't completed yet
-        //    The pending breakpoint will be applied automatically during initialization
-        println!("🎯 Setting breakpoint at line 13 (will be pending if still initializing)");
+        // 2. Set breakpoint at FizzBuzz function call (line 13)
+        // This will be stored as a pending breakpoint and applied during initialization
+        // (after 'initialized' event, before configurationDone - the correct DAP sequence)
+        println!("🎯 Setting breakpoint at line 13");
 
         let bp_args = json!({
             "sessionId": session_id,
@@ -204,12 +196,13 @@ async fn test_go_fizzbuzz_debugging_integration() {
             }
         }
 
-        // 3. Wait for initialization to complete before continuing
-        //    This ensures pending breakpoints have been applied
-        println!("⏳ Waiting for initialization to complete...");
-        tokio::time::sleep(Duration::from_millis(2000)).await;
+        // CRITICAL: Wait for async initialization to complete
+        // The breakpoint was stored as pending, now wait for initialization to finish
+        // before continuing execution. This ensures breakpoints are actually set in Delve.
+        println!("⏳ Waiting for initialization to complete (2s)...");
+        tokio::time::sleep(Duration::from_secs(2)).await;
 
-        // 4. Continue execution (program will run and hit breakpoint)
+        // 3. Continue execution (program will run and hit breakpoint)
         println!("▶️  Continuing execution...");
 
         let continue_args = json!({

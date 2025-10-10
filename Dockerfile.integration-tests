@@ -28,8 +28,9 @@ RUN rm -f /etc/apt/sources.list.d/* && \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go 1.21.0 (detect architecture)
-ARG GO_VERSION=1.21.0
+# Install Go 1.23.1 (newer version required by Delve 1.25+, which requires Go 1.22+)
+# Delve error: "Go version go1.21.0 is too old for this version of Delve (minimum supported version 1.22)"
+ARG GO_VERSION=1.23.1
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then GOARCH="amd64"; \
     elif [ "$ARCH" = "arm64" ]; then GOARCH="arm64"; \

@@ -84,16 +84,28 @@ cargo test --test test_rust_integration -- --include-ignored
 ### Go (Delve)
 
 **Tests**: `tests/test_golang_integration.rs` (~2 tests)
-**Requires**: Go 1.21+ and Delve
+**Requires**: Go 1.22+ and Delve 1.20+
+
+**Important**: Delve 1.25+ requires Go 1.22 or higher. Using Go 1.21 will result in:
+```
+Failed to launch: Go version go1.21.0 is too old for this version of Delve (minimum supported version 1.22)
+```
 
 ```bash
-# Install Go (example for Linux)
-curl -L https://go.dev/dl/go1.21.0.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
+# Install Go 1.23.1 (example for Linux amd64)
+curl -L https://go.dev/dl/go1.23.1.linux-amd64.tar.gz | sudo tar -C /usr/local -xz
 export PATH="/usr/local/go/bin:$PATH"
+
+# For ARM64, use:
+# curl -L https://go.dev/dl/go1.23.1.linux-arm64.tar.gz | sudo tar -C /usr/local -xz
 
 # Install Delve
 go install github.com/go-delve/delve/cmd/dlv@latest
 export PATH="$HOME/go/bin:$PATH"
+
+# Verify versions
+go version  # Should show go1.22 or higher
+dlv version # Should show Delve 1.20.0 or higher
 
 # Run Go integration tests
 cargo test --test test_golang_integration -- --include-ignored
@@ -230,7 +242,7 @@ The integration test Docker image (`Dockerfile.integration-tests`) includes:
   - Ruby 3.1 + debug gem
   - Node.js 18 + @vscode/js-debug
   - Rust (rustc) + LLDB
-  - Go 1.21 + Delve
+  - Go 1.23.1 + Delve 1.20+ (requires Go 1.22+ for Delve 1.25+)
 - **Tools**:
   - cargo-nextest (parallel test execution)
   - cargo-tarpaulin (code coverage)
