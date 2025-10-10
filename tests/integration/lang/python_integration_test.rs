@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
+#[path = "../../helpers/mod.rs"]
 mod helpers;
 use helpers::log_validator::LogValidator;
 
@@ -436,7 +437,7 @@ async fn test_python_claude_code_integration() {
 
     // 4. Create fizzbuzz.py test file
     let fizzbuzz_path = test_dir.join("fizzbuzz.py");
-    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.py");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.py");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.py");
 
     // 5. Create prompt

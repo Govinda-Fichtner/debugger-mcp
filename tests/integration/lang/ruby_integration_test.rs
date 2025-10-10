@@ -350,7 +350,7 @@ async fn test_ruby_claude_code_integration() {
 
     // 4. Create fizzbuzz.rb test file
     let fizzbuzz_path = test_dir.join("fizzbuzz.rb");
-    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.rb");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.rb");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.rb");
 
     // 5. Create prompt

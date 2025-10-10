@@ -103,23 +103,23 @@ jobs:
         include:
           # Language-specific metadata
           - language: python
-            test_file: integration/lang/python_integration_test
+            test_file: python_integration_test
             emoji: 🐍
             adapter: debugpy
           - language: ruby
-            test_file: integration/lang/ruby_integration_test
+            test_file: ruby_integration_test
             emoji: 💎
             adapter: rdbg/debug gem
           - language: nodejs
-            test_file: integration/lang/nodejs_integration_test
+            test_file: nodejs_integration_test
             emoji: 🟢
             adapter: vscode-js-debug
           - language: go
-            test_file: integration/lang/go_integration_test
+            test_file: go_integration_test
             emoji: 🐹
             adapter: Delve
           - language: rust
-            test_file: integration/lang/rust_integration_test
+            test_file: rust_integration_test
             emoji: 🦀
             adapter: CodeLLDB
 

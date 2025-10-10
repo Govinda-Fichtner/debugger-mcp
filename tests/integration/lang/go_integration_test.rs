@@ -362,7 +362,7 @@ async fn test_go_claude_code_integration() {
 
     // 4. Create fizzbuzz.go test file
     let fizzbuzz_path = test_dir.join("fizzbuzz.go");
-    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.go");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.go");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.go");
 
     // 5. Create prompt

@@ -345,7 +345,7 @@ async fn test_nodejs_claude_code_integration() {
 
     // 4. Create fizzbuzz.js test file
     let fizzbuzz_path = test_dir.join("fizzbuzz.js");
-    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.js");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.js");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.js");
 
     // 5. Create prompt
