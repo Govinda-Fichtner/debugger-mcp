@@ -64,10 +64,10 @@ RUN cd /tmp && \
 # Download platform-specific binary from GitHub releases
 ARG CODELLDB_VERSION=v1.11.3
 RUN ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then CODELLDB_ARCH="x86_64"; \
-    elif [ "$ARCH" = "arm64" ]; then CODELLDB_ARCH="aarch64"; \
+    if [ "$ARCH" = "amd64" ]; then CODELLDB_FILE="codelldb-linux-x64.vsix"; \
+    elif [ "$ARCH" = "arm64" ]; then CODELLDB_FILE="codelldb-linux-arm64.vsix"; \
     else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
-    curl -L https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/codelldb-${CODELLDB_ARCH}-linux.vsix -o /tmp/codelldb.vsix && \
+    curl -L https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/${CODELLDB_FILE} -o /tmp/codelldb.vsix && \
     cd /tmp && unzip -q codelldb.vsix "extension/*" && \
     mkdir -p /usr/local/lib/codelldb && \
     mv extension/* /usr/local/lib/codelldb/ && \
