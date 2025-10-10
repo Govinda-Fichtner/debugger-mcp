@@ -568,4 +568,20 @@ mod tests {
             other => panic!("Expected JSON error, got: {:?}", other),
         }
     }
+
+    // Tests for the actual StdioTransport struct (not the test helper)
+    #[tokio::test]
+    async fn test_stdio_transport_new() {
+        // Test that we can create a StdioTransport
+        let transport = StdioTransport::new();
+        // Just verify it compiles and runs
+        drop(transport);
+    }
+
+    #[tokio::test]
+    async fn test_stdio_transport_default() {
+        // Test the Default impl
+        let transport = StdioTransport::default();
+        drop(transport);
+    }
 }

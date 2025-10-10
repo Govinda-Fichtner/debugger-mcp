@@ -61,3 +61,15 @@ impl McpServer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_mcp_server_new() {
+        // Test that we can create a new MCP server
+        let server = McpServer::new().await;
+        assert!(server.is_ok(), "Should create MCP server successfully");
+    }
+}

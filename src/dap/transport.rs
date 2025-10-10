@@ -267,4 +267,32 @@ mod tests {
             mock_transport.write_message(&request).await.unwrap();
         }
     }
+
+    // Tests for actual DapTransport constructors (not mocks)
+    #[tokio::test]
+    async fn test_dap_transport_new_socket() {
+        // Test creating a TCP socket transport
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Connect to create a socket
+        let handle = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            socket
+        });
+
+        let client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let _server_socket = handle.await.unwrap();
+
+        // Create transport from socket
+        let transport = DapTransport::new_socket(client);
+
+        // Verify it's the Socket variant
+        match transport {
+            DapTransport::Socket { .. } => {}
+            _ => panic!("Expected Socket variant"),
+        }
+    }
 }
