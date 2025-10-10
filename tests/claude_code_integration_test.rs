@@ -195,12 +195,18 @@ The report should include:
         serde_json::to_string_pretty(&mcp_config).unwrap()
     );
 
-    // Register the MCP server using claude mcp add-json
+    // IMPORTANT: MCP configuration is directory-specific
+    // Register from workspace root where we'll also run Claude
+    println!(
+        "   Registering MCP from directory: {}",
+        workspace_root.display()
+    );
     let register_output = Command::new("claude")
         .arg("mcp")
         .arg("add-json")
         .arg("debugger-test")
         .arg(&mcp_config_str)
+        .current_dir(&workspace_root) // Register from workspace root
         .output()
         .expect("Failed to register MCP server");
 
@@ -217,9 +223,14 @@ The report should include:
     // 7. Verify MCP server is configured and connected
     println!("\n🔍 Step 7: Verifying MCP server configuration and connection...");
 
+    println!(
+        "   Checking MCP list from directory: {}",
+        workspace_root.display()
+    );
     let list_output = Command::new("claude")
         .arg("mcp")
         .arg("list")
+        .current_dir(&workspace_root) // List from same directory as registration
         .output()
         .expect("Failed to list MCP servers");
 
@@ -292,12 +303,109 @@ The report should include:
     println!("\n🤖 Step 9: Running Claude Code with debugging task...");
     println!("   This may take 30-60 seconds...");
 
-    // Read the prompt from the file
-    let prompt_text = fs::read_to_string(&prompt_path).expect("Failed to read prompt file");
+    // Copy test files to workspace root so Claude runs in same directory as MCP registration
+    // This is critical because MCP configuration is directory-specific
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.py");
+    let workspace_prompt = workspace_root.join("debug_prompt.md");
+
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.py to workspace");
+    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt to workspace");
+
+    println!("   Copied test files to workspace root:");
+    println!("     - {}", workspace_fizzbuzz.display());
+    println!("     - {}", workspace_prompt.display());
+
+    // Update prompt to reference files in workspace root
+    let prompt = format!(
+        r#"# Debugging Task
+
+You are testing the Debugger MCP server integration. Your task is to:
+
+1. List available MCP server tools and resources
+2. Start a debugging session for the fizzbuzz.py program
+3. Poll for session state until ready
+4. Set a breakpoint at line 21 (where the bug is)
+5. Continue execution
+6. Document ALL MCP JSON-RPC protocol messages you send and receive
+
+## Steps
+
+### Step 0: List Available MCP Tools
+
+FIRST, list all available MCP server tools and resources you have access to.
+This helps verify the debugger MCP server is properly connected.
+
+Example question: "Can you list the mcp server tools you have available?"
+
+Document in your report:
+- How many debugger tools are available
+- The names of the debugger tools
+- Any resources exposed by the debugger server
+
+### Step 1: Start Debugging Session
+
+Use the `debugger_start` tool to start debugging the program:
+- language: "python"
+- program: "{}"
+- stopOnEntry: true
+
+Record the sessionId returned.
+
+### Step 2: Poll for Session State
+
+Use the `debugger_session_state` tool repeatedly to check the session state.
+Record each state you see (NotStarted, Initializing, Running, Stopped, etc.)
+
+Continue polling until the state is either "Running" or "Stopped".
+
+### Step 3: Set Breakpoint
+
+Once the session is ready, use `debugger_set_breakpoint` to set a breakpoint:
+- sessionId: (from step 1)
+- sourcePath: "{}"
+- line: 21
+
+### Step 4: Continue Execution
+
+Use `debugger_continue` to continue execution until the breakpoint is hit.
+
+### Step 5: Disconnect
+
+Use `debugger_disconnect` to end the debugging session.
+
+### Step 6: Document Protocol
+
+Create a report showing:
+1. All MCP tool calls you made (with arguments)
+2. All responses you received (with results)
+3. The sequence of session states observed
+4. Any errors encountered
+
+Save this report to a file called "mcp_protocol_log.md" in markdown format.
+
+The report should include:
+- Clear sections for each step
+- JSON formatting for all tool calls and responses
+- Timestamps or sequence numbers
+- Success/failure indicators
+
+## Important Notes
+
+- Document EVERY MCP tool call and response
+- Include the full JSON for each interaction
+- Note the timing/sequence of state changes
+- If anything fails, document the error clearly
+"#,
+        workspace_fizzbuzz.display(),
+        workspace_fizzbuzz.display()
+    );
+
+    fs::write(&workspace_prompt, prompt).expect("Failed to write updated prompt");
+    let prompt_text = fs::read_to_string(&workspace_prompt).expect("Failed to read prompt file");
 
     // Print the command for debugging
     println!("\n📝 Claude CLI Command:");
-    println!("   cd {}", test_dir.display());
+    println!("   cd {}", workspace_root.display());
     println!("   claude \\");
     println!("     \"<prompt-from-file>\" \\");
     println!("     --print \\");
@@ -307,12 +415,17 @@ The report should include:
         "   Prompt first 200 chars: {}",
         &prompt_text.chars().take(200).collect::<String>()
     );
+    println!("\n   ⚠️  CRITICAL: Running Claude from workspace root (same directory as MCP registration)");
+    println!(
+        "      MCP config is directory-specific, so both must use: {}",
+        workspace_root.display()
+    );
 
     let claude_output = Command::new("claude")
         .arg(&prompt_text) // Prompt comes first
         .arg("--print")
         .arg("--dangerously-skip-permissions") // For automated testing
-        .current_dir(test_dir)
+        .current_dir(&workspace_root) // Run from workspace root where MCP is registered
         .output()
         .expect("Failed to run claude");
 
@@ -329,7 +442,11 @@ The report should include:
 
     // 10. Check if protocol log was created
     println!("\n📋 Step 10: Validating protocol documentation...");
-    let protocol_log_path = test_dir.join("mcp_protocol_log.md");
+    let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
+    println!(
+        "   Looking for protocol log at: {}",
+        protocol_log_path.display()
+    );
 
     // Check if Claude Code created the log file
     if !protocol_log_path.exists() {
@@ -354,7 +471,12 @@ The report should include:
             .arg("mcp")
             .arg("remove")
             .arg("debugger-test")
+            .current_dir(&workspace_root) // Remove from same directory as registration
             .output();
+
+        // Clean up test files from workspace root
+        let _ = fs::remove_file(&workspace_fizzbuzz);
+        let _ = fs::remove_file(&workspace_prompt);
 
         println!("\n🧹 Cleanup complete");
         println!("\n🎉 MCP Server Validation Complete!");
@@ -410,7 +532,7 @@ The report should include:
     println!("{}", protocol_log);
     println!("════════════════════════════════════════════════════════════════");
 
-    // 12. Cleanup MCP server and temp directory
+    // 12. Cleanup MCP server and test files
     println!("\n🧹 Step 12: Cleanup...");
 
     // Remove the MCP server registration
@@ -418,9 +540,16 @@ The report should include:
         .arg("mcp")
         .arg("remove")
         .arg("debugger-test")
+        .current_dir(&workspace_root) // Remove from same directory as registration
         .output();
 
+    // Clean up test files from workspace root
+    let _ = fs::remove_file(&workspace_fizzbuzz);
+    let _ = fs::remove_file(&workspace_prompt);
+    let _ = fs::remove_file(&protocol_log_path);
+
     println!("✅ MCP server 'debugger-test' removed");
+    println!("✅ Test files cleaned up from workspace root");
     println!("✅ Temporary directory will be automatically cleaned up");
 
     // 13. Assertions
