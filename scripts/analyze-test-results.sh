@@ -34,13 +34,13 @@ analyze_language() {
     # Extract test result
     local test_result=$(grep "test result:" "$file" | tail -1)
 
-    # Check for critical proof points
-    local session_started=$(grep -c "debug session started:" "$file" || true)
-    local breakpoint_set=$(grep -c "Breakpoint set, verified: true" "$file" || true)
-    local execution_continued=$(grep -c "Execution continued" "$file" || true)
-    local stack_trace=$(grep -c "Stack trace retrieved:" "$file" || true)
-    local evaluation=$(grep -c "Evaluation result:" "$file" || true)
-    local disconnect=$(grep -c "Session disconnected successfully" "$file" || true)
+    # Check for critical proof points (case-insensitive)
+    local session_started=$(grep -ic "session started:" "$file" || true)
+    local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
+    local execution_continued=$(grep -ic "Execution continued" "$file" || true)
+    local stack_trace=$(grep -ic "Stack trace retrieved:" "$file" || true)
+    local evaluation=$(grep -ic "Evaluation result:" "$file" || true)
+    local disconnect=$(grep -ic "Session disconnected successfully" "$file" || true)
 
     # Determine overall status
     local status="❌ FAIL"
