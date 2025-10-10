@@ -603,11 +603,19 @@ impl DebugSession {
             .await?;
 
         // Apply pending breakpoints after initialization
-        info!("🔧 Applying pending breakpoints after initialization");
+        let pending_count = {
+            let pending = self.pending_breakpoints.read().await;
+            pending.values().map(|v| v.len()).sum::<usize>()
+        };
+
+        info!(
+            "🔧 Applying {} pending breakpoint(s) after initialization",
+            pending_count
+        );
         let pending = self.pending_breakpoints.read().await;
         for (source_path, breakpoints) in pending.iter() {
             info!(
-                "  Applying {} breakpoint(s) for {}",
+                "  📍 Applying {} breakpoint(s) for {}",
                 breakpoints.len(),
                 source_path
             );
@@ -727,6 +735,11 @@ impl DebugSession {
             state.state.clone()
         };
 
+        info!(
+            "🔍 set_breakpoint called: {}:{}, current state: {:?}",
+            source_path, line, current_state
+        );
+
         // If still initializing, store as pending
         match current_state {
             DebugState::NotStarted | DebugState::Initializing => {
@@ -749,6 +762,7 @@ impl DebugSession {
                 let mut state = self.state.write().await;
                 state.add_breakpoint(source_path, line);
 
+                info!("✅ Breakpoint stored as pending, will be applied during initialization");
                 // Return true to indicate it will be set
                 Ok(true)
             }

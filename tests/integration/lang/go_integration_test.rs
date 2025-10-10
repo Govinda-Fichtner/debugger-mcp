@@ -129,7 +129,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
             "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
-            "stopOnEntry": true  // Stop at entry to allow breakpoint setting before execution
+            "stopOnEntry": false  // Don't stop - program won't run until we call continue
         });
 
         let start_result = timeout(
@@ -156,13 +156,24 @@ async fn test_go_fizzbuzz_debugging_integration() {
         };
 
         let session_id = start_response["sessionId"].as_str().unwrap().to_string();
-        println!("✅ Go debug session started: {}", session_id);
+        println!("✅ Go debug session started (initializing): {}", session_id);
 
-        // Give debugger a moment to stop at entry
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        // Check session state before setting breakpoint
+        let state_args = json!({ "sessionId": session_id });
+        if let Ok(state_response) = tools_handler
+            .handle_tool("debugger_session_state", state_args)
+            .await
+        {
+            println!(
+                "📊 Session state before breakpoint: {}",
+                state_response["state"].as_str().unwrap_or("unknown")
+            );
+        }
 
-        // 2. Set breakpoint at fizzbuzz function (line 13)
-        println!("🎯 Setting breakpoint at line 13");
+        // 2. Set breakpoint IMMEDIATELY (while still initializing)
+        //    This will be stored as a pending breakpoint if initialization hasn't completed yet
+        //    The pending breakpoint will be applied automatically during initialization
+        println!("🎯 Setting breakpoint at line 13 (will be pending if still initializing)");
 
         let bp_args = json!({
             "sessionId": session_id,
@@ -189,14 +200,17 @@ async fn test_go_fizzbuzz_debugging_integration() {
             }
         }
 
-        // 3. Continue execution (program will run and hit breakpoint)
+        // 3. Wait for initialization to complete before continuing
+        //    This ensures pending breakpoints have been applied
+        println!("⏳ Waiting for initialization to complete...");
+        tokio::time::sleep(Duration::from_millis(2000)).await;
+
+        // 4. Continue execution (program will run and hit breakpoint)
         println!("▶️  Continuing execution...");
 
         let continue_args = json!({
             "sessionId": session_id
         });
-
-        tokio::time::sleep(Duration::from_millis(500)).await;
 
         let continue_result = timeout(
             Duration::from_secs(5),
@@ -220,7 +234,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
         println!("⏳ Waiting for breakpoint to be hit...");
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        // 4. Get stack trace
+        // 5. Get stack trace
         println!("📚 Getting stack trace...");
 
         let stack_args = json!({
@@ -247,7 +261,7 @@ async fn test_go_fizzbuzz_debugging_integration() {
             println!("⚠️  Stack trace not available");
         }
 
-        // 5. Evaluate expression
+        // 6. Evaluate expression
         println!("🔍 Evaluating expression 'n'...");
 
         let eval_args = json!({
