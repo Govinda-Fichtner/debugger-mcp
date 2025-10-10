@@ -9,68 +9,67 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
-/// Test Ruby language detection
+/// Test Node.js language detection
 #[tokio::test]
 #[ignore]
-async fn test_ruby_language_detection() {
+async fn test_nodejs_language_detection() {
     let manager = Arc::new(RwLock::new(SessionManager::new()));
     let session_manager = manager.read().await;
 
-    // Try to create a Ruby debug session
+    // Try to create a Node.js debug session
     let result = session_manager
         .create_session(
-            "ruby",
-            "tests/fixtures/fizzbuzz.rb".to_string(),
+            "nodejs",
+            "tests/fixtures/fizzbuzz.js".to_string(),
             vec![],
             None,
             true,
         )
         .await;
 
-    // This should succeed once Ruby adapter is implemented
     assert!(
         result.is_ok(),
-        "Ruby language should be supported: {:?}",
+        "Node.js language should be supported: {:?}",
         result
     );
 }
 
-/// Test Ruby adapter spawning
+/// Test Node.js adapter spawning
 #[tokio::test]
 #[ignore]
-async fn test_ruby_adapter_spawning() {
+async fn test_nodejs_adapter_spawning() {
     let manager = Arc::new(RwLock::new(SessionManager::new()));
     let session_manager = manager.read().await;
 
-    // Create a Ruby debug session
+    // Create a Node.js debug session
     let session_id = session_manager
         .create_session(
-            "ruby",
-            "tests/fixtures/fizzbuzz.rb".to_string(),
+            "nodejs",
+            "tests/fixtures/fizzbuzz.js".to_string(),
             vec![],
             None,
             true,
         )
         .await
-        .expect("Should create Ruby session");
+        .expect("Should create Node.js session");
 
     // Wait a bit for initialization
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Verify session exists
     let session = session_manager.get_session(&session_id).await;
-    assert!(session.is_ok(), "Should get Ruby session");
+    assert!(session.is_ok(), "Should get Node.js session");
 
     // Verify session language
     let session = session.unwrap();
-    assert_eq!(session.language, "ruby");
-    assert_eq!(session.program, "tests/fixtures/fizzbuzz.rb");
+    assert_eq!(session.language, "nodejs");
+    assert_eq!(session.program, "tests/fixtures/fizzbuzz.js");
 }
 
-/// Full Ruby FizzBuzz debugging integration test (mirrors Python test)
+/// Full Node.js FizzBuzz debugging integration test
 #[tokio::test]
 #[ignore]
-async fn test_ruby_fizzbuzz_debugging_integration() {
+async fn test_nodejs_fizzbuzz_debugging_integration() {
     use tokio::time::{timeout, Duration};
 
     // Wrap entire test in timeout
@@ -79,29 +78,36 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         let session_manager = Arc::new(RwLock::new(SessionManager::new()));
         let tools_handler = ToolsHandler::new(Arc::clone(&session_manager));
 
-        // Get absolute path to fizzbuzz.rb
+        // Get absolute path to fizzbuzz.js
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let fizzbuzz_path = PathBuf::from(manifest_dir)
             .join("tests")
             .join("fixtures")
-            .join("fizzbuzz.rb");
+            .join("fizzbuzz.js");
 
         let fizzbuzz_str = fizzbuzz_path.to_string_lossy().to_string();
 
-        // Check if rdbg is available
-        let rdbg_check = std::process::Command::new("rdbg").arg("--version").output();
+        // Check if Node.js and js-debug are available
+        let node_check = std::process::Command::new("node").arg("--version").output();
 
-        if rdbg_check.is_err() || !rdbg_check.unwrap().status.success() {
-            println!("⚠️  Skipping Ruby FizzBuzz test: rdbg not installed");
-            println!("   Install with: gem install debug");
+        if node_check.is_err() || !node_check.unwrap().status.success() {
+            println!("⚠️  Skipping Node.js FizzBuzz test: node not installed");
             return Ok::<(), String>(());
         }
 
+        // Check if js-debug is available at expected location
+        let js_debug_path = PathBuf::from("/tmp/js-debug/src/dapDebugServer.js");
+        if !js_debug_path.exists() {
+            println!("⚠️  Skipping Node.js FizzBuzz test: js-debug not installed at /tmp/js-debug");
+            println!("   Install from: https://github.com/microsoft/vscode-js-debug/releases");
+            return Ok(());
+        }
+
         // 1. Start debugger session with stopOnEntry to allow breakpoint setting
-        println!("🔧 Starting Ruby debug session for: {}", fizzbuzz_str);
+        println!("🔧 Starting Node.js debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
-            "language": "ruby",
+            "language": "nodejs",
             "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
@@ -117,8 +123,7 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         // If adapter spawn fails or times out, skip test gracefully
         let start_result = match start_result {
             Err(_) => {
-                println!("⚠️  Skipping Ruby FizzBuzz test: debugger_start timed out");
-                println!("   This indicates rdbg adapter is not responding properly");
+                println!("⚠️  Skipping Node.js FizzBuzz test: debugger_start timed out");
                 return Ok(());
             }
             Ok(result) => result,
@@ -126,20 +131,19 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         let start_response = match start_result {
             Err(err) => {
-                println!("⚠️  Skipping Ruby FizzBuzz test: {}", err);
-                println!("   This is expected if rdbg adapter is not properly configured");
+                println!("⚠️  Skipping Node.js FizzBuzz test: {}", err);
                 return Ok(());
             }
             Ok(response) => response,
         };
 
         let session_id = start_response["sessionId"].as_str().unwrap().to_string();
-        println!("✅ Ruby debug session started: {}", session_id);
+        println!("✅ Node.js debug session started: {}", session_id);
 
         // Give debugger a moment to stop at entry
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // 2. Set breakpoint at fizzbuzz function (line 5 where "FizzBuzz" is returned)
+        // 2. Set breakpoint at fizzbuzz function (line 5)
         println!("🎯 Setting breakpoint at line 5");
 
         let bp_args = json!({
@@ -167,7 +171,7 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             }
         }
 
-        // 3. Continue execution (program will run and hit breakpoint)
+        // 3. Continue execution
         println!("▶️  Continuing execution...");
 
         let continue_args = json!({
@@ -192,7 +196,7 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         // Give time for the program to reach breakpoint
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
-        // 4. Get stack trace (if stopped at breakpoint)
+        // 4. Get stack trace
         println!("📚 Getting stack trace...");
 
         let stack_args = json!({
@@ -216,10 +220,10 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
                 }
             }
         } else {
-            println!("⚠️  Stack trace not available (program may not be stopped)");
+            println!("⚠️  Stack trace not available");
         }
 
-        // 5. Evaluate expression (get value of 'n')
+        // 5. Evaluate expression
         println!("🔍 Evaluating expression 'n'...");
 
         let eval_args = json!({
@@ -244,7 +248,6 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
 
         let resources_handler = ResourcesHandler::new(Arc::clone(&session_manager));
 
-        // List all sessions
         let sessions_list = resources_handler.read_resource("debugger://sessions").await;
         if let Ok(contents) = sessions_list {
             println!("✅ Sessions resource: {}", contents.uri);
@@ -253,7 +256,6 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             }
         }
 
-        // Get session details
         let session_details = resources_handler
             .read_resource(&format!("debugger://sessions/{}", session_id))
             .await;
@@ -281,20 +283,14 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             println!("⚠️  Disconnect may have issues or timed out");
         }
 
-        // Verify session is removed
         let manager = session_manager.read().await;
         let sessions = manager.list_sessions().await;
 
         if !sessions.contains(&session_id) {
             println!("✅ Session cleaned up from manager");
-        } else {
-            println!("⚠️  Session still in manager (may be expected)");
         }
 
-        println!("\n🎉 Ruby FizzBuzz integration test completed!");
-        println!(
-            "   Note: Some warnings are expected due to async timing and DAP adapter behavior"
-        );
+        println!("\n🎉 Node.js FizzBuzz integration test completed!");
 
         Ok(())
     })
@@ -309,16 +305,15 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
         }
         Err(_) => {
             println!("⚠️  Test timed out after 30 seconds");
-            println!("   This is acceptable - the test validates the API structure");
         }
     }
 }
 
-/// Test that validates Ruby MCP server works with Claude Code CLI
+/// Test that validates Node.js MCP server works with Claude Code CLI
 #[tokio::test]
 #[ignore]
-async fn test_ruby_claude_code_integration() {
-    println!("\n🚀 Starting Ruby Claude Code Integration Test");
+async fn test_nodejs_claude_code_integration() {
+    println!("\n🚀 Starting Node.js Claude Code Integration Test");
     println!("════════════════════════════════════════════════════════════════");
 
     // 1. Check Claude CLI is available
@@ -348,17 +343,17 @@ async fn test_ruby_claude_code_integration() {
         return;
     }
 
-    // 4. Create fizzbuzz.rb test file
-    let fizzbuzz_path = test_dir.join("fizzbuzz.rb");
-    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.rb");
-    fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.rb");
+    // 4. Create fizzbuzz.js test file
+    let fizzbuzz_path = test_dir.join("fizzbuzz.js");
+    let fizzbuzz_code = include_str!("fixtures/fizzbuzz.js");
+    fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.js");
 
     // 5. Create prompt
     let prompt_path = test_dir.join("debug_prompt.md");
     let prompt = format!(
-        r#"# Ruby Debugging Test
+        r#"# Node.js Debugging Test
 
-Test the debugger MCP server with Ruby:
+Test the debugger MCP server with Node.js:
 1. List available MCP tools
 2. Start debugging session for {}
 3. Set breakpoint at line 5
@@ -377,16 +372,16 @@ Create mcp_protocol_log.md documenting all interactions."#,
     });
     let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
 
-    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.rb");
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.js");
     let workspace_prompt = workspace_root.join("debug_prompt.md");
 
-    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.rb");
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.js");
     fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     let register_output = Command::new("claude")
         .arg("mcp")
         .arg("add-json")
-        .arg("debugger-test-ruby")
+        .arg("debugger-test-nodejs")
         .arg(&mcp_config_str)
         .current_dir(&workspace_root)
         .output()
@@ -423,7 +418,7 @@ Create mcp_protocol_log.md documenting all interactions."#,
     let _ = Command::new("claude")
         .arg("mcp")
         .arg("remove")
-        .arg("debugger-test-ruby")
+        .arg("debugger-test-nodejs")
         .current_dir(&workspace_root)
         .output();
 
@@ -431,5 +426,5 @@ Create mcp_protocol_log.md documenting all interactions."#,
     let _ = fs::remove_file(&workspace_prompt);
     let _ = fs::remove_file(&protocol_log_path);
 
-    println!("\n🎉 Ruby Claude Code integration test completed!");
+    println!("\n🎉 Node.js Claude Code integration test completed!");
 }
