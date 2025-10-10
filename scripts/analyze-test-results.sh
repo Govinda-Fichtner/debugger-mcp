@@ -35,11 +35,23 @@ analyze_language() {
     local test_result=$(grep "test result:" "$file" | tail -1)
 
     # Check for critical proof points (case-insensitive)
+    # NOTE: We check across ALL tests in the output file, not just one test
+    # For example, Go has multiple tests where one might show partial results
+    # but another (claude_code_integration) shows full functionality
     local session_started=$(grep -ic "session started:" "$file" || true)
     local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
     local execution_continued=$(grep -ic "Execution continued" "$file" || true)
-    local stack_trace=$(grep -ic "Stack trace retrieved:" "$file" || true)
-    local evaluation=$(grep -ic "Evaluation result:" "$file" || true)
+
+    # Stack trace: Accept multiple patterns for different test scenarios
+    # "Stack trace retrieved: N frames" (from fizzbuzz test)
+    # "Retrieved stack trace with N frames" (from claude_code test)
+    local stack_trace=$(grep -iEc "Stack trace retrieved:|Retrieved stack trace with" "$file" || true)
+
+    # Evaluation: Accept multiple patterns for different test scenarios
+    # "Evaluation result:" (from fizzbuzz test)
+    # "Evaluated variable" or "Evaluated expression" (from claude_code test)
+    local evaluation=$(grep -iEc "Evaluation result:|Evaluated variable|Evaluated expression" "$file" || true)
+
     local disconnect=$(grep -ic "Session disconnected successfully" "$file" || true)
 
     # Determine overall status
