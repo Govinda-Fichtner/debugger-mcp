@@ -240,8 +240,9 @@ async fn test_rust_fizzbuzz_debugging_integration() {
         let session_id = start_response["sessionId"].as_str().unwrap().to_string();
         println!("✅ Rust debug session started: {}", session_id);
 
-        // Give debugger a moment to stop at entry
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Give spawned async task time to begin executing (tokio::spawn doesn't guarantee immediate execution)
+        println!("⏳ Waiting 50ms for async task to start...");
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         // 2. Set breakpoint at main function (line 5 in fizzbuzz.rs)
         println!("🎯 Setting breakpoint at line 5");

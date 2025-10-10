@@ -158,6 +158,10 @@ async fn test_go_fizzbuzz_debugging_integration() {
         let session_id = start_response["sessionId"].as_str().unwrap().to_string();
         println!("✅ Go debug session started (initializing): {}", session_id);
 
+        // Give spawned async task time to begin executing (tokio::spawn doesn't guarantee immediate execution)
+        println!("⏳ Waiting 50ms for async task to start...");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
         // Check session state before setting breakpoint
         let state_args = json!({ "sessionId": session_id });
         if let Ok(state_response) = tools_handler
