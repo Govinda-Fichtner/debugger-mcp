@@ -853,6 +853,39 @@ impl DebugSession {
     }
 
     pub async fn evaluate(&self, expression: &str, frame_id: Option<i32>) -> Result<String> {
+        // If frame_id is None, auto-fetch it from stack trace using correct thread ID
+        let frame_id = if let Some(id) = frame_id {
+            Some(id)
+        } else {
+            // Get current thread ID from Stopped state
+            let state = self.state.read().await;
+            if let DebugState::Stopped { thread_id, .. } = &state.state {
+                // Get stack trace with correct thread ID
+                let client_arc = self.get_debug_client().await;
+                let client = client_arc.read().await;
+                match client.stack_trace(*thread_id).await {
+                    Ok(frames) if !frames.is_empty() => {
+                        info!(
+                            "📍 Auto-fetched frame_id {} from thread {}",
+                            frames[0].id, thread_id
+                        );
+                        Some(frames[0].id)
+                    }
+                    Ok(_) => {
+                        warn!("⚠️  No stack frames available for evaluate");
+                        None
+                    }
+                    Err(e) => {
+                        warn!("⚠️  Failed to get stack trace for evaluate: {}", e);
+                        None
+                    }
+                }
+            } else {
+                warn!("⚠️  Cannot auto-fetch frame_id: not in Stopped state");
+                None
+            }
+        };
+
         let client_arc = self.get_debug_client().await;
         let client = client_arc.read().await;
         client.evaluate(expression, frame_id).await
