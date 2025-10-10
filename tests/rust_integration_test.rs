@@ -45,9 +45,16 @@ fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
 #[tokio::test]
 #[ignore]
 async fn test_rust_language_detection() {
-    // Check if lldb and rustc are available
+    // Check if codelldb, lldb and rustc are available
+    let codelldb_check = Command::new("codelldb").arg("--version").output();
     let lldb_check = Command::new("lldb").arg("--version").output();
     let rustc_check = Command::new("rustc").arg("--version").output();
+
+    if codelldb_check.is_err() || !codelldb_check.unwrap().status.success() {
+        println!("⚠️  Skipping test: codelldb not installed");
+        println!("   Install CodeLLDB from: https://github.com/vadimcn/codelldb/releases");
+        return;
+    }
 
     if lldb_check.is_err() || !lldb_check.unwrap().status.success() {
         println!("⚠️  Skipping test: lldb not installed");
@@ -97,9 +104,16 @@ async fn test_rust_language_detection() {
 #[tokio::test]
 #[ignore]
 async fn test_rust_adapter_spawning() {
-    // Check if lldb and rustc are available
+    // Check if codelldb, lldb and rustc are available
+    let codelldb_check = Command::new("codelldb").arg("--version").output();
     let lldb_check = Command::new("lldb").arg("--version").output();
     let rustc_check = Command::new("rustc").arg("--version").output();
+
+    if codelldb_check.is_err() || !codelldb_check.unwrap().status.success() {
+        println!("⚠️  Skipping test: codelldb not installed");
+        println!("   Install CodeLLDB from: https://github.com/vadimcn/codelldb/releases");
+        return;
+    }
 
     if lldb_check.is_err() || !lldb_check.unwrap().status.success() {
         println!("⚠️  Skipping test: lldb not installed");

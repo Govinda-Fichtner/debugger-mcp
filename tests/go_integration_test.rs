@@ -13,6 +13,15 @@ use tokio::sync::RwLock;
 #[tokio::test]
 #[ignore]
 async fn test_go_language_detection() {
+    // Check if dlv is available
+    let dlv_check = Command::new("dlv").arg("version").output();
+
+    if dlv_check.is_err() || !dlv_check.unwrap().status.success() {
+        println!("⚠️  Skipping test: dlv (Delve) not installed");
+        println!("   Install with: go install github.com/go-delve/delve/cmd/dlv@latest");
+        return;
+    }
+
     let manager = Arc::new(RwLock::new(SessionManager::new()));
     let session_manager = manager.read().await;
 
@@ -38,6 +47,15 @@ async fn test_go_language_detection() {
 #[tokio::test]
 #[ignore]
 async fn test_go_adapter_spawning() {
+    // Check if dlv is available
+    let dlv_check = Command::new("dlv").arg("version").output();
+
+    if dlv_check.is_err() || !dlv_check.unwrap().status.success() {
+        println!("⚠️  Skipping test: dlv (Delve) not installed");
+        println!("   Install with: go install github.com/go-delve/delve/cmd/dlv@latest");
+        return;
+    }
+
     let manager = Arc::new(RwLock::new(SessionManager::new()));
     let session_manager = manager.read().await;
 
