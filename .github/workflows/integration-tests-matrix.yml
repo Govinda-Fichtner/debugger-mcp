@@ -245,20 +245,33 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: Generate overall summary
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-output-*
+          path: test-artifacts/
+
+      - name: Analyze test results
         run: |
+          # Make script executable
+          chmod +x scripts/analyze-test-results.sh
+
+          # Run analysis and capture output
+          ./scripts/analyze-test-results.sh test-artifacts/ > summary.txt 2>&1 || true
+
+          # Add to GitHub Step Summary
           echo "## 🎉 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All language-specific integration tests have completed." >> $GITHUB_STEP_SUMMARY
-          echo "See individual job results for details:" >> $GITHUB_STEP_SUMMARY
+          cat summary.txt >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐍 Python (debugpy)" >> $GITHUB_STEP_SUMMARY
-          echo "- 💎 Ruby (rdbg/debug gem)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🟢 Node.js (vscode-js-debug)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🦀 Rust (CodeLLDB)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐹 Go (Delve)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 **Benefits of Matrix Strategy:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ⚡ Parallel execution (5x faster)" >> $GITHUB_STEP_SUMMARY
-          echo "- 🎯 Clear failure isolation per language" >> $GITHUB_STEP_SUMMARY
-          echo "- 📦 Separate artifacts per language" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload analysis summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-analysis-summary
+          path: summary.txt
+          retention-days: 30
