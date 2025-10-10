@@ -38,4 +38,24 @@ mod tests {
         let error = Error::SessionNotFound("test_session".to_string());
         assert!(matches!(error, Error::SessionNotFound(_)));
     }
+
+    #[tokio::test]
+    async fn test_serve_creates_server() {
+        // Test that serve() initializes an MCP server
+        // This test verifies the server initialization but doesn't run the event loop
+        // We can't fully test serve() because it blocks on server.run() which never returns
+        let server_result = McpServer::new().await;
+        assert!(server_result.is_ok(), "Should be able to create MCP server");
+    }
+
+    #[test]
+    fn test_module_structure() {
+        // Verify all public modules are accessible
+        // This ensures our module exports are correct
+
+        // These are just compile-time checks that the modules exist
+        let _: Option<McpServer> = None;
+        let _: Option<Error> = None;
+        let _: Option<Result<()>> = None;
+    }
 }
