@@ -50,6 +50,7 @@
 //! - https://github.com/vadimcn/codelldb - CodeLLDB debugger
 
 use super::logging::DebugAdapterLogger;
+use super::security;
 use crate::dap::socket_helper;
 use crate::{Error, Result};
 use serde_json::{json, Value};
@@ -215,15 +216,8 @@ impl RustAdapter {
     /// // Returns: SingleFile("/workspace/fizzbuzz.rs")
     /// ```
     pub fn detect_project_type(source_path: &str) -> Result<RustProjectType> {
-        let source = PathBuf::from(source_path);
-
-        // Validate source file exists
-        if !source.exists() {
-            return Err(Error::Compilation(format!(
-                "Source file not found: {}",
-                source_path
-            )));
-        }
+        // Validate and sanitize the source path (prevents path traversal)
+        let source = security::validate_source_path(source_path, Some("rs"))?;
 
         debug!("🔍 [RUST] Detecting project type for: {}", source_path);
 
@@ -400,15 +394,8 @@ impl RustAdapter {
         target_type: &CargoTargetType,
         release: bool,
     ) -> Result<String> {
-        let cargo_root_path = Path::new(cargo_root);
-
-        // Validate Cargo root exists
-        if !cargo_root_path.exists() {
-            return Err(Error::Compilation(format!(
-                "Cargo root not found: {}",
-                cargo_root
-            )));
-        }
+        // Validate and sanitize the cargo root directory (prevents path traversal)
+        let cargo_root_path = security::validate_directory_path(cargo_root)?;
 
         // Validate Cargo.toml exists
         let manifest = cargo_root_path.join("Cargo.toml");
@@ -549,15 +536,8 @@ impl RustAdapter {
     /// // binary = "/workspace/target/debug/fizzbuzz"
     /// ```
     pub async fn compile_single_file(source_path: &str, release: bool) -> Result<String> {
-        let source = Path::new(source_path);
-
-        // Validate source file exists
-        if !source.exists() {
-            return Err(Error::Compilation(format!(
-                "Source file not found: {}",
-                source_path
-            )));
-        }
+        // Validate and sanitize the source path (prevents path traversal)
+        let source = security::validate_source_path(source_path, Some("rs"))?;
 
         // Extract binary name from source filename
         let binary_name = source

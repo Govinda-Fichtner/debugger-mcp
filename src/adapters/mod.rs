@@ -4,3 +4,4 @@ pub mod nodejs;
 pub mod python;
 pub mod ruby;
 pub mod rust;
+pub mod security;

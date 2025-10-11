@@ -1,3 +1,4 @@
+use crate::adapters::security;
 use crate::debug::SessionManager;
 use crate::{Error, Result};
 use serde::Deserialize;
@@ -112,13 +113,45 @@ impl ToolsHandler {
     async fn debugger_start(&self, arguments: Value) -> Result<Value> {
         let args: DebuggerStartArgs = serde_json::from_value(arguments)?;
 
+        // Validate program path to prevent path traversal attacks
+        // For Rust, validate with .rs extension; for others, allow any file
+        let extension = match args.language.as_str() {
+            "rust" => Some("rs"),
+            "python" => Some("py"),
+            "ruby" => Some("rb"),
+            "javascript" | "nodejs" => Some("js"),
+            "go" => Some("go"),
+            _ => None,
+        };
+
+        let validated_program = security::validate_source_path(&args.program, extension)?;
+        let program = validated_program
+            .to_str()
+            .ok_or_else(|| Error::Internal("Non-UTF8 program path (invalid encoding)".to_string()))?
+            .to_string();
+
+        // Validate cwd if provided
+        let validated_cwd = if let Some(cwd_path) = &args.cwd {
+            let validated = security::validate_directory_path(cwd_path)?;
+            Some(
+                validated
+                    .to_str()
+                    .ok_or_else(|| {
+                        Error::Internal("Non-UTF8 cwd path (invalid encoding)".to_string())
+                    })?
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
         let manager = self.session_manager.read().await;
         let session_id = manager
             .create_session(
                 &args.language,
-                args.program,
+                program,
                 args.args,
-                args.cwd,
+                validated_cwd,
                 args.stop_on_entry,
             )
             .await?;
@@ -168,16 +201,25 @@ impl ToolsHandler {
     async fn debugger_set_breakpoint(&self, arguments: Value) -> Result<Value> {
         let args: SetBreakpointArgs = serde_json::from_value(arguments)?;
 
+        // Validate source path to prevent path traversal
+        // Note: We validate without extension requirement since breakpoints
+        // can be set in any source file regardless of language
+        let validated_source = security::validate_source_path(&args.source_path, None)?;
+        let source_path = validated_source
+            .to_str()
+            .ok_or_else(|| Error::Internal("Non-UTF8 source path (invalid encoding)".to_string()))?
+            .to_string();
+
         let manager = self.session_manager.read().await;
         let session = manager.get_session(&args.session_id).await?;
 
         let verified = session
-            .set_breakpoint(args.source_path.clone(), args.line)
+            .set_breakpoint(source_path.clone(), args.line)
             .await?;
 
         Ok(json!({
             "verified": verified,
-            "sourcePath": args.source_path,
+            "sourcePath": source_path,
             "line": args.line
         }))
     }
