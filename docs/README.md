@@ -1,325 +1,161 @@
-# DAP MCP Server Documentation
+# Debugger MCP Server Documentation
 
-This directory contains comprehensive documentation for the DAP-based MCP debugging server project.
-
-## 📋 Main Documents
-
-### [**GETTING_STARTED.md**](./GETTING_STARTED.md) 🚀
-**Quick start guide for developers**
-
-Get up and running:
-- Project setup and prerequisites
-- Building and running the server
-- Development workflow
-- Testing guide
-- Docker deployment
-
-**Start here** if you want to use or develop the server.
+Complete documentation for the DAP-based MCP debugging server enabling AI-assisted debugging across multiple programming languages.
 
 ---
 
-### [**PRE_COMMIT_SETUP.md**](./PRE_COMMIT_SETUP.md) 🔧
-**Pre-commit hooks setup and usage guide**
+## 📁 Documentation Structure
 
-Code quality automation:
-- Hook stages (pre-commit, commit-msg, pre-push)
-- Tool details (clippy, rustfmt, gitleaks, cargo-audit, cargo-deny)
-- Installation and configuration
-- Troubleshooting guide
-- Commit message template
+### [**Architecture/**](./Architecture/) 🏗️
+System design and technical decisions
 
-**Use this** to set up automated code quality checks.
+- **[DAP_MCP_SERVER_PROPOSAL.md](./Architecture/DAP_MCP_SERVER_PROPOSAL.md)** - Complete architecture proposal (68 pages)
+  - System design, MCP interface, multi-language abstraction, implementation roadmap
+- **[COMPONENTS.md](./Architecture/architecture/COMPONENTS.md)** - Detailed component specifications
+  - Module structure, concurrency patterns, testing strategy
+- **[LOGGING_ARCHITECTURE.md](./Architecture/LOGGING_ARCHITECTURE.md)** - Logging system design
+- **[rust-mcp-technology-stack.md](./Architecture/rust-mcp-technology-stack.md)** - Technology choices and rationale
 
----
+### [**Contributing/**](./Contributing/) 🤝
+Guides for developers and contributors
 
-### [**INSTALLATION_CHECKLIST.md**](./INSTALLATION_CHECKLIST.md) ✓
-**Tool installation checklist for Debian/Ubuntu**
+- **[GETTING_STARTED.md](./Contributing/GETTING_STARTED.md)** - Developer quick start guide
+  - Setup, building, development workflow, testing
+- **[TESTING.md](./Contributing/TESTING.md)** - Testing guide
+- **[TESTING_STRATEGY.md](./Contributing/TESTING_STRATEGY.md)** - Testing approach and philosophy
+- **[TESTING_EXAMPLE.md](./Contributing/TESTING_EXAMPLE.md)** - Code examples for tests
+- **[PRE_COMMIT_SETUP.md](./Contributing/PRE_COMMIT_SETUP.md)** - Pre-commit hooks setup
+- **[INSTALLATION_CHECKLIST.md](./Contributing/INSTALLATION_CHECKLIST.md)** - Tool installation steps
+- **[ADDING_NEW_LANGUAGE.md](./Contributing/ADDING_NEW_LANGUAGE.md)** - How to add language support
 
-Step-by-step installation:
-- Rust components (rustfmt, clippy)
-- Cargo tools (tarpaulin, audit, deny)
-- Secret scanner (gitleaks)
-- Verification steps
-- Quick reference commands
+### [**Usage/**](./Usage/) 📖
+User guides and deployment
 
-**Follow this** for complete tool installation.
+- **[DOCKER.md](./Usage/DOCKER.md)** - Docker deployment guide
+  - Container setup, MCP client integration, production deployment
+- **[TROUBLESHOOTING.md](./Usage/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[EXPRESSION_SYNTAX_GUIDE.md](./Usage/EXPRESSION_SYNTAX_GUIDE.md)** - Language-specific expression syntax
+- **[INTEGRATION_TESTS.md](./Usage/INTEGRATION_TESTS.md)** - Integration test specifications
 
----
+### [**Processes/**](./Processes/) ⚙️
+Development and release processes
 
-### [**DOCKER.md**](./DOCKER.md) 🐳
-**Docker deployment guide**
-
-Container deployment:
-- Multi-stage Alpine build
-- Docker Compose setup
-- MCP client integration (Claude Desktop, Cline)
-- Production deployment
-- Troubleshooting
-
-**Use this** for containerized deployments.
-
----
-
-### [**MVP_IMPLEMENTATION_STATUS.md**](./MVP_IMPLEMENTATION_STATUS.md) ✅
-**Current implementation status and achievements**
-
-Implementation summary:
-- ~1,540 lines of Rust code implemented
-- 6 MCP tools fully functional
-- Complete DAP client with async correlation
-- Build and test status
-- Next steps and missing features
-
-**Check this** for current project status.
+- **[CI_CD_PIPELINE.md](./Processes/CI_CD_PIPELINE.md)** - CI/CD configuration and workflows
+- **[CROSS_PLATFORM_BUILDS.md](./Processes/CROSS_PLATFORM_BUILDS.md)** - Building for multiple platforms
+- **[RELEASE_PROCESS.md](./Processes/RELEASE_PROCESS.md)** - How to create releases
+- **[LOG_VALIDATION_SYSTEM.md](./Processes/LOG_VALIDATION_SYSTEM.md)** - Log validation system
 
 ---
 
-### [**DAP_MCP_SERVER_PROPOSAL.md**](./DAP_MCP_SERVER_PROPOSAL.md) 📖
-**The primary architecture and design document** (20,000+ words)
+## 🚀 Quick Navigation
 
-Complete proposal covering:
-- Executive summary and motivation
-- Full system architecture with diagrams
-- Technology stack (Rust, Tokio, MCP, DAP)
-- MCP interface design (resources and tools)
-- Multi-language abstraction layer
-- Component specifications
-- 5 detailed use cases and user journeys
-- Implementation roadmap (4 phases, 20 weeks)
-- Risk assessment and mitigation
-- Future enhancements
+### I want to...
 
-**Reference this** for architectural decisions and design rationale.
+**Understand the architecture**
+1. Read the [Architecture Proposal](./Architecture/DAP_MCP_SERVER_PROPOSAL.md) (Executive Summary + Architecture sections)
+2. Review [Component Specifications](./Architecture/architecture/COMPONENTS.md)
+3. Check [Technology Stack](./Architecture/rust-mcp-technology-stack.md) rationale
 
----
+**Contribute to the codebase**
+1. Start with [Getting Started Guide](./Contributing/GETTING_STARTED.md)
+2. Set up [Pre-commit Hooks](./Contributing/PRE_COMMIT_SETUP.md)
+3. Follow [Testing Strategy](./Contributing/TESTING_STRATEGY.md)
+4. Reference [Testing Examples](./Contributing/TESTING_EXAMPLE.md)
 
-### [**MVP_IMPLEMENTATION_PLAN.md**](./MVP_IMPLEMENTATION_PLAN.md) 📋
-**Phase 1 development plan and TDD workflow**
+**Deploy or use the server**
+1. Follow [Docker Deployment](./Usage/DOCKER.md) guide
+2. Refer to [Troubleshooting](./Usage/TROUBLESHOOTING.md) if issues arise
+3. Use [Expression Syntax Guide](./Usage/EXPRESSION_SYNTAX_GUIDE.md) for language-specific queries
 
-Implementation guide:
-- Python → Ruby phased approach
-- TDD workflow with examples
-- FizzBuzz integration test specification
-- Week-by-week checklist
-- Component implementation order
+**Add a new programming language**
+1. Read [Adding New Language Guide](./Contributing/ADDING_NEW_LANGUAGE.md)
+2. Review [Architecture Proposal](./Architecture/DAP_MCP_SERVER_PROPOSAL.md) Section 6 (Multi-Language Abstraction)
 
-**Follow this** for systematic development.
-
----
-
-### [**architecture/COMPONENTS.md**](./architecture/COMPONENTS.md) 🏗️
-**Technical deep-dive into component architecture**
-
-Detailed specifications for:
-- Component dependency graph
-- Module structure
-- All 7 major components with code examples
-- Error handling strategy
-- Concurrency patterns (Arc+RwLock, Actor model, Request/Response)
-- Testing strategy (unit and integration tests)
-- Performance considerations
-- Security measures
-
-**Use this** for implementation guidance and code structure.
-
----
-
-## 📚 Research Documents
-
-### Background Research
-
-Located in `docs/research/` (auto-generated by research agents):
-
-#### 1. **DAP Protocol Research**
-Comprehensive analysis of Debug Adapter Protocol:
-- Protocol specification v1.70.0
-- Communication model (JSON-RPC over STDIO/TCP)
-- Request/response/event message types
-- 40+ DAP requests, 15+ events
-- Breakpoint types and capabilities
-- Variable inspection hierarchy
-- Adapter ecosystem (40+ implementations)
-
-#### 2. **DAP Client Implementations Analysis**
-Study of mature DAP clients (nvim-dap, dap-mode):
-- Process management best practices
-- Multi-language support patterns
-- Session lifecycle management
-- User experience design
-- Extensibility patterns
-- MCP-specific design recommendations
-
-#### 3. **Rust MCP Technology Stack**
-Complete technology evaluation:
-- MCP protocol analysis (JSON-RPC 2.0, OAuth, SSE)
-- Rust MCP SDK review
-- Recommended crate stack (Tokio, serde, dap-rs, interprocess, flume)
-- State management patterns
-- STDIO transport implementation
-- Security best practices
-- Performance guidelines
-
----
-
-## 🗺️ Document Navigation
-
-### For Product/Business Stakeholders
-1. Read **Executive Summary** in [DAP_MCP_SERVER_PROPOSAL.md](./DAP_MCP_SERVER_PROPOSAL.md)
-2. Review **Use Cases** (Section 8)
-3. Check **Implementation Plan** (Section 9) for timeline
-4. Review **Risk Assessment** (Section 10)
-
-### For Architects
-1. Read **Architecture Overview** (Section 2) in proposal
-2. Study **Multi-Language Abstraction** (Section 6)
-3. Review **Component Specifications** (Section 7)
-4. Deep-dive [COMPONENTS.md](./architecture/COMPONENTS.md)
-
-### For Developers
-1. Read **Technology Stack** (Section 4) in proposal
-2. Study [COMPONENTS.md](./architecture/COMPONENTS.md) fully
-3. **Set up pre-commit hooks** using [PRE_COMMIT_SETUP.md](./PRE_COMMIT_SETUP.md)
-4. Review **Implementation Plan** (Section 9) for phasing
-5. Reference research docs for protocol details
-
-### For AI/ML Engineers
-1. Read **MCP Interface Design** (Section 5) - how AI agents interact
-2. Study **Use Cases and User Journeys** (Section 8) - AI debugging workflows
-3. Review **DAP Protocol Research** - understand debugging primitives
-4. Check **Future Enhancements** (Section 11) - LLM-optimized debugging
+**Work on CI/CD or releases**
+1. Understand [CI/CD Pipeline](./Processes/CI_CD_PIPELINE.md)
+2. Follow [Release Process](./Processes/RELEASE_PROCESS.md)
+3. Check [Cross-Platform Builds](./Processes/CROSS_PLATFORM_BUILDS.md)
 
 ---
 
 ## 🎯 Key Concepts
 
-### What is DAP?
-Debug Adapter Protocol - Microsoft's language-agnostic debugging standard used by VS Code, Vim, Emacs. Separates debugging UI from language-specific debuggers via JSON-RPC.
+### What is This Project?
 
-### What is MCP?
-Model Context Protocol - Anthropic's standard for exposing capabilities to AI models through resources, tools, and prompts. Enables Claude Desktop and other AI agents to access external systems.
+A **Debug Adapter Protocol (DAP) based Model Context Protocol (MCP) server** that enables AI coding agents (Claude, Gemini CLI, etc.) to programmatically debug applications across multiple programming languages through a unified interface.
 
-### What does this project do?
-**Combines DAP + MCP** to let AI coding agents (Claude, Gemini, Codex) programmatically debug code across multiple languages (Python, JavaScript, Go, Rust, etc.) through a unified interface.
+**Key Features:**
+- 🌍 **Language-agnostic**: Supports Python, Ruby, JavaScript/Node.js, Go, Rust, C/C++ (via 40+ DAP implementations)
+- 🤖 **AI-native**: Native MCP protocol for seamless AI agent integration
+- 🔧 **Production-ready**: Rust + Tokio for reliability and performance
+- 🔌 **Extensible**: Plugin system for new debuggers without core changes
 
-### Why is this valuable?
-- **Autonomous debugging**: AI can investigate bugs without human intervention
-- **Language-agnostic**: One interface, 40+ debuggers
-- **Enhanced AI workflows**: AI explains code by stepping through execution
+### Why This Matters
+
+- **Autonomous debugging**: AI can investigate bugs independently
 - **Reduced debugging time**: 40-50% of dev time is debugging
+- **Enhanced AI workflows**: AI explains code by stepping through execution
+- **Standard interface**: One API for all debuggers
+
+### Core Technologies
+
+- **[DAP](https://microsoft.github.io/debug-adapter-protocol/)** - Microsoft's language-agnostic debugging standard
+- **[MCP](https://spec.modelcontextprotocol.io/)** - Anthropic's protocol for AI agent capabilities
+- **Rust + Tokio** - Safe, performant async implementation
 
 ---
 
 ## 📊 Project Status
 
-**Phase**: MVP Core Implementation Complete ✅
-**Next Step**: Integration Testing & Additional Features
+**Current Phase**: Production-Ready ✅
 
-### Completion Status
-- [x] Research Phase Complete (DAP, MCP, Rust ecosystem)
-- [x] Architecture Design Complete
-- [x] MCP Interface Design Complete
-- [x] Use Case Definition Complete
-- [x] Risk Analysis Complete
-- [x] MVP Implementation Complete (~1,540 LOC)
-- [x] Docker Deployment Support
-- [x] Documentation Complete
-- [ ] Integration Testing (Ready, needs Python debugpy)
-- [ ] Additional Features (stepping, exception breakpoints)
+- ✅ Multi-language support (Python, Ruby, Node.js, Go, Rust)
+- ✅ 13 MCP tools fully functional
+- ✅ 100+ comprehensive tests
+- ✅ Docker deployment support
+- ✅ Complete documentation
 
----
-
-## 🚀 Quick Start
-
-### Using Docker (Recommended)
-
-```bash
-# Build
-docker build -t debugger-mcp:latest .
-
-# Run
-docker run -i debugger-mcp:latest
-```
-
-### Using Cargo
-
-```bash
-# Build
-cargo build --release
-
-# Run
-./target/release/debugger_mcp serve
-```
-
-### Configure with Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "debugger": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", "${workspaceFolder}:/workspace", "debugger-mcp:latest"]
-    }
-  }
-}
-```
-
-See [GETTING_STARTED.md](./GETTING_STARTED.md) and [DOCKER.md](./DOCKER.md) for detailed instructions.
+**Supported Languages:**
+| Language | Status | Test Coverage |
+|----------|--------|---------------|
+| Python | ✅ Production | 100% |
+| Ruby | ✅ Production | 100% |
+| Node.js | ✅ Production | 100% |
+| Go | ✅ Production | 100% |
+| Rust | ✅ Production | 100% |
 
 ---
 
-## 📖 Document Metadata
-
-| Document | Words | Pages | Status |
-|----------|-------|-------|--------|
-| DAP_MCP_SERVER_PROPOSAL.md | 20,000+ | 68 | ✅ Complete |
-| MVP_IMPLEMENTATION_STATUS.md | 2,500+ | 9 | ✅ Complete |
-| MVP_IMPLEMENTATION_PLAN.md | 5,000+ | 21 | ✅ Complete |
-| GETTING_STARTED.md | 3,000+ | 13 | ✅ Complete |
-| DOCKER.md | 2,000+ | 6 | ✅ Complete |
-| architecture/COMPONENTS.md | 5,000+ | 17 | ✅ Complete |
-| Research (3 docs) | 15,000+ | 50+ | ✅ Complete |
-| **Total** | **52,500+** | **184+** | **✅ Comprehensive** |
-
----
-
-## 🤝 Contributing (Future)
-
-Once open source:
-1. Read architecture docs
-2. Check GitHub issues
-3. Follow development setup guide
-4. Submit PRs with tests
-
----
-
-## 📧 Contact
-
-**Project**: DAP-based MCP Debugging Server
-**Purpose**: Enable AI-assisted debugging across programming languages
-**Repository**: TBD (future open source release)
-**Created**: October 2025
-
----
-
-## 📚 External References
+## 🔗 External Resources
 
 ### Specifications
-- [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
-- [DAP GitHub](https://github.com/microsoft/debug-adapter-protocol)
-- [Model Context Protocol](https://spec.modelcontextprotocol.io/)
+- [Debug Adapter Protocol Specification](https://microsoft.github.io/debug-adapter-protocol/)
+- [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/)
+- [DAP GitHub Repository](https://github.com/microsoft/debug-adapter-protocol)
 
-### Implementations
-- [nvim-dap](https://github.com/mfussenegger/nvim-dap) - Neovim DAP client
-- [dap-mode](https://github.com/emacs-lsp/dap-mode) - Emacs DAP client
-- [debugpy](https://github.com/microsoft/debugpy) - Python debug adapter
-- [vscode-js-debug](https://github.com/microsoft/vscode-js-debug) - JavaScript adapter
+### Debug Adapters
+- [debugpy](https://github.com/microsoft/debugpy) - Python
+- [rdbg](https://github.com/ruby/debug) - Ruby
+- [vscode-js-debug](https://github.com/microsoft/vscode-js-debug) - JavaScript/Node.js
+- [delve](https://github.com/go-delve/delve) - Go
+- [CodeLLDB](https://github.com/vadimcn/codelldb) - Rust/C/C++
 
 ### Technologies
 - [Tokio](https://tokio.rs/) - Async runtime for Rust
-- [MCP Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)
-- [serde](https://serde.rs/) - Serialization framework
+- [Clap](https://docs.rs/clap/) - CLI framework
+- [serde](https://serde.rs/) - Serialization
 
 ---
 
-**Last Updated**: October 5, 2025
-**Document Version**: 1.0
+## 📝 Historical Documentation
+
+Historical implementation notes, proposals, research, and completed work have been archived in Obsidian for reference:
+- Location: `/Development Projects/Debugger-MCP/Documentation/`
+- Includes: Status reports, bug fixes, proposals, research, deep-dives
+
+This keeps the repository focused on current, actionable documentation while preserving the complete project history.
+
+---
+
+**Last Updated**: 2025-10-10
+**Documentation Version**: 2.0 (Reorganized Structure)
