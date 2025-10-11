@@ -55,7 +55,7 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 | **Ruby** | rdbg (debug gem) | ✅ **Validated** | Socket-based DAP | `Dockerfile.ruby` |
 | **Node.js** | vscode-js-debug | ✅ **Validated** | Multi-session architecture | `Dockerfile.nodejs` |
 | **Rust** | CodeLLDB | ✅ **Validated** | Automatic compilation + LLDB | `Dockerfile.rust` |
-| Go | delve | ⏳ Planned | Popular Go debugger | - |
+| **Go** | delve | ✅ **Validated** | Native DAP, multi-file support | - |
 
 ### Implemented Features ✅
 - ✅ Start/stop debugging sessions (`debugger_start`, `debugger_disconnect`)
