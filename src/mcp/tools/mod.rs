@@ -410,7 +410,7 @@ impl ToolsHandler {
                     "properties": {
                         "language": {
                             "type": "string",
-                            "description": "Programming language (e.g., 'python', 'ruby')"
+                            "description": "Programming language (e.g., 'python', 'ruby', 'javascript', 'rust', 'go')"
                         },
                         "program": {
                             "type": "string",

@@ -50,14 +50,24 @@
 //! - https://github.com/vadimcn/codelldb - CodeLLDB debugger
 
 use super::logging::DebugAdapterLogger;
+use crate::dap::socket_helper;
 use crate::{Error, Result};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use tokio::process::Command;
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::process::{Child, Command};
 use tracing::{debug, error, info};
 
 /// Rust CodeLLDB adapter configuration
 pub struct RustAdapter;
+
+/// Result of spawning Rust debugger (process + connected socket)
+pub struct RustDebugSession {
+    pub process: Child,
+    pub socket: TcpStream,
+    pub port: u16,
+}
 
 /// Rust project type detection result
 #[derive(Debug, Clone, PartialEq)]
@@ -88,11 +98,16 @@ impl RustAdapter {
     /// Get CodeLLDB command path
     ///
     /// Checks multiple locations in order:
-    /// 1. /usr/local/bin/codelldb (Docker container)
-    /// 2. /usr/bin/codelldb (system install)
-    /// 3. codelldb (in PATH)
+    /// 1. /usr/local/lib/codelldb/adapter/codelldb (Docker container - new location)
+    /// 2. /usr/local/bin/codelldb (Docker container - old location)
+    /// 3. /usr/bin/codelldb (system install)
+    /// 4. codelldb (in PATH)
     pub fn command() -> String {
-        let locations = vec!["/usr/local/bin/codelldb", "/usr/bin/codelldb"];
+        let locations = vec![
+            "/usr/local/lib/codelldb/adapter/codelldb",
+            "/usr/local/bin/codelldb",
+            "/usr/bin/codelldb",
+        ];
 
         for location in locations {
             if Path::new(location).exists() {
@@ -117,6 +132,62 @@ impl RustAdapter {
     /// Adapter ID for CodeLLDB
     pub fn adapter_id() -> &'static str {
         "codelldb"
+    }
+
+    /// Spawn CodeLLDB with DAP communication over TCP socket
+    ///
+    /// This spawns `codelldb --port <PORT>` and connects to the socket.
+    /// Returns the process and connected TCP stream for DAP communication.
+    ///
+    /// # Implementation Note
+    ///
+    /// Based on nvim-dap reference implementation, CodeLLDB is designed for TCP mode.
+    /// All nvim-dap configurations use `codelldb --port ${port}`, never STDIO mode.
+    /// This matches the pattern of other working adapters (Ruby, Node.js, Go).
+    ///
+    /// # Arguments
+    ///
+    /// * `_binary_path` - Path to compiled binary (not used for spawn, used in launch_args)
+    /// * `_args` - Program arguments (not used for spawn, used in launch_args)
+    /// * `_stop_on_entry` - Whether to stop on entry (not used for spawn, used in launch_args)
+    ///
+    /// # Returns
+    ///
+    /// RustDebugSession with spawned process, connected socket, and port number
+    pub async fn spawn(
+        _binary_path: &str,
+        _args: &[String],
+        _stop_on_entry: bool,
+    ) -> Result<RustDebugSession> {
+        // 1. Find free port
+        let port = socket_helper::find_free_port()?;
+
+        // 2. Build codelldb command args (TCP mode as per nvim-dap)
+        let args = vec!["--port".to_string(), port.to_string()];
+
+        info!("Spawning codelldb on port {}: codelldb {:?}", port, args);
+
+        // 3. Spawn codelldb process
+        let child = Command::new(Self::command())
+            .args(&args)
+            .spawn()
+            .map_err(|e| Error::Process(format!("Failed to spawn codelldb: {}", e)))?;
+
+        // 4. Connect to socket (with 3 second timeout - CodeLLDB needs a moment to start)
+        let socket = socket_helper::connect_with_retry(port, Duration::from_secs(3))
+            .await
+            .map_err(|e| {
+                Error::Process(format!(
+                    "Failed to connect to codelldb on port {}: {}",
+                    port, e
+                ))
+            })?;
+
+        Ok(RustDebugSession {
+            process: child,
+            socket,
+            port,
+        })
     }
 
     /// Detect project type from source file path
@@ -161,17 +232,38 @@ impl RustAdapter {
         while let Some(dir) = current {
             let manifest = dir.join("Cargo.toml");
             if manifest.exists() {
-                info!("📦 [RUST] Found Cargo project: {}", dir.display());
-                info!("📦 [RUST] Manifest: {}", manifest.display());
-                return Ok(RustProjectType::CargoProject {
-                    root: dir.to_path_buf(),
-                    manifest,
-                });
+                // Found Cargo.toml, but check if source file is actually part of this project
+                // A file is part of a Cargo project if it's under src/, examples/, tests/, benches/, or bin/
+                let cargo_subdirs = ["src", "examples", "tests", "benches", "bin"];
+
+                // Check if source is under any of these subdirectories
+                if let Ok(relative) = source.strip_prefix(dir) {
+                    let first_component = relative.components().next();
+                    if let Some(std::path::Component::Normal(comp)) = first_component {
+                        let comp_str = comp.to_string_lossy();
+                        if cargo_subdirs.contains(&comp_str.as_ref()) {
+                            info!("📦 [RUST] Found Cargo project: {}", dir.display());
+                            info!("📦 [RUST] Manifest: {}", manifest.display());
+                            info!("📦 [RUST] Source is under {}/", comp_str);
+                            return Ok(RustProjectType::CargoProject {
+                                root: dir.to_path_buf(),
+                                manifest,
+                            });
+                        }
+                    }
+                }
+
+                // Cargo.toml exists but source is not in a standard Cargo directory
+                // (e.g., test fixtures in tests/fixtures/). Treat as single file.
+                debug!(
+                    "🔍 [RUST] Cargo.toml found at {} but source not in Cargo project structure",
+                    dir.display()
+                );
             }
             current = dir.parent();
         }
 
-        // No Cargo.toml found - single file
+        // No Cargo.toml found or source not part of Cargo project - single file
         info!("📄 [RUST] Single file project: {}", source_path);
         Ok(RustProjectType::SingleFile(source))
     }
@@ -562,6 +654,12 @@ impl RustAdapter {
             "program": binary_path,  // Compiled binary, not source
             "args": args,
             "stopOnEntry": stop_on_entry,
+            // Add console mode for better process control (similar to Python's internalConsole)
+            "terminal": "console",
+            // Ensure STDIO is properly handled - prevents issues on ARM64
+            "stdio": [null, null, null],
+            // Explicitly set source path to help with breakpoint resolution
+            "sourceMap": {".": "."},
         });
 
         if let Some(cwd_path) = cwd {
@@ -676,6 +774,15 @@ impl RustAdapter {
         error!("   ");
         error!("   $ rustc <source_file>");
         error!("   This should show detailed compilation errors");
+    }
+}
+
+/// Helper to log Rust-specific connection success with port information
+impl RustDebugSession {
+    pub fn log_connection_success_with_port(&self) {
+        info!("✅ [RUST] Connected to codelldb on port {}", self.port);
+        info!("   Socket: localhost:{}", self.port);
+        info!("   Process ID: {:?}", self.process.id());
     }
 }
 

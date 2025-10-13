@@ -1,0 +1,277 @@
+# Integration Tests Workflow - Matrix Strategy
+# Runs integration tests for each language in parallel for faster CI
+# Each language gets its own job that can run concurrently
+
+name: Integration Tests (Matrix)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile.integration-tests'
+      - '.github/workflows/integration-tests-matrix.yml'
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_HOME: /home/runner/.cargo
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # Build Docker image once, used by all language tests
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build integration test Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.integration-tests
+          tags: debugger-mcp:integration-tests
+          cache-from: type=gha,scope=integration-tests
+          cache-to: type=gha,mode=max,scope=integration-tests
+          outputs: type=docker,dest=/tmp/debugger-mcp-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/debugger-mcp-image.tar
+          retention-days: 1
+
+  # Build release binary once, used by Claude Code tests
+  build-binary:
+    name: Build Release Binary
+    needs: build-docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/debugger-mcp-image.tar
+
+      - name: Build release binary inside Docker
+        run: |
+          # Build the release binary inside Docker to ensure correct GLIBC version
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            debugger-mcp:integration-tests \
+            cargo build --release
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binary
+          path: target/release/debugger_mcp
+          retention-days: 1
+
+  # Matrix strategy: Run tests for each language in parallel
+  test-language:
+    name: Test ${{ matrix.language }}
+    needs: [build-docker, build-binary]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # Continue testing other languages if one fails
+      matrix:
+        language:
+          - python
+          - ruby
+          - nodejs
+          - go
+          - rust
+        include:
+          # Language-specific metadata
+          - language: python
+            test_file: python_integration_test
+            emoji: 🐍
+            adapter: debugpy
+          - language: ruby
+            test_file: ruby_integration_test
+            emoji: 💎
+            adapter: rdbg/debug gem
+          - language: nodejs
+            test_file: nodejs_integration_test
+            emoji: 🟢
+            adapter: vscode-js-debug
+          - language: go
+            test_file: go_integration_test
+            emoji: 🐹
+            adapter: Delve
+          - language: rust
+            test_file: rust_integration_test
+            emoji: 🦀
+            adapter: CodeLLDB
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: release-binary
+          path: target/release
+
+      - name: Make binary executable
+        run: chmod +x target/release/debugger_mcp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/debugger-mcp-image.tar
+
+      - name: Run ${{ matrix.language }} integration tests
+        run: |
+          # Run language-specific tests inside Docker container
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -e RUST_BACKTRACE=1 \
+            -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
+            debugger-mcp:integration-tests \
+            sh -c 'cd /workspace && \
+              cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+              sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+
+          # Ensure files exist
+          test -f ${{ matrix.language }}-test-output.txt || echo "Warning: Output file not created" > ${{ matrix.language }}-test-output.txt
+          test -f ${{ matrix.language }}-test-clean.txt || cp ${{ matrix.language }}-test-output.txt ${{ matrix.language }}-test-clean.txt
+
+      - name: Upload ${{ matrix.language }} test output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-output-${{ matrix.language }}
+          path: |
+            ${{ matrix.language }}-test-output.txt
+            ${{ matrix.language }}-test-clean.txt
+          retention-days: 30
+
+      - name: Parse ${{ matrix.language }} test results
+        if: always()
+        id: parse_results
+        run: |
+          # Parse test results for this language
+          TOTAL_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) {
+              if($i=="passed" || $i=="passed;") passed=$(i-1);
+              if($i=="failed" || $i=="failed;") failed=$(i-1);
+            }
+          } END {
+            print (passed+0) + (failed+0)
+          }' ${{ matrix.language }}-test-clean.txt || echo "0")
+
+          PASSED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
+          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+          FAILED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
+          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+          IGNORED_TESTS=$(awk '/test result:/ {
+            for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
+          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+          echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
+          echo "ignored_tests=${IGNORED_TESTS:-0}" >> $GITHUB_OUTPUT
+
+      - name: Generate ${{ matrix.language }} test summary
+        if: always()
+        run: |
+          echo "## ${{ matrix.emoji }} ${{ matrix.language }} Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Adapter:** ${{ matrix.adapter }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Tests | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏭️ Ignored | ${{ steps.parse_results.outputs.ignored_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.parse_results.outputs.failed_tests }}" != "0" ]; then
+            echo "⚠️ **Test failures detected!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>View failed tests</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "FAILED" ${{ matrix.language }}-test-clean.txt | head -20 >> $GITHUB_STEP_SUMMARY || echo "See full logs" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if tests failed
+        if: steps.parse_results.outputs.failed_tests != '0'
+        run: |
+          echo "${{ matrix.language }} tests failed!"
+          exit 1
+
+  # Aggregate results from all language tests
+  test-summary:
+    name: Test Summary
+    needs: test-language
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all test artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-output-*
+          path: test-artifacts/
+
+      - name: Analyze test results
+        run: |
+          # Make script executable
+          chmod +x scripts/analyze-test-results.sh
+
+          # Run analysis and capture output
+          ./scripts/analyze-test-results.sh test-artifacts/ > summary.txt 2>&1 || true
+
+          # Add to GitHub Step Summary
+          echo "## 🎉 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat summary.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload analysis summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-analysis-summary
+          path: summary.txt
+          retention-days: 30

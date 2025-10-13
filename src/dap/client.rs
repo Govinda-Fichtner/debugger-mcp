@@ -610,6 +610,22 @@ impl DapClient {
         launch_args: Value,
         adapter_type: Option<&str>,
     ) -> Result<()> {
+        self.initialize_and_launch_with_pending(
+            adapter_id,
+            launch_args,
+            adapter_type,
+            HashMap::new(),
+        )
+        .await
+    }
+
+    pub async fn initialize_and_launch_with_pending(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+        adapter_type: Option<&str>,
+        pending_breakpoints: HashMap<String, Vec<SourceBreakpoint>>,
+    ) -> Result<()> {
         // Step 1: Send initialize request and get capabilities
         info!("Sending initialize request to adapter");
         let capabilities = self.initialize(adapter_id).await?;
@@ -637,6 +653,9 @@ impl DapClient {
         );
 
         let adapter_type_str = adapter_type.unwrap_or("");
+        // NOTE: Go/Delve does NOT use entry breakpoint workaround
+        // Delve's setBreakpoints request clears ALL previous breakpoints, so the entry breakpoint
+        // would be removed when the user sets their first breakpoint
         let needs_entry_breakpoint = adapter_type_str == "ruby" || adapter_type_str == "nodejs";
         let stop_on_entry = launch_args
             .get("stopOnEntry")
@@ -707,6 +726,47 @@ impl DapClient {
                 Ok(Ok(())) => {
                     info!("✅ Received 'initialized' event signal");
 
+                    // Apply pending breakpoints BEFORE configurationDone (correct DAP sequence)
+                    if !pending_breakpoints.is_empty() {
+                        info!(
+                            "🔧 Applying {} pending breakpoints before configurationDone",
+                            pending_breakpoints.len()
+                        );
+                        for (source_path, breakpoints) in &pending_breakpoints {
+                            info!(
+                                "  Setting {} breakpoints for {}",
+                                breakpoints.len(),
+                                source_path
+                            );
+                            let source = Source {
+                                path: Some(source_path.clone()),
+                                name: None,
+                                source_reference: None,
+                            };
+                            match self.set_breakpoints(source, breakpoints.clone()).await {
+                                Ok(bps) => {
+                                    info!("  ✅ Set {} breakpoints for {}", bps.len(), source_path);
+                                    for bp in bps {
+                                        if bp.verified {
+                                            info!("    Line {}: verified", bp.line.unwrap_or(0));
+                                        } else {
+                                            warn!(
+                                                "    Line {}: NOT verified",
+                                                bp.line.unwrap_or(0)
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "  ⚠️  Failed to set breakpoints for {}: {}",
+                                        source_path, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+
                     // Entry breakpoint workaround: Set breakpoint BEFORE configurationDone
                     // This follows the correct DAP sequence (setBreakpoints must be before configurationDone)
                     if needs_workaround {
@@ -723,6 +783,8 @@ impl DapClient {
                                 // Find first executable line based on language
                                 let entry_line = if adapter_type_str == "ruby" {
                                     Self::find_first_executable_line_ruby(path)
+                                } else if adapter_type_str == "go" {
+                                    Self::find_first_executable_line_go(path)
                                 } else {
                                     Self::find_first_executable_line_javascript(path)
                                 };
@@ -971,6 +1033,78 @@ impl DapClient {
             // Found first executable line!
             info!("  First executable line detected: {}", line_num + 1);
             return line_num + 1; // DAP uses 1-indexed lines
+        }
+
+        // Fallback: No executable line found, use line 1
+        warn!("No executable line found in {}, using line 1", program_path);
+        1
+    }
+
+    /// Find the first executable line in a Go source file
+    ///
+    /// Skips package declarations, imports, comments, and function signatures
+    /// to find the first actual executable line (typically inside main function).
+    ///
+    /// Returns line number (1-indexed) or 1 as fallback.
+    fn find_first_executable_line_go(program_path: &str) -> usize {
+        use std::fs;
+
+        let content = match fs::read_to_string(program_path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(
+                    "Could not read {} for line detection: {}, using line 1",
+                    program_path, e
+                );
+                return 1;
+            }
+        };
+
+        let mut in_func_main = false;
+
+        for (line_num, line) in content.lines().enumerate() {
+            let trimmed = line.trim();
+
+            // Skip empty lines
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Skip package declaration
+            if trimmed.starts_with("package ") {
+                continue;
+            }
+
+            // Skip import statements (single line and multi-line)
+            if trimmed.starts_with("import ") || trimmed.starts_with("import(") {
+                continue;
+            }
+
+            // Skip comments (// and /*)
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue;
+            }
+
+            // Detect main function
+            if trimmed.starts_with("func main()") {
+                in_func_main = true;
+                continue;
+            }
+
+            // If we're inside main function, find first executable line
+            if in_func_main {
+                // Skip opening brace, comments, and variable declarations without initialization
+                if trimmed == "{" || trimmed.starts_with("//") || trimmed.starts_with("var ") {
+                    continue;
+                }
+
+                // Found first executable line inside main!
+                info!(
+                    "  First executable line detected (Go main): {}",
+                    line_num + 1
+                );
+                return line_num + 1; // DAP uses 1-indexed lines
+            }
         }
 
         // Fallback: No executable line found, use line 1
@@ -1280,6 +1414,22 @@ impl DapClient {
         launch_args: Value,
         adapter_type: Option<&str>,
     ) -> Result<()> {
+        self.initialize_and_launch_with_timeout_and_pending(
+            adapter_id,
+            launch_args,
+            adapter_type,
+            HashMap::new(),
+        )
+        .await
+    }
+
+    pub async fn initialize_and_launch_with_timeout_and_pending(
+        &self,
+        adapter_id: &str,
+        launch_args: Value,
+        adapter_type: Option<&str>,
+        pending_breakpoints: HashMap<String, Vec<SourceBreakpoint>>,
+    ) -> Result<()> {
         let timeout = std::time::Duration::from_secs(7);
         info!("⏱️  initialize_and_launch_with_timeout: Starting with 7s timeout");
         if let Some(atype) = adapter_type {
@@ -1288,7 +1438,12 @@ impl DapClient {
 
         tokio::time::timeout(
             timeout,
-            self.initialize_and_launch(adapter_id, launch_args, adapter_type),
+            self.initialize_and_launch_with_pending(
+                adapter_id,
+                launch_args,
+                adapter_type,
+                pending_breakpoints,
+            ),
         )
         .await
         .map_err(|_| {

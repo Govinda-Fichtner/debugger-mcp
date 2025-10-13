@@ -1,0 +1,106 @@
+# Multi-Language Integration Test Docker Image
+# Contains Python, Ruby, Node.js, Rust, and Go debuggers for comprehensive testing
+#
+# Build: docker build -f Dockerfile.integration-tests -t debugger-mcp:integration-tests .
+# Run:   docker run --rm -v $(pwd):/workspace debugger-mcp:integration-tests
+
+FROM rust:1.83-slim-bookworm AS base
+
+# Install system dependencies
+# Workaround for clock skew: use only main repo, skip security/updates
+RUN rm -f /etc/apt/sources.list.d/* && \
+    echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list && \
+    apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ruby \
+    ruby-dev \
+    nodejs \
+    npm \
+    lldb \
+    ca-certificates \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go 1.23.1 (newer version required by Delve 1.25+, which requires Go 1.22+)
+# Delve error: "Go version go1.21.0 is too old for this version of Delve (minimum supported version 1.22)"
+ARG GO_VERSION=1.23.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then GOARCH="amd64"; \
+    elif [ "$ARCH" = "arm64" ]; then GOARCH="arm64"; \
+    else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -L https://go.dev/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+
+# Install Python debugpy and create python symlink
+RUN ln -sf /usr/bin/python3 /usr/bin/python && \
+    python3 -m pip install --break-system-packages debugpy
+
+# Install Ruby debug gem
+RUN gem install debug
+
+# Install Claude Code CLI (Node.js-based)
+# This allows running the claude_code_integration_test
+# Note: If running tests that require API access, pass ANTHROPIC_API_KEY as environment variable:
+#   docker run -e ANTHROPIC_API_KEY=your_key_here debugger-mcp:integration-tests
+RUN npm install -g @anthropic-ai/claude-code
+
+# Ensure npm global binaries are in PATH
+# npm on Debian installs global binaries to /usr/local/lib/node_modules/.bin
+ENV PATH="/usr/local/lib/node_modules/.bin:${PATH}"
+
+# Install Node.js vscode-js-debug from official tarball
+# Tests expect js-debug at /tmp/js-debug/src/dapDebugServer.js
+RUN cd /tmp && \
+    curl -L https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz | tar -xzf - && \
+    chmod +x /tmp/js-debug/src/dapDebugServer.js
+
+# Install CodeLLDB adapter for Rust debugging
+# Download platform-specific binary from GitHub releases
+ARG CODELLDB_VERSION=v1.11.3
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then CODELLDB_FILE="codelldb-linux-x64.vsix"; \
+    elif [ "$ARCH" = "arm64" ]; then CODELLDB_FILE="codelldb-linux-arm64.vsix"; \
+    else echo "Unsupported architecture: $ARCH" && exit 1; fi && \
+    curl -L https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/${CODELLDB_FILE} -o /tmp/codelldb.vsix && \
+    cd /tmp && unzip -q codelldb.vsix "extension/*" && \
+    mkdir -p /usr/local/lib/codelldb && \
+    mv extension/* /usr/local/lib/codelldb/ && \
+    chmod +x /usr/local/lib/codelldb/adapter/codelldb && \
+    rm -rf /tmp/codelldb.vsix /tmp/extension
+
+# Add CodeLLDB to PATH
+ENV PATH="/usr/local/lib/codelldb/adapter:${PATH}"
+
+# Install Go Delve debugger
+RUN go install github.com/go-delve/delve/cmd/dlv@latest && \
+    cp /root/go/bin/dlv /usr/local/bin/dlv && \
+    chmod +x /usr/local/bin/dlv
+
+# Note: Skipping cargo-nextest and cargo-tarpaulin due to edition2024 dependency issues
+# These tools require Rust 1.86+ which is not yet stable
+# We'll use standard cargo test for now (still runs tests in parallel)
+
+# Set working directory
+WORKDIR /workspace
+
+# Create non-root user for running tests
+# Claude Code CLI refuses to run with --dangerously-skip-permissions as root for security
+RUN useradd -m -s /bin/bash testuser
+
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Use entrypoint to handle permissions and user switching
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+# Default command: run all tests including ignored integration tests
+# Note: No coverage collection due to cargo-tarpaulin edition2024 dependency
+CMD ["cargo", "test", "--all", "--", "--include-ignored", "--nocapture"]

@@ -139,13 +139,55 @@ impl LogValidator {
             // Note: "message_writer: Task exiting" is optional - may be logged after validation
         ];
 
+        // Special handling for breakpoint patterns - accept either explicit or pending pattern
+        let breakpoint_patterns = [
+            ("set_breakpoints: Starting", "storing breakpoint as pending"),
+            (
+                "set_breakpoints: Sending setBreakpoints request",
+                "storing breakpoint as pending",
+            ),
+            (
+                "send_request: Sending 'setBreakpoints'",
+                "storing breakpoint as pending",
+            ),
+            (
+                "send_request: Received response for 'setBreakpoints'",
+                "Breakpoint stored as pending",
+            ),
+            ("set_breakpoints: Success", "Breakpoint stored as pending"),
+        ];
+
         for (pattern, description) in expected_patterns {
-            if !logs.iter().any(|log| log.message.contains(pattern)) {
-                result
-                    .missing_logs
-                    .push(format!("{}: '{}'", description, pattern));
+            // Check if this is a breakpoint-related pattern that has an alternative
+            let has_alternative = breakpoint_patterns.iter().any(|(old, _)| *old == pattern);
+
+            if has_alternative {
+                // For breakpoint patterns, accept EITHER the old pattern OR the pending pattern
+                let (_, alternative) = breakpoint_patterns
+                    .iter()
+                    .find(|(old, _)| *old == pattern)
+                    .unwrap();
+                let found = logs
+                    .iter()
+                    .any(|log| log.message.contains(pattern) || log.message.contains(alternative));
+
+                if !found {
+                    result.missing_logs.push(format!(
+                        "{}: '{}' (or alternative pending pattern)",
+                        description, pattern
+                    ));
+                } else {
+                    result.found_logs.push(description.to_string());
+                }
             } else {
-                result.found_logs.push(description.to_string());
+                // For non-breakpoint patterns, require exact match
+                if !logs.iter().any(|log| log.message.contains(pattern)) {
+                    result
+                        .missing_logs
+                        .push(format!("{}: '{}'", description, pattern));
+                } else {
+                    result.found_logs.push(description.to_string());
+                }
             }
         }
 

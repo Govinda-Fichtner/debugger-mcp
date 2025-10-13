@@ -1,4 +1,5 @@
 use super::session::DebugSession;
+use crate::adapters::golang::GoAdapter;
 use crate::adapters::logging::DebugAdapterLogger;
 use crate::adapters::nodejs::NodeJsAdapter;
 use crate::adapters::python::PythonAdapter;
@@ -235,6 +236,66 @@ impl SessionManager {
 
                     return Ok(session_id);
                 }
+                "go" => {
+                    // Create adapter instance for logging
+                    let adapter = GoAdapter;
+
+                    // Log adapter selection
+                    adapter.log_selection();
+
+                    // Log transport initialization
+                    adapter.log_transport_init();
+
+                    // Go uses socket-based communication with Delve DAP server
+                    // Spawn dlv dap and connect to socket
+                    adapter.log_spawn_attempt();
+                    let go_session = GoAdapter::spawn(&program, &args, stop_on_entry)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_spawn_error(e);
+                        })?;
+
+                    // Log successful connection with Go-specific details
+                    go_session.log_connection_success_with_port();
+
+                    let adapter_id = GoAdapter::adapter_id();
+                    let launch_args = GoAdapter::launch_args_with_options(
+                        &program,
+                        &args,
+                        cwd.as_deref(),
+                        stop_on_entry,
+                    );
+
+                    // Create DAP client from socket
+                    let client = DapClient::from_socket(go_session.socket)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_connection_error(e);
+                        })?;
+
+                    // Create session
+                    let session =
+                        DebugSession::new(language.to_string(), program.clone(), client).await?;
+                    let session_id = session.id.clone();
+
+                    // Store session immediately
+                    let session_arc = Arc::new(session);
+                    {
+                        let mut sessions = self.sessions.write().await;
+                        sessions.insert(session_id.clone(), session_arc.clone());
+                    }
+
+                    // Log workaround application (if any Go-specific workarounds needed)
+                    adapter.log_workaround_applied();
+
+                    // Initialize and launch in the background
+                    tokio::spawn(
+                        session_arc
+                            .initialize_and_launch_async(adapter_id.to_string(), launch_args),
+                    );
+
+                    return Ok(session_id);
+                }
                 "rust" => {
                     // Create adapter instance for logging
                     let adapter = RustAdapter;
@@ -242,22 +303,42 @@ impl SessionManager {
                     // Log adapter selection
                     adapter.log_selection();
 
-                    info!("🔨 [RUST] Compiling Rust source before debugging");
+                    // Determine if program is a source file or already-compiled binary
+                    let binary_path = if program.ends_with(".rs") {
+                        // Source file - need to compile
+                        info!("🔨 [RUST] Compiling Rust source before debugging");
 
-                    // Step 1: Compile the Rust source (auto-detects single-file vs Cargo project)
-                    RustAdapter::log_compilation_start(&program, false); // false = debug build
-                    let binary_path =
-                        RustAdapter::compile(&program, false)
-                            .await
-                            .inspect_err(|e| {
-                                RustAdapter::log_compilation_error(e);
-                            })?;
+                        RustAdapter::log_compilation_start(&program, false); // false = debug build
+                        let binary_path =
+                            RustAdapter::compile(&program, false)
+                                .await
+                                .inspect_err(|e| {
+                                    RustAdapter::log_compilation_error(e);
+                                })?;
 
-                    RustAdapter::log_compilation_success(&binary_path);
+                        RustAdapter::log_compilation_success(&binary_path);
+                        binary_path
+                    } else {
+                        // Assume it's already a compiled binary
+                        info!("🎯 [RUST] Using pre-compiled binary: {}", program);
+                        program.clone()
+                    };
 
-                    // Step 2: Prepare CodeLLDB adapter
-                    let cmd = RustAdapter::command();
-                    let adapter_args = RustAdapter::args();
+                    // Log transport initialization
+                    adapter.log_transport_init();
+
+                    // Step 2: Spawn CodeLLDB in TCP mode (like Ruby/Node.js/Go)
+                    // Based on nvim-dap: CodeLLDB uses TCP mode with --port argument
+                    adapter.log_spawn_attempt();
+                    let rust_session = RustAdapter::spawn(&binary_path, &args, stop_on_entry)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_spawn_error(e);
+                        })?;
+
+                    // Log successful connection with Rust-specific details
+                    rust_session.log_connection_success_with_port();
+
                     let adapter_id = RustAdapter::adapter_id();
                     let launch_args = RustAdapter::launch_args(
                         &binary_path, // Use compiled binary path, not source
@@ -266,21 +347,40 @@ impl SessionManager {
                         stop_on_entry,
                     );
 
-                    // Log transport initialization
-                    adapter.log_transport_init();
+                    // Create DAP client from socket (like Ruby/Go)
+                    let client = DapClient::from_socket(rust_session.socket)
+                        .await
+                        .inspect_err(|e| {
+                            adapter.log_connection_error(e);
+                        })?;
 
-                    (
-                        cmd,
-                        adapter_args,
-                        adapter_id,
-                        launch_args,
-                        Box::new(adapter),
-                    )
+                    // Create session
+                    let session =
+                        DebugSession::new(language.to_string(), program.clone(), client).await?;
+                    let session_id = session.id.clone();
+
+                    // Store session immediately
+                    let session_arc = Arc::new(session);
+                    {
+                        let mut sessions = self.sessions.write().await;
+                        sessions.insert(session_id.clone(), session_arc.clone());
+                    }
+
+                    // Log workaround application (Rust doesn't require workarounds)
+                    adapter.log_workaround_applied();
+
+                    // Initialize and launch in the background
+                    tokio::spawn(
+                        session_arc
+                            .initialize_and_launch_async(adapter_id.to_string(), launch_args),
+                    );
+
+                    return Ok(session_id);
                 }
                 _ => return Err(Error::AdapterNotFound(language.to_string())),
             };
 
-        // Spawn DAP client (Python/Rust path - uses STDIO transport)
+        // Spawn DAP client (Python path - uses STDIO transport)
         // Adapter instance is passed from match arm above for language-specific logging
         adapter.log_spawn_attempt();
         let client = DapClient::spawn(&command, &adapter_args)
@@ -303,7 +403,7 @@ impl SessionManager {
             sessions.insert(session_id.clone(), session_arc.clone());
         }
 
-        // Log workaround if needed (Python/Rust don't require workarounds)
+        // Log workaround if needed (Python doesn't require workarounds)
         adapter.log_workaround_applied();
 
         // Initialize and launch in the background

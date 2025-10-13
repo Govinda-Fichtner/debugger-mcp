@@ -24,8 +24,62 @@ tempfile = "3.23.0"
 tokio-test = "0.4.4"
 mockall = "0.13.1"
 assert_matches = "1.5.0"
+assert_cmd = "2.0"
+predicates = "3.1"
 
 [[test]]
 name = "fake_dap_adapter"
 path = "tests/bin/fake_dap_adapter.rs"
 harness = false
+
+# Unit-like integration tests
+[[test]]
+name = "adapter_logging_test"
+path = "tests/unit/adapter_logging_test.rs"
+
+# Diagnostic tests
+[[test]]
+name = "dap_direct_test"
+path = "tests/diagnostic/dap_direct_test.rs"
+
+[[test]]
+name = "event_driven_test"
+path = "tests/diagnostic/event_driven_test.rs"
+
+# Core integration tests
+[[test]]
+name = "stop_on_entry_test"
+path = "tests/integration/core/stop_on_entry_test.rs"
+
+[[test]]
+name = "user_feedback_test"
+path = "tests/integration/core/user_feedback_test.rs"
+
+[[test]]
+name = "multi_session_test"
+path = "tests/integration/core/multi_session_test.rs"
+
+[[test]]
+name = "ruby_socket_adapter_test"
+path = "tests/integration/core/ruby_socket_adapter_test.rs"
+
+# Language-specific matrix integration tests
+[[test]]
+name = "python_integration_test"
+path = "tests/integration/lang/python_integration_test.rs"
+
+[[test]]
+name = "ruby_integration_test"
+path = "tests/integration/lang/ruby_integration_test.rs"
+
+[[test]]
+name = "nodejs_integration_test"
+path = "tests/integration/lang/nodejs_integration_test.rs"
+
+[[test]]
+name = "go_integration_test"
+path = "tests/integration/lang/go_integration_test.rs"
+
+[[test]]
+name = "rust_integration_test"
+path = "tests/integration/lang/rust_integration_test.rs"

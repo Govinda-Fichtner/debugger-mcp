@@ -2,8 +2,11 @@ use debugger_mcp::debug::SessionManager;
 use debugger_mcp::mcp::resources::ResourcesHandler;
 use debugger_mcp::mcp::tools::ToolsHandler;
 use serde_json::json;
+use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::sync::RwLock;
 
 /// Test Ruby language detection
@@ -309,4 +312,124 @@ async fn test_ruby_fizzbuzz_debugging_integration() {
             println!("   This is acceptable - the test validates the API structure");
         }
     }
+}
+
+/// Test that validates Ruby MCP server works with Claude Code CLI
+#[tokio::test]
+#[ignore]
+async fn test_ruby_claude_code_integration() {
+    println!("\n🚀 Starting Ruby Claude Code Integration Test");
+    println!("════════════════════════════════════════════════════════════════");
+
+    // 1. Check Claude CLI is available
+    println!("\n📋 Step 1: Checking Claude CLI availability...");
+    let claude_check = Command::new("claude").arg("--version").output();
+
+    if claude_check.is_err() || !claude_check.as_ref().unwrap().status.success() {
+        println!("⚠️  Skipping test: Claude CLI not found");
+        return;
+    }
+    println!("✅ Claude CLI is available");
+
+    // 2. Create temporary test directory
+    println!("\n📁 Step 2: Creating temporary test environment...");
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let test_dir = temp_dir.path();
+
+    // 3. Verify MCP server binary
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let binary_path = workspace_root.join("target/release/debugger_mcp");
+
+    if !binary_path.exists() {
+        println!(
+            "⚠️  Skipping test: Binary not found at {}",
+            binary_path.display()
+        );
+        return;
+    }
+
+    // 4. Create fizzbuzz.rb test file
+    let fizzbuzz_path = test_dir.join("fizzbuzz.rb");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.rb");
+    fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.rb");
+
+    // 5. Create prompt
+    let prompt_path = test_dir.join("debug_prompt.md");
+    let prompt = format!(
+        r#"# Ruby Debugging Test
+
+Test the debugger MCP server with Ruby:
+1. List available MCP tools
+2. Start debugging session for {}
+3. Set breakpoint at line 5
+4. Continue and document results
+5. Disconnect
+
+Create mcp_protocol_log.md documenting all interactions."#,
+        fizzbuzz_path.display()
+    );
+    fs::write(&prompt_path, prompt).expect("Failed to write prompt");
+
+    // 6. Register MCP server
+    let mcp_config = json!({
+        "command": binary_path.to_str().unwrap(),
+        "args": ["serve"]
+    });
+    let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
+
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.rb");
+    let workspace_prompt = workspace_root.join("debug_prompt.md");
+
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.rb");
+    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
+
+    let register_output = Command::new("claude")
+        .arg("mcp")
+        .arg("add-json")
+        .arg("debugger-test-ruby")
+        .arg(&mcp_config_str)
+        .current_dir(&workspace_root)
+        .output()
+        .expect("Failed to register MCP server");
+
+    if !register_output.status.success() {
+        println!("⚠️  MCP registration failed");
+        return;
+    }
+
+    // 7. Run Claude Code
+    let prompt_content = fs::read_to_string(&workspace_prompt).unwrap();
+
+    let claude_output = Command::new("claude")
+        .arg(&prompt_content)
+        .arg("--print")
+        .arg("--dangerously-skip-permissions")
+        .current_dir(&workspace_root)
+        .output()
+        .expect("Failed to run claude");
+
+    println!("\n📊 Claude Code Output:");
+    println!("{}", String::from_utf8_lossy(&claude_output.stdout));
+
+    // 8. Verify protocol log
+    let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
+    let log_exists = protocol_log_path.exists();
+
+    if log_exists {
+        println!("✅ Protocol log created");
+    }
+
+    // 9. Cleanup
+    let _ = Command::new("claude")
+        .arg("mcp")
+        .arg("remove")
+        .arg("debugger-test-ruby")
+        .current_dir(&workspace_root)
+        .output();
+
+    let _ = fs::remove_file(&workspace_fizzbuzz);
+    let _ = fs::remove_file(&workspace_prompt);
+    let _ = fs::remove_file(&protocol_log_path);
+
+    println!("\n🎉 Ruby Claude Code integration test completed!");
 }

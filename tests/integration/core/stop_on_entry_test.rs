@@ -84,10 +84,29 @@ async fn test_stopOnEntry_sets_stopped_state() {
     let session_id = start_response["sessionId"].as_str().unwrap().to_string();
     println!("✅ Session started: {}", session_id);
 
-    // Give event handlers time to process 'stopped' event
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for session to complete async initialization and reach Stopped state
+    // Poll for up to 5 seconds until state becomes "Stopped"
+    for attempt in 1..=50 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Check state - THIS IS THE CRITICAL TEST
+        let state_args = json!({
+            "sessionId": session_id
+        });
+
+        let state_result = tools_handler
+            .handle_tool("debugger_session_state", state_args)
+            .await
+            .expect("debugger_session_state should succeed");
+
+        let state = state_result["state"].as_str().unwrap();
+        println!("⏳ Attempt {}/50: state = {}", attempt, state);
+
+        if state == "Stopped" {
+            break;
+        }
+    }
+
+    // Now check the final state - THIS IS THE CRITICAL TEST
     let state_args = json!({
         "sessionId": session_id
     });
@@ -97,9 +116,9 @@ async fn test_stopOnEntry_sets_stopped_state() {
         .await
         .expect("debugger_session_state should succeed");
 
-    println!("📊 Current state: {}", state_result);
+    println!("📊 Final state after polling: {}", state_result);
 
-    let state = state_result["state"].as_str().unwrap();
+    let final_state = state_result["state"].as_str().unwrap();
     let reason = state_result
         .get("details")
         .and_then(|d| d.get("reason"))
@@ -107,9 +126,9 @@ async fn test_stopOnEntry_sets_stopped_state() {
 
     // ASSERTION: State should be "Stopped", not "Running"
     assert_eq!(
-        state, "Stopped",
-        "❌ BUG REPRODUCED: State is '{}' but should be 'Stopped' with stopOnEntry: true",
-        state
+        final_state, "Stopped",
+        "❌ BUG REPRODUCED: State is '{}' but should be 'Stopped' with stopOnEntry: true (waited {} attempts)",
+        final_state, 50
     );
 
     // ASSERTION: Reason should be "entry"
@@ -431,8 +450,25 @@ async fn test_state_transitions_are_accurate() {
 
     let session_id = start_response["sessionId"].as_str().unwrap();
 
-    // Wait for initial stop
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for session to complete async initialization and reach Stopped state
+    // Poll for up to 5 seconds until state becomes "Stopped"
+    let mut found_stopped = false;
+    for attempt in 1..=50 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let state_check = tools_handler
+            .handle_tool("debugger_session_state", json!({"sessionId": session_id}))
+            .await
+            .unwrap();
+
+        let current_state = state_check["state"].as_str().unwrap();
+        println!("⏳ Attempt {}/50: state = {}", attempt, current_state);
+
+        if current_state == "Stopped" {
+            found_stopped = true;
+            break;
+        }
+    }
 
     // STATE 1: Should be Stopped at entry
     let state1 = tools_handler
@@ -440,7 +476,12 @@ async fn test_state_transitions_are_accurate() {
         .await
         .unwrap();
 
-    println!("📊 State after start: {}", state1);
+    println!("📊 State after start and polling: {}", state1);
+    assert!(
+        found_stopped,
+        "State 1: Should have reached Stopped state within 5 seconds, got: {}",
+        state1["state"].as_str().unwrap()
+    );
     assert_eq!(
         state1["state"].as_str().unwrap(),
         "Stopped",

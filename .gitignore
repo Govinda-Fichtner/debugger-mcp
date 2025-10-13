@@ -3,7 +3,18 @@
 # Hive Mind session data
 /.hive-mind/
 /.claude-flow/
+/.swarm/
 coverage/
 target/tarpaulin/
 core.*
 tests/fixtures/target/
+
+# Temporary/backup files
+*.tar.gz
+*-backup*.yml
+tests/test_*.sh
+
+# Research and documentation drafts
+docs/research/
+docs/*_FIX*.md
+docs/*_VALIDATED*.md
