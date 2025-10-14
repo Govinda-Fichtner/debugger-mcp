@@ -163,9 +163,6 @@ async fn test_fizzbuzz_debugging_integration() {
             "sessionId": session_id
         });
 
-        // Give the program a moment to start and hit breakpoint
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
         let continue_result = tools_handler
             .handle_tool("debugger_continue", continue_args)
             .await;
@@ -179,54 +176,89 @@ async fn test_fizzbuzz_debugging_integration() {
             println!("✅ Execution continued");
         }
 
-        // Give time for the program to reach breakpoint
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-
-        // 4. Get stack trace (if stopped at breakpoint)
-        println!("📚 Getting stack trace...");
-
-        let stack_args = json!({
-            "sessionId": session_id
+        // Wait for the program to reach breakpoint or complete
+        println!("⏳ Waiting for program to stop at breakpoint...");
+        let wait_args = json!({
+            "sessionId": session_id,
+            "timeoutMs": 5000
         });
 
-        let stack_result = tools_handler
-            .handle_tool("debugger_stack_trace", stack_args)
-            .await;
+        let wait_result = timeout(
+            Duration::from_secs(10),
+            tools_handler.handle_tool("debugger_wait_for_stop", wait_args),
+        )
+        .await;
 
-        if let Ok(stack_response) = stack_result {
-            let frames = &stack_response["stackFrames"];
-            println!(
-                "✅ Stack trace retrieved: {} frames",
-                frames.as_array().map(|a| a.len()).unwrap_or(0)
-            );
+        let stopped_at_breakpoint = match wait_result {
+            Ok(Ok(stop_response)) => {
+                let state = stop_response["state"].as_str().unwrap_or("Unknown");
+                let reason = stop_response["reason"].as_str().unwrap_or("unknown");
+                println!("🛑 Program stopped: state={}, reason={}", state, reason);
+                state == "Stopped" && reason != "entry"
+            }
+            Ok(Err(e)) => {
+                println!("⚠️  Wait for stop failed: {:?}", e);
+                false
+            }
+            Err(_) => {
+                println!("⚠️  Wait for stop timed out");
+                false
+            }
+        };
 
-            if let Some(frames_array) = frames.as_array() {
-                if !frames_array.is_empty() {
-                    println!("   Top frame: {}", frames_array[0]);
+        // 4. Get stack trace (only if stopped at breakpoint)
+        if stopped_at_breakpoint {
+            println!("📚 Getting stack trace...");
+
+            let stack_args = json!({
+                "sessionId": session_id
+            });
+
+            let stack_result = tools_handler
+                .handle_tool("debugger_stack_trace", stack_args)
+                .await;
+
+            if let Ok(stack_response) = stack_result {
+                let frames = &stack_response["stackFrames"];
+                println!(
+                    "✅ Stack trace retrieved: {} frames",
+                    frames.as_array().map(|a| a.len()).unwrap_or(0)
+                );
+
+                if let Some(frames_array) = frames.as_array() {
+                    if !frames_array.is_empty() {
+                        println!("   Top frame: {}", frames_array[0]);
+                    }
                 }
+            } else {
+                println!("⚠️  Stack trace request failed");
+            }
+
+            // 5. Evaluate expression (get value of 'n')
+            println!("🔍 Evaluating expression 'n'...");
+
+            let eval_args = json!({
+                "sessionId": session_id,
+                "expression": "n",
+                "frameId": null
+            });
+
+            let eval_result = tools_handler
+                .handle_tool("debugger_evaluate", eval_args)
+                .await;
+
+            if let Ok(eval_response) = eval_result {
+                let result = &eval_response["result"];
+                println!("✅ Evaluation result: {}", result);
+            } else {
+                println!("⚠️  Expression evaluation failed");
             }
         } else {
-            println!("⚠️  Stack trace not available (program may not be stopped)");
-        }
-
-        // 5. Evaluate expression (get value of 'n')
-        println!("🔍 Evaluating expression 'n'...");
-
-        let eval_args = json!({
-            "sessionId": session_id,
-            "expression": "n",
-            "frameId": null
-        });
-
-        let eval_result = tools_handler
-            .handle_tool("debugger_evaluate", eval_args)
-            .await;
-
-        if let Ok(eval_response) = eval_result {
-            let result = &eval_response["result"];
-            println!("✅ Evaluation result: {}", result);
-        } else {
-            println!("⚠️  Expression evaluation not available");
+            println!("⚠️  Skipping stack trace and evaluation (program not stopped at breakpoint)");
+            println!("   This may occur if:");
+            println!("   - The breakpoint was not hit (line may not be executed)");
+            println!("   - The program completed before hitting the breakpoint");
+            println!("   - The breakpoint was not verified by the debugger");
         }
 
         // 6. Test resource queries
