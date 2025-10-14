@@ -12,69 +12,49 @@ A Rust-based MCP (Model Context Protocol) server that exposes debugging capabili
 
 🎉 **Phase: Multi-Language Support - Production-Ready** 🎉
 
-- ✅ Comprehensive architecture proposal (135+ pages)
-- ✅ Technology stack selected (Rust, Tokio, Clap, DAP)
-- ✅ MVP implementation plan (Python → Ruby → Node.js → Rust)
-- ✅ TDD strategy with FizzBuzz integration test
-- ✅ MCP server with STDIO transport (~400 LOC)
-- ✅ Complete DAP client with async correlation (~270 LOC)
-- ✅ Debug session management (~400 LOC)
+- ✅ Comprehensive architecture (see [docs/](docs/))
+- ✅ MCP server with STDIO transport
+- ✅ Complete DAP client with async correlation
+- ✅ Debug session management
 - ✅ 13 MCP tools implemented
-- ✅ **Python support** via debugpy - Fully validated
-- ✅ **Ruby support** via rdbg (debug gem) - Fully validated with entry breakpoint solution
-- ✅ **Node.js support** via vscode-js-debug - Fully validated with multi-session architecture
-- ✅ **Rust support** via CodeLLDB - Fully validated with automatic compilation
-- ✅ Comprehensive integration tests (Python + Ruby + Node.js + Rust) - All passing
-- ✅ Language-specific Docker images (Python, Ruby, Node.js, Rust)
+- ✅ **5 languages fully validated**: Python, Ruby, Node.js, Go, Rust
+- ✅ Comprehensive integration tests - All passing
+- ✅ Language-specific Docker images
 - ✅ **End-to-end validation with Claude** - 100% success rate
-
-**📘 Important for Docker Users**: When using container-based debugging, always use **container paths** (`/workspace/...`) not host paths (`/home/.../projects/...`). See [Container Path Guide](docs/CONTAINER_PATH_GUIDE.md).
 
 ## Quick Links
 
-### Essential Guides
-- **[Container Path Guide](docs/CONTAINER_PATH_GUIDE.md)** - 🚨 Critical for Docker users
-- **[Docker Deployment Guide](docs/DOCKER.md)** - Running with Docker (recommended)
-- **[Getting Started](docs/GETTING_STARTED.md)** - Developer setup and first steps
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-
-### Technical Documentation
-- **[Node.js Multi-Session Architecture](docs/NODEJS_MULTI_SESSION_ARCHITECTURE.md)** - Understanding vscode-js-debug
-- **[Expression Syntax Guide](docs/EXPRESSION_SYNTAX_GUIDE.md)** - Language-specific evaluation syntax
-- **[Adding New Languages](docs/ADDING_NEW_LANGUAGE.md)** - Guide for adding language support
-- **[Main Architecture Proposal](docs/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design (68 pages)
-- **[Documentation Index](docs/README.md)** - All documentation
+- **[Documentation Hub](docs/README.md)** - Complete documentation index
+- **[Getting Started](docs/Contributing/GETTING_STARTED.md)** - Developer setup
+- **[Docker Deployment](docs/Usage/DOCKER.md)** - Deployment guide (recommended)
+- **[Troubleshooting](docs/Usage/TROUBLESHOOTING.md)** - Common issues
+- **[Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design
 
 ## Features
 
 ### Supported Languages ✅
 
-| Language | Debugger | Status | Notes | Docker Image |
-|----------|----------|--------|-------|--------------|
-| **Python** | debugpy | ✅ **Validated** | Native stopOnEntry support | `Dockerfile.python` |
-| **Ruby** | rdbg (debug gem) | ✅ **Validated** | Socket-based DAP | `Dockerfile.ruby` |
-| **Node.js** | vscode-js-debug | ✅ **Validated** | Multi-session architecture | `Dockerfile.nodejs` |
-| **Rust** | CodeLLDB | ✅ **Validated** | Automatic compilation + LLDB | `Dockerfile.rust` |
-| **Go** | delve | ✅ **Validated** | Native DAP, multi-file support | - |
+| Language | Debugger | Status | Docker Image |
+|----------|----------|--------|--------------|
+| **Python** | debugpy | ✅ Production | `Dockerfile.python` |
+| **Ruby** | rdbg (debug gem) | ✅ Production | `Dockerfile.ruby` |
+| **Node.js** | vscode-js-debug | ✅ Production | `Dockerfile.nodejs` |
+| **Rust** | CodeLLDB | ✅ Production | `Dockerfile.rust` |
+| **Go** | delve | ✅ Production | - |
 
 ### Implemented Features ✅
-- ✅ Start/stop debugging sessions (`debugger_start`, `debugger_disconnect`)
-- ✅ Set source breakpoints (`debugger_set_breakpoint`, `debugger_list_breakpoints`)
-- ✅ Execution control (`debugger_continue`, `debugger_wait_for_stop`)
-- ✅ Expression evaluation (`debugger_evaluate`)
-- ✅ Stack trace inspection (`debugger_stack_trace`)
-- ✅ Step commands (`debugger_step_over`, `debugger_step_into`, `debugger_step_out`)
-- ✅ Session state queries (`debugger_session_state`)
+- ✅ Start/stop debugging sessions
+- ✅ Set source breakpoints
+- ✅ Execution control (continue, step, wait)
+- ✅ Expression evaluation
+- ✅ Stack trace inspection
+- ✅ Session state queries
 
 ### Planned Features
 - ⏳ Conditional breakpoints, logpoints
 - ⏳ Exception breakpoints
-
-### Future Enhancements
-- Multi-threaded debugging
-- Remote debugging
-- Attach to running processes
-- Performance optimization
+- ⏳ Multi-threaded debugging
+- ⏳ Remote debugging
 
 ## Architecture
 
@@ -107,19 +87,19 @@ AI Agent (Claude Desktop, Gemini CLI, etc.)
 Choose the Docker image based on your project's language:
 
 ```bash
-# For Python projects (~120 MB)
+# For Python projects
 docker build -f Dockerfile.python -t debugger-mcp:python .
 docker run -i debugger-mcp:python
 
-# For Ruby projects (~100 MB)
+# For Ruby projects
 docker build -f Dockerfile.ruby -t debugger-mcp:ruby .
 docker run -i debugger-mcp:ruby
 
-# For Node.js projects (~200 MB)
+# For Node.js projects
 docker build -f Dockerfile.nodejs -t debugger-mcp:nodejs .
 docker run -i debugger-mcp:nodejs
 
-# For Rust projects (~900 MB - includes full Rust toolchain)
+# For Rust projects
 docker build -f Dockerfile.rust -t debugger-mcp:rust .
 docker run -i debugger-mcp:rust
 ```
@@ -141,9 +121,9 @@ docker run -i debugger-mcp:rust
 }
 ```
 
-**🚨 Critical**: When debugging, use `/workspace/...` paths (container) not `/home/user/projects/...` paths (host)!
+**🚨 Important**: When debugging with Docker, use `/workspace/...` paths (container) not `/home/user/projects/...` paths (host)!
 
-See [Docker Documentation](docs/DOCKER.md) and [Container Path Guide](docs/CONTAINER_PATH_GUIDE.md) for details.
+See [Docker Documentation](docs/Usage/DOCKER.md) for complete deployment guide.
 
 ### Option 2: Native Install
 
@@ -168,7 +148,7 @@ cargo build --release
 }
 ```
 
-### Use with AI Agent
+### Example: AI-Assisted Debugging
 
 **Python Example:**
 ```
@@ -187,65 +167,14 @@ Claude:
    The code doesn't check for None before accessing user_data.name..."
 ```
 
-**Node.js Example:**
-```
-User: "My Node.js script has a bug. Can you debug it?"
-
-Claude:
-  → debugger_start(language="nodejs", program="/workspace/fizzbuzz.js", stopOnEntry=true)
-  → debugger_set_breakpoint(sourcePath="/workspace/fizzbuzz.js", line=9)
-  → debugger_continue()
-  → debugger_wait_for_stop()
-  [Program stops at breakpoint]
-  → debugger_evaluate(expression="n % 4")  // Bug: should be n % 5
-  → Result: "1" (wrong check!)
-
-  "The bug is on line 5: using 'n % 4' instead of 'n % 5' for Buzz check..."
-```
-
-**Ruby Example:**
-```
-User: "My Ruby script has a bug in the fizzbuzz function. Can you debug it?"
-
-Claude:
-  → debugger_start(language="ruby", program="/workspace/fizzbuzz.rb", stopOnEntry=true)
-  → debugger_set_breakpoint(sourcePath="/workspace/fizzbuzz.rb", line=9)
-  → debugger_continue()
-  → debugger_wait_for_stop()
-  [Program stops at breakpoint]
-  → stack = debugger_stack_trace()
-  → debugger_evaluate(expression="n", frameId=stack.stackFrames[0].id)
-
-  "The bug is on line 9: it checks 'n % 4' instead of 'n % 5' for Buzz.
-   This causes incorrect output for numbers divisible by 5..."
-```
-
-**Rust Example:**
-```
-User: "My Rust program has a logic error. Can you debug it?"
-
-Claude:
-  → debugger_start(language="rust", program="/workspace/fizzbuzz.rs", stopOnEntry=true)
-  [Compiling fizzbuzz.rs with rustc...]
-  → debugger_set_breakpoint(sourcePath="/workspace/fizzbuzz.rs", line=9)
-  → debugger_continue()
-  → debugger_wait_for_stop()
-  [Program stops at breakpoint]
-  → debugger_evaluate(expression="n % 4")
-  → Result: "0" (bug confirmed!)
-  → debugger_evaluate(expression="n % 5")
-  → Result: "4" (should be 0 for Buzz)
-
-  "The bug is on line 9: checking 'n % 4' instead of 'n % 5'.
-   Change the condition to 'n % 5 == 0' for correct Buzz output..."
-```
+See [Expression Syntax Guide](docs/Usage/EXPRESSION_SYNTAX_GUIDE.md) for language-specific evaluation syntax.
 
 ## Technology Stack
 
 | Component | Technology | Why? |
 |-----------|-----------|------|
 | Language | Rust | Safety, performance, async |
-| CLI | Clap | Industry standard, derive macros |
+| CLI | Clap | Industry standard |
 | Async Runtime | Tokio | Comprehensive, battle-tested |
 | Serialization | serde | De facto standard |
 | Error Handling | anyhow + thiserror | Ergonomic, clear errors |
@@ -276,148 +205,90 @@ cargo test
 
 # Run server
 cargo run -- serve
-
-# Run with verbose logging
-cargo run -- serve --verbose
 ```
 
 ### Pre-commit Hooks
 
-The project uses automated git hooks to ensure code quality:
+The project uses automated git hooks for code quality:
 
 - **Rust linting** (clippy, rustfmt)
 - **Security scanning** (gitleaks, cargo-audit, cargo-deny)
 - **Test execution** (unit tests on commit, all tests on push)
 - **Code coverage** (60% minimum threshold)
-- **Commit message validation** (Conventional Commits + Tim Pope guidelines)
+- **Commit message validation** (Conventional Commits)
 
-**Setup**: See [Pre-commit Setup Guide](docs/PRE_COMMIT_SETUP.md) for detailed installation instructions.
-
-**Quick install**:
-```bash
-# Install required tools
-rustup component add clippy rustfmt
-cargo install cargo-tarpaulin cargo-audit cargo-deny
-# Install gitleaks (see setup guide for instructions)
-
-# Activate hooks
-pre-commit install --install-hooks
-```
-
-### Development Workflow
-
-1. Read [Getting Started](GETTING_STARTED.md)
-2. Follow [MVP Implementation Plan](docs/MVP_IMPLEMENTATION_PLAN.md)
-3. **Set up pre-commit hooks** (see [Pre-commit Setup](docs/PRE_COMMIT_SETUP.md))
-4. Write tests first (TDD)
-5. Implement features
-6. Run integration tests
-
-**Key Integration Test**: FizzBuzz debugging scenario
-- Tests all core features (breakpoints, stepping, variables)
-- Works with Python and Ruby (validates abstraction)
-- See `tests/integration/fizzbuzz_test.rs`
+See [Pre-commit Setup Guide](docs/Contributing/PRE_COMMIT_SETUP.md) for installation instructions.
 
 ## Documentation
 
-### For Decision Makers
-- [Executive Summary](docs/DAP_MCP_SERVER_PROPOSAL.md#executive-summary)
-- [Use Cases](docs/DAP_MCP_SERVER_PROPOSAL.md#8-use-cases-and-user-journeys)
-- [Implementation Timeline](docs/MVP_IMPLEMENTATION_PLAN.md#phased-development-plan)
+### Quick Navigation
 
-### For Architects
-- [Architecture Overview](docs/DAP_MCP_SERVER_PROPOSAL.md#2-architecture-overview)
-- [Component Specifications](docs/architecture/COMPONENTS.md)
-- [Multi-Language Abstraction](docs/DAP_MCP_SERVER_PROPOSAL.md#6-multi-language-abstraction-layer)
+**Want to understand the architecture?**
+→ Start with [Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
 
-### For Developers
-- [Getting Started Guide](GETTING_STARTED.md)
-- [Pre-commit Setup Guide](docs/PRE_COMMIT_SETUP.md) - Code quality automation
-- [TDD Workflow](docs/MVP_IMPLEMENTATION_PLAN.md#tdd-workflow)
-- [Component Details](docs/architecture/COMPONENTS.md)
+**Want to contribute?**
+→ Start with [Getting Started Guide](docs/Contributing/GETTING_STARTED.md)
 
-## Project Structure
+**Want to deploy?**
+→ Start with [Docker Deployment](docs/Usage/DOCKER.md)
 
-```
-debugger_mcp/
-├── README.md                     # This file
-├── GETTING_STARTED.md            # Developer setup
-├── SUMMARY.md                    # Project summary
-├── docs/                         # Architecture documentation
-│   ├── DAP_MCP_SERVER_PROPOSAL.md   # Main proposal (68 pages)
-│   ├── MVP_IMPLEMENTATION_PLAN.md   # Phase 1 plan
-│   ├── architecture/
-│   │   └── COMPONENTS.md            # Component specs
-│   └── research/                    # Background research
-├── src/                          # Source code (TBD)
-├── tests/                        # Tests (TBD)
-└── Cargo.toml                    # Dependencies
-```
+**Want to add a new language?**
+→ See [Adding New Language Guide](docs/Contributing/ADDING_NEW_LANGUAGE.md)
+
+**Full documentation index:**
+→ See [docs/README.md](docs/README.md)
+
+### Documentation Structure
+
+- **[Architecture/](docs/Architecture/)** - System design and technical decisions
+- **[Contributing/](docs/Contributing/)** - Developer guides and setup
+- **[Usage/](docs/Usage/)** - Deployment and user guides
+- **[Processes/](docs/Processes/)** - Development and release processes
 
 ## Roadmap
 
 ### ✅ Phase 0: Research & Architecture (Complete)
-- Research DAP protocol, MCP, existing implementations
-- Design architecture and component specifications
-- Create comprehensive documentation
-- Define MVP scope and test strategy
+Research, design, comprehensive documentation
 
-### ✅ Phase 1: MVP - Python Support (COMPLETE)
-- ✅ Implement MCP server with STDIO transport
-- ✅ Implement DAP client for debugpy
-- ✅ Core tools: start, stop, breakpoint, continue, evaluate, stack_trace
-- ✅ Session manager with concurrent access
-- ✅ Pass FizzBuzz integration test
-- ✅ End-to-end validation with Claude
+### ✅ Phase 1: MVP - Python Support (Complete)
+MCP server, DAP client, core tools, integration tests
 
-### ✅ Phase 2: Ruby Validation (COMPLETE)
-- ✅ Add Ruby debugger support (rdbg)
-- ✅ Validate language abstraction works
-- ✅ Implement entry breakpoint solution for stopOnEntry
-- ✅ Document findings and create language addition guide
-- ✅ End-to-end validation with Claude (100% success)
+### ✅ Phase 2: Ruby Validation (Complete)
+Ruby support, language abstraction validation, entry breakpoint solution
 
-### ✅ Phase 3: Multi-Language Support (COMPLETE)
-- ✅ Node.js support (vscode-js-debug with multi-session architecture)
-- ✅ Rust support (CodeLLDB with automatic compilation)
-- ✅ Advanced features implementation
-- ✅ Comprehensive Docker images for all languages
-- ✅ Language-specific expression syntax documentation
-- ✅ Production-ready validation
+### ✅ Phase 3: Multi-Language Support (Complete)
+Node.js, Rust, Go support, Docker images, production-ready
 
-### 📅 Phase 4: Production (Weeks 9-12)
-- Conditional breakpoints, logpoints
-- Exception handling
-- Security hardening
-- Comprehensive testing
-- Apply DAP sequence fix to all languages (Issue #1)
+### 📅 Phase 4: Production Features (In Progress)
+Conditional breakpoints, exception handling, security hardening
 
-### 📅 Phase 5: Community (Weeks 13+)
-- Open source release
-- Plugin API for custom adapters
-- VS Code extension
-- Community building
+### 📅 Phase 5: Community (Future)
+Open source release, plugin API, VS Code extension
+
+## Historical Documentation
+
+Historical implementation notes, proposals, research, and completed work have been archived for reference:
+- **Location**: Personal Obsidian vault at `/Development Projects/Debugger-MCP/Documentation/`
+- **Contents**: Status reports, bug fixes, postmortems, proposals, research, deep-dives
+- **Purpose**: Preserve complete project history while keeping repository focused on current documentation
+
+This keeps the repository clean and focused while maintaining full historical context for future reference.
 
 ## Contributing (Future)
 
-Once implementation begins:
-
-1. Read architecture docs
-2. Check GitHub issues
-3. Follow TDD workflow
-4. Submit PR with tests
-5. All contributions welcome!
+Once open source:
+1. Read [Getting Started](docs/Contributing/GETTING_STARTED.md)
+2. Review [Architecture](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
+3. Check GitHub issues
+4. Follow [Testing Strategy](docs/Contributing/TESTING_STRATEGY.md)
+5. Submit PR with tests
 
 ## License
 
 TBD (likely MIT or Apache 2.0)
 
-## Contact
-
-**Project Status**: Architecture phase complete, implementation starting
-**Documentation**: 135+ pages, 40,000+ words
-**Timeline**: 20 weeks to v1.0
-
 ---
 
-**Built with ❤️ and 🦀 by the community**
+**Built with ❤️ and 🦀 using Rust**
+
+*Last Updated: 2025-10-10*
