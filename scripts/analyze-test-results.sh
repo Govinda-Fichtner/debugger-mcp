@@ -21,6 +21,75 @@ ARTIFACTS_DIR="${1:-.}"
 echo "🔍 Analyzing test results in: $ARTIFACTS_DIR"
 echo
 
+# Function to analyze JSON test results (new method)
+analyze_language_json() {
+    local lang="$1"
+    local json_file="$2"
+
+    # Validate JSON file exists
+    if [[ ! -f "$json_file" ]]; then
+        return 1
+    fi
+
+    # Check if jq is available
+    if ! command -v jq &> /dev/null; then
+        echo "⚠️  jq not available, cannot parse JSON" >&2
+        return 1
+    fi
+
+    # Parse JSON and extract fields
+    local overall_success=$(jq -r '.test_run.overall_success // false' "$json_file" 2>/dev/null)
+    local session_started=$(jq -r '.operations.session_started // false' "$json_file" 2>/dev/null)
+    local breakpoint_set=$(jq -r '.operations.breakpoint_set // false' "$json_file" 2>/dev/null)
+    local breakpoint_verified=$(jq -r '.operations.breakpoint_verified // false' "$json_file" 2>/dev/null)
+    local execution_continued=$(jq -r '.operations.execution_continued // false' "$json_file" 2>/dev/null)
+    local stopped_at_breakpoint=$(jq -r '.operations.stopped_at_breakpoint // false' "$json_file" 2>/dev/null)
+    local stack_trace=$(jq -r '.operations.stack_trace_retrieved // false' "$json_file" 2>/dev/null)
+    local evaluation=$(jq -r '.operations.variable_evaluated // false' "$json_file" 2>/dev/null)
+    local disconnect=$(jq -r '.operations.session_disconnected // false' "$json_file" 2>/dev/null)
+    local error_count=$(jq -r '.errors | length // 0' "$json_file" 2>/dev/null)
+
+    # Validate JSON parsing worked
+    if [[ "$overall_success" != "true" && "$overall_success" != "false" ]]; then
+        return 1
+    fi
+
+    # Convert boolean strings to counts (1 for true, 0 for false)
+    local session_count=$([[ "$session_started" == "true" ]] && echo 1 || echo 0)
+    local bp_count=$([[ "$breakpoint_set" == "true" ]] && echo 1 || echo 0)
+    local bp_verified_count=$([[ "$breakpoint_verified" == "true" ]] && echo 1 || echo 0)
+    local cont_count=$([[ "$execution_continued" == "true" ]] && echo 1 || echo 0)
+    local stopped_count=$([[ "$stopped_at_breakpoint" == "true" ]] && echo 1 || echo 0)
+    local stack_count=$([[ "$stack_trace" == "true" ]] && echo 1 || echo 0)
+    local eval_count=$([[ "$evaluation" == "true" ]] && echo 1 || echo 0)
+    local disc_count=$([[ "$disconnect" == "true" ]] && echo 1 || echo 0)
+
+    # Determine status based on JSON data
+    if [[ "$overall_success" == "true" ]]; then
+        # All operations succeeded
+        echo "$lang|✅ PASS|100%|Fully Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+    elif [[ $error_count -gt 0 ]]; then
+        # Has errors, check what's working
+        if [[ $session_count -eq 1 && $bp_count -eq 1 ]]; then
+            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        else
+            echo "$lang|❌ FAIL|0%|Non-functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        fi
+    else
+        # Check how many operations succeeded
+        local op_count=$((session_count + bp_verified_count + cont_count + stack_count + eval_count + disc_count))
+        if [[ $op_count -ge 6 ]]; then
+            echo "$lang|✅ PASS|100%|Fully Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        elif [[ $op_count -ge 4 ]]; then
+            echo "$lang|⚠️  PARTIAL|60%|Partially Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        else
+            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        fi
+    fi
+
+    return 0
+}
+
 # Function to analyze a single language test output
 analyze_language() {
     local lang="$1"
@@ -30,6 +99,20 @@ analyze_language() {
         echo "⚠️  File not found: $file"
         return 1
     fi
+
+    # Try JSON-based analysis first (new method)
+    local json_file="${file%/*}/test-results.json"
+    if [[ -f "$json_file" ]]; then
+        local json_result=$(analyze_language_json "$lang" "$json_file")
+        if [[ $? -eq 0 ]]; then
+            echo "$json_result"
+            return 0
+        fi
+        # JSON parsing failed, fall back to pattern matching
+        echo "⚠️  JSON parsing failed for $lang, falling back to pattern matching" >&2
+    fi
+
+    # Fall back to pattern matching (legacy method)
 
     # Extract overall test result
     local test_result=$(grep "test result:" "$file" | tail -1)

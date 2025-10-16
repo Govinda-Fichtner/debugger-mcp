@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Debug Integration Test Results",
+  "description": "Standardized format for reporting debugging integration test outcomes",
+  "type": "object",
+  "required": ["test_run", "operations"],
+  "properties": {
+    "test_run": {
+      "type": "object",
+      "required": ["language", "timestamp", "overall_success"],
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": ["python", "ruby", "nodejs", "go", "rust"],
+          "description": "Programming language being tested"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of test execution"
+        },
+        "overall_success": {
+          "type": "boolean",
+          "description": "Whether all debugging operations succeeded"
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "required": [
+        "session_started",
+        "breakpoint_set",
+        "breakpoint_verified",
+        "execution_continued",
+        "stopped_at_breakpoint",
+        "stack_trace_retrieved",
+        "variable_evaluated",
+        "session_disconnected"
+      ],
+      "properties": {
+        "session_started": {
+          "type": "boolean",
+          "description": "Debug session successfully initialized and started"
+        },
+        "breakpoint_set": {
+          "type": "boolean",
+          "description": "Breakpoint successfully set at target line"
+        },
+        "breakpoint_verified": {
+          "type": "boolean",
+          "description": "Debugger verified breakpoint can be hit"
+        },
+        "execution_continued": {
+          "type": "boolean",
+          "description": "Program execution successfully resumed"
+        },
+        "stopped_at_breakpoint": {
+          "type": "boolean",
+          "description": "Program stopped at the set breakpoint"
+        },
+        "stack_trace_retrieved": {
+          "type": "boolean",
+          "description": "Stack trace successfully retrieved when stopped"
+        },
+        "variable_evaluated": {
+          "type": "boolean",
+          "description": "Variable value successfully evaluated"
+        },
+        "session_disconnected": {
+          "type": "boolean",
+          "description": "Debug session cleanly disconnected"
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "description": "List of errors encountered during testing",
+      "items": {
+        "type": "object",
+        "required": ["operation", "message"],
+        "properties": {
+          "operation": {
+            "type": "string",
+            "description": "Which operation failed"
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message details"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional additional information",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "Debug session identifier"
+        },
+        "program_path": {
+          "type": "string",
+          "description": "Path to program being debugged"
+        },
+        "breakpoint_line": {
+          "type": "integer",
+          "description": "Line number where breakpoint was set"
+        }
+      }
+    }
+  }
+}

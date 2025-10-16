@@ -368,7 +368,37 @@ Test the debugger MCP server with Node.js:
 4. Continue and document results
 5. Disconnect
 
-Create mcp_protocol_log.md documenting all interactions."#,
+IMPORTANT: At the end of testing, create a file named 'test-results.json' with this EXACT format:
+```json
+{{
+  "test_run": {{
+    "language": "nodejs",
+    "timestamp": "<current ISO 8601 timestamp>",
+    "overall_success": <true if all operations succeeded, false otherwise>
+  }},
+  "operations": {{
+    "session_started": <true/false>,
+    "breakpoint_set": <true/false>,
+    "breakpoint_verified": <true/false>,
+    "execution_continued": <true/false>,
+    "stopped_at_breakpoint": <true/false>,
+    "stack_trace_retrieved": <true/false>,
+    "variable_evaluated": <true/false>,
+    "session_disconnected": <true/false>
+  }},
+  "errors": [
+    {{
+      "operation": "<operation name>",
+      "message": "<error message>"
+    }}
+  ]
+}}
+```
+
+Set each boolean to true only if that specific operation completed successfully.
+Add errors array entries for any failures encountered.
+
+Also create mcp_protocol_log.md documenting all interactions."#,
         fizzbuzz_path.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
