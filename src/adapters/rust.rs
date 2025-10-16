@@ -642,8 +642,18 @@ impl RustAdapter {
             "sourceMap": {".": "."},
         });
 
+        // Set working directory for proper source path resolution
+        // CodeLLDB needs cwd to resolve relative paths in DWARF debug info
+        // When rustc compiles with relative source paths (e.g., "tests/fixtures/fizzbuzz.rs"),
+        // it embeds DW_AT_comp_dir (e.g., "/workspace") and relative directory entries.
+        // CodeLLDB must combine comp_dir + relative_path to find source files.
+        // Setting cwd ensures CodeLLDB can resolve these paths correctly.
         if let Some(cwd_path) = cwd {
             launch["cwd"] = json!(cwd_path);
+        } else {
+            // Default to /workspace (common in Docker/CI environments)
+            // This matches the compilation directory embedded in DWARF debug info
+            launch["cwd"] = json!("/workspace");
         }
 
         launch
@@ -800,7 +810,8 @@ mod tests {
         assert_eq!(config["program"], binary);
         assert_eq!(config["args"], json!([]));
         assert_eq!(config["stopOnEntry"], false);
-        assert!(config["cwd"].is_null());
+        // When cwd is None, defaults to /workspace for DWARF path resolution
+        assert_eq!(config["cwd"], "/workspace");
     }
 
     #[test]
