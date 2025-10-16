@@ -19,6 +19,12 @@ fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
     // Output binary path
     let binary_path = output_dir.join("fizzbuzz");
 
+    // Remove old binary to ensure fresh compilation with current flags
+    if binary_path.exists() {
+        fs::remove_file(&binary_path).map_err(|e| format!("Failed to remove old binary: {}", e))?;
+        println!("🗑️  Removed cached binary");
+    }
+
     println!("🔨 Compiling Rust fixture...");
     println!("   Source: {}", source_path.display());
     println!("   Output: {}", binary_path.display());
@@ -40,6 +46,21 @@ fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
     }
 
     println!("✅ Compilation successful");
+
+    // Verify debug symbols are present
+    let readelf_output = Command::new("readelf").arg("-S").arg(&binary_path).output();
+
+    if let Ok(output) = readelf_output {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if output_str.contains(".debug_info") {
+            println!("✅ Debug symbols verified (.debug_info section present)");
+        } else {
+            return Err("Binary missing debug symbols (.debug_info section not found)".to_string());
+        }
+    } else {
+        println!("⚠️  Could not verify debug symbols (readelf not available)");
+    }
+
     Ok(binary_path)
 }
 
