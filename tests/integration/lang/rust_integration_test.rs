@@ -602,16 +602,16 @@ Also create mcp_protocol_log.md documenting all interactions."#,
 
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
-        .arg("--print")
         .arg("--dangerously-skip-permissions")
         .current_dir(&workspace_root)
         .output()
         .expect("Failed to run claude");
 
     println!("\n📊 Claude Code Output:");
-    println!("{}", String::from_utf8_lossy(&claude_output.stdout));
+    let output_str = String::from_utf8_lossy(&claude_output.stdout);
+    println!("{}", output_str);
 
-    // 10. Verify protocol log and copy test-results.json
+    // 10. Verify protocol log
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
     let log_exists = protocol_log_path.exists();
 
@@ -619,7 +619,7 @@ Also create mcp_protocol_log.md documenting all interactions."#,
         println!("✅ Protocol log created");
     }
 
-    // Copy test-results.json from temp workspace to current directory for CI artifact collection
+    // 11. Copy test-results.json from temp workspace to current directory for CI artifact collection
     let test_results_src = workspace_root.join("test-results.json");
     let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
     if test_results_src.exists() {

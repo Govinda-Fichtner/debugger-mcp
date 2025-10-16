@@ -551,7 +551,6 @@ Also create mcp_protocol_log.md documenting all interactions."#,
 
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
-        .arg("--print")
         .arg("--dangerously-skip-permissions")
         .current_dir(&workspace_root)
         .output()
