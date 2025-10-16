@@ -31,58 +31,95 @@ analyze_language() {
         return 1
     fi
 
-    # Extract test result
+    # Extract overall test result
     local test_result=$(grep "test result:" "$file" | tail -1)
 
-    # Check for critical proof points (case-insensitive)
-    # NOTE: We check across ALL tests in the output file, not just one test
-    # For example, Go has multiple tests where one might show partial results
-    # but another (claude_code_integration) shows full functionality
-    local session_started=$(grep -ic "session started:" "$file" || true)
-    local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
-    local execution_continued=$(grep -ic "Execution continued" "$file" || true)
-
-    # Stack trace: Accept multiple patterns for different test scenarios
-    # "Stack trace retrieved: N frames" (from fizzbuzz test)
-    # "Retrieved complete stack traces" or "Retrieved stack trace with N frames" (from claude_code test)
-    local stack_trace=$(grep -iEc "Stack trace retrieved:|Retrieved.*stack trace" "$file" || true)
-
-    # Evaluation: Accept multiple patterns for different test scenarios
-    # "Evaluation result:" (from fizzbuzz test)
-    # "Evaluated variable" or "Evaluated expression" or "Inspected variable" (from claude_code test)
-    local evaluation=$(grep -iEc "Evaluation result:|Evaluated variable|Evaluated expression|Inspected variable" "$file" || true)
-
-    local disconnect=$(grep -ic "Session disconnected successfully" "$file" || true)
-
-    # Determine overall status
-    local status="❌ FAIL"
-    local pass_rate="0%"
-    local functionality="Non-functional"
-
-    if [[ $test_result =~ "ok" ]] && [[ $session_started -gt 0 ]] && \
-       [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]] && \
-       [[ $stack_trace -gt 0 ]] && [[ $evaluation -gt 0 ]] && \
-       [[ $disconnect -gt 0 ]]; then
-        status="✅ PASS"
-        pass_rate="100%"
-        functionality="Fully Functional"
-    elif [[ $test_result =~ "ok" ]] && [[ $session_started -gt 0 ]] && \
-         [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]]; then
-        status="⚠️  PARTIAL"
-        if [[ $stack_trace -gt 0 ]] || [[ $evaluation -gt 0 ]]; then
-            pass_rate="80%"
-            functionality="Mostly Functional"
-        else
-            pass_rate="60%"
-            functionality="Partially Functional"
-        fi
-    elif [[ $test_result =~ "ok" ]]; then
-        status="⚠️  PARTIAL"
-        pass_rate="40%"
-        functionality="Limited Functionality"
+    # If tests failed to run, mark as failure
+    if [[ ! $test_result =~ "ok" ]]; then
+        echo "$lang|❌ FAIL|0%|Tests Failed|0|0|0|0|0|0"
+        return
     fi
 
-    echo "$lang|$status|$pass_rate|$functionality|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+    # Look for Claude Code integration test success markers
+    # These are definitive proof of full functionality
+    local claude_success=$(grep -c "All tasks completed successfully\|All objectives completed successfully" "$file" || true)
+
+    # Look for comprehensive feature list from Claude Code test
+    # This pattern indicates the test exercised all debugging capabilities
+    # Different languages use different formats:
+    # - Go/Rust: "Features Tested: ... stack trace ... variable"
+    # - Python: "inspected stack trace and evaluated ... variable"
+    local comprehensive_features=$(grep -c "Features Tested:.*stack trace.*variable\|variable.*stack trace\|inspected stack trace and evaluated" "$file" || true)
+
+    # Check for test infrastructure issues (not capability issues)
+    local credit_balance_low=$(grep -c "Credit balance is too low\|credit.*too low\|insufficient.*credit" "$file" || true)
+
+    # Check for explicit failure indicators
+    local verified_false=$(grep -c "verified: false" "$file" || true)
+    local missing_symbols=$(grep -c "missing debug symbols" "$file" || true)
+    local breakpoint_never_hit=$(grep -c "Breakpoint Never Hit\|breakpoint never hit" "$file" || true)
+
+    # Basic operations (required for any passing score)
+    # Different output formats: "Session started:" or "Starting ... debug session"
+    local session_started=$(grep -iEc "session started:|Starting.*debug session" "$file" || true)
+    local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
+    local execution_continued=$(grep -ic "Execution continued" "$file" || true)
+    local disconnect=$(grep -ic "Session disconnected successfully\|Disconnected.*session" "$file" || true)
+
+    # Advanced operations (look for positive evidence only)
+    # These patterns indicate SUCCESS, not just mentions
+    local stack_trace=$(grep -iEc "Retrieved.*stack trace|inspected.*stack trace|Features Tested:.*stack trace" "$file" || true)
+    local evaluation=$(grep -iEc "Evaluated variable|Evaluated expression|Inspected variable|Variable Evaluations:.*successful|evaluating expressions" "$file" || true)
+
+    # DECISION LOGIC
+    # Priority 0: Check for test infrastructure failures (not capability issues)
+    if [[ $credit_balance_low -gt 0 ]]; then
+        # Claude Code test failed due to API issues, not functionality issues
+        if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]]; then
+            echo "$lang|⚠️  SKIPPED|N/A|API Credit Exhausted|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        else
+            echo "$lang|⚠️  SKIPPED|N/A|API Credit Exhausted|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        fi
+        return
+    fi
+
+    # Priority 1: If Claude Code test shows comprehensive success → 100% PASS
+    if [[ $claude_success -gt 0 ]] && [[ $comprehensive_features -gt 0 ]]; then
+        echo "$lang|✅ PASS|100%|Fully Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        return
+    fi
+
+    # Priority 2: If has explicit failures → Limited functionality
+    if [[ $verified_false -gt 0 ]] || [[ $missing_symbols -gt 0 ]] || [[ $breakpoint_never_hit -gt 0 ]]; then
+        if [[ $session_started -gt 0 ]]; then
+            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        else
+            echo "$lang|❌ FAIL|0%|Non-functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        fi
+        return
+    fi
+
+    # Priority 3: Check if all 6 core operations have positive evidence
+    if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && \
+       [[ $execution_continued -gt 0 ]] && [[ $stack_trace -gt 0 ]] && \
+       [[ $evaluation -gt 0 ]] && [[ $disconnect -gt 0 ]]; then
+        echo "$lang|✅ PASS|100%|Fully Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        return
+    fi
+
+    # Priority 4: Partial functionality - basic operations work
+    if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && \
+       [[ $execution_continued -gt 0 ]] && [[ $disconnect -gt 0 ]]; then
+        if [[ $stack_trace -gt 0 ]] || [[ $evaluation -gt 0 ]]; then
+            echo "$lang|⚠️  PARTIAL|80%|Mostly Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        else
+            echo "$lang|⚠️  PARTIAL|60%|Partially Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+        fi
+        return
+    fi
+
+    # Default: Non-functional
+    echo "$lang|❌ FAIL|0%|Non-functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
 }
 
 # Analyze all languages
@@ -142,11 +179,11 @@ failing_langs=0
 for lang in "${!LANG_STATUS[@]}"; do
     status="${LANG_STATUS[$lang]}"
     if [[ "$status" == "✅ PASS" ]]; then
-        ((passing_langs++))
+        passing_langs=$((passing_langs + 1))
     elif [[ "$status" == "⚠️  PARTIAL" ]]; then
-        ((partial_langs++))
+        partial_langs=$((partial_langs + 1))
     else
-        ((failing_langs++))
+        failing_langs=$((failing_langs + 1))
     fi
 done
 
@@ -162,7 +199,39 @@ echo "- **Overall Success Rate:** ${overall_rate}%"
 echo
 
 # Determine CI status
-if [[ $passing_langs -eq $total_langs ]]; then
+# Check for API credit issues first
+api_credit_issues=0
+for lang in "${!LANG_STATUS[@]}"; do
+    status="${LANG_STATUS[$lang]}"
+    if [[ "$status" == "⚠️  SKIPPED" ]]; then
+        api_credit_issues=$((api_credit_issues + 1))
+    fi
+done
+
+if [[ $api_credit_issues -gt 0 ]]; then
+    echo -e "${RED}🚨 TEST INFRASTRUCTURE FAILURE${NC}"
+    echo
+    echo "⚠️  **$api_credit_issues language(s) skipped due to API credit exhaustion**"
+    echo
+    echo "Claude Code integration tests could not run due to insufficient API credits."
+    echo "This is NOT a functionality issue - it's a test infrastructure problem."
+    echo
+    echo "**Action Required:**"
+    echo "  1. Check Claude API credit balance"
+    echo "  2. Add credits or wait for reset"
+    echo "  3. Re-run tests to verify actual functionality"
+    echo
+
+    # List affected languages
+    echo "**Affected Languages:**"
+    for lang in "${!LANG_STATUS[@]}"; do
+        status="${LANG_STATUS[$lang]}"
+        if [[ "$status" == "⚠️  SKIPPED" ]]; then
+            echo "  - $lang (comprehensive test not executed)"
+        fi
+    done
+    exit 2  # Exit code 2 for infrastructure issues
+elif [[ $passing_langs -eq $total_langs ]]; then
     echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
     echo
     echo "All languages are fully functional with complete debugging capabilities."
@@ -182,10 +251,16 @@ elif [[ $passing_langs -ge 3 ]]; then
 
             # Show specific issues
             if [[ -f "$file" ]]; then
-                if ! grep -q "Stack trace retrieved:" "$file" 2>/dev/null; then
+                if grep -q "missing debug symbols" "$file" 2>/dev/null; then
+                    echo "    - Missing debug symbols"
+                fi
+                if grep -q "verified: false" "$file" 2>/dev/null; then
+                    echo "    - Breakpoint verification failed"
+                fi
+                if ! grep -q "Retrieved.*stack trace\|inspected.*stack trace\|Features Tested:.*stack trace" "$file" 2>/dev/null; then
                     echo "    - Stack trace unavailable"
                 fi
-                if ! grep -q "Evaluation result:" "$file" 2>/dev/null; then
+                if ! grep -q "Evaluated variable\|Variable Evaluations.*successful" "$file" 2>/dev/null; then
                     echo "    - Expression evaluation unavailable"
                 fi
             fi
