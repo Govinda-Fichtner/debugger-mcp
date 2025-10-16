@@ -21,19 +21,26 @@ ARTIFACTS_DIR="${1:-.}"
 echo "🔍 Analyzing test results in: $ARTIFACTS_DIR"
 echo
 
-# Function to analyze JSON test results (new method)
+# Check if jq is available (required for JSON parsing)
+if ! command -v jq &> /dev/null; then
+    echo "❌ ERROR: jq is not installed"
+    echo ""
+    echo "jq is required to parse test-results.json files."
+    echo "Install it with:"
+    echo "  - Debian/Ubuntu: sudo apt-get install jq"
+    echo "  - macOS: brew install jq"
+    echo "  - Docker: Add 'jq' to apt-get install in Dockerfile.integration-tests"
+    echo ""
+    exit 1
+fi
+
+# Function to analyze JSON test results
 analyze_language_json() {
     local lang="$1"
     local json_file="$2"
 
     # Validate JSON file exists
     if [[ ! -f "$json_file" ]]; then
-        return 1
-    fi
-
-    # Check if jq is available
-    if ! command -v jq &> /dev/null; then
-        echo "⚠️  jq not available, cannot parse JSON" >&2
         return 1
     fi
 
@@ -100,7 +107,7 @@ analyze_language() {
         return 1
     fi
 
-    # Try JSON-based analysis first (new method)
+    # Parse JSON test results
     local json_file="${file%/*}/test-results.json"
     if [[ -f "$json_file" ]]; then
         local json_result=$(analyze_language_json "$lang" "$json_file")
@@ -108,101 +115,14 @@ analyze_language() {
             echo "$json_result"
             return 0
         fi
-        # JSON parsing failed, fall back to pattern matching
-        echo "⚠️  JSON parsing failed for $lang, falling back to pattern matching" >&2
+        # JSON parsing failed
+        echo "$lang|❌ FAIL|0%|Invalid JSON Format|0|0|0|0|0|0"
+        return 0
     fi
 
-    # Fall back to pattern matching (legacy method)
-
-    # Extract overall test result
-    local test_result=$(grep "test result:" "$file" | tail -1)
-
-    # If tests failed to run, mark as failure
-    if [[ ! $test_result =~ "ok" ]]; then
-        echo "$lang|❌ FAIL|0%|Tests Failed|0|0|0|0|0|0"
-        return
-    fi
-
-    # Look for Claude Code integration test success markers
-    # These are definitive proof of full functionality
-    local claude_success=$(grep -c "All tasks completed successfully\|All objectives completed successfully" "$file" || true)
-
-    # Look for comprehensive feature list from Claude Code test
-    # This pattern indicates the test exercised all debugging capabilities
-    # Different languages use different formats:
-    # - Go/Rust: "Features Tested: ... stack trace ... variable"
-    # - Python: "inspected stack trace and evaluated ... variable"
-    local comprehensive_features=$(grep -c "Features Tested:.*stack trace.*variable\|variable.*stack trace\|inspected stack trace and evaluated" "$file" || true)
-
-    # Check for test infrastructure issues (not capability issues)
-    local credit_balance_low=$(grep -c "Credit balance is too low\|credit.*too low\|insufficient.*credit" "$file" || true)
-
-    # Check for explicit failure indicators
-    local verified_false=$(grep -c "verified: false" "$file" || true)
-    local missing_symbols=$(grep -c "missing debug symbols" "$file" || true)
-    local breakpoint_never_hit=$(grep -c "Breakpoint Never Hit\|breakpoint never hit" "$file" || true)
-
-    # Basic operations (required for any passing score)
-    # Different output formats: "Session started:" or "Starting ... debug session"
-    local session_started=$(grep -iEc "session started:|Starting.*debug session" "$file" || true)
-    local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
-    local execution_continued=$(grep -ic "Execution continued" "$file" || true)
-    local disconnect=$(grep -ic "Session disconnected successfully\|Disconnected.*session" "$file" || true)
-
-    # Advanced operations (look for positive evidence only)
-    # These patterns indicate SUCCESS, not just mentions
-    local stack_trace=$(grep -iEc "Retrieved.*stack trace|inspected.*stack trace|Features Tested:.*stack trace" "$file" || true)
-    local evaluation=$(grep -iEc "Evaluated variable|Evaluated expression|Inspected variable|Variable Evaluations:.*successful|evaluating expressions" "$file" || true)
-
-    # DECISION LOGIC
-    # Priority 0: Check for test infrastructure failures (not capability issues)
-    if [[ $credit_balance_low -gt 0 ]]; then
-        # Claude Code test failed due to API issues, not functionality issues
-        if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]]; then
-            echo "$lang|⚠️  SKIPPED|N/A|API Credit Exhausted|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        else
-            echo "$lang|⚠️  SKIPPED|N/A|API Credit Exhausted|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        fi
-        return
-    fi
-
-    # Priority 1: If Claude Code test shows comprehensive success → 100% PASS
-    if [[ $claude_success -gt 0 ]] && [[ $comprehensive_features -gt 0 ]]; then
-        echo "$lang|✅ PASS|100%|Fully Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        return
-    fi
-
-    # Priority 2: If has explicit failures → Limited functionality
-    if [[ $verified_false -gt 0 ]] || [[ $missing_symbols -gt 0 ]] || [[ $breakpoint_never_hit -gt 0 ]]; then
-        if [[ $session_started -gt 0 ]]; then
-            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        else
-            echo "$lang|❌ FAIL|0%|Non-functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        fi
-        return
-    fi
-
-    # Priority 3: Check if all 6 core operations have positive evidence
-    if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && \
-       [[ $execution_continued -gt 0 ]] && [[ $stack_trace -gt 0 ]] && \
-       [[ $evaluation -gt 0 ]] && [[ $disconnect -gt 0 ]]; then
-        echo "$lang|✅ PASS|100%|Fully Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        return
-    fi
-
-    # Priority 4: Partial functionality - basic operations work
-    if [[ $session_started -gt 0 ]] && [[ $breakpoint_set -gt 0 ]] && \
-       [[ $execution_continued -gt 0 ]] && [[ $disconnect -gt 0 ]]; then
-        if [[ $stack_trace -gt 0 ]] || [[ $evaluation -gt 0 ]]; then
-            echo "$lang|⚠️  PARTIAL|80%|Mostly Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        else
-            echo "$lang|⚠️  PARTIAL|60%|Partially Functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
-        fi
-        return
-    fi
-
-    # Default: Non-functional
-    echo "$lang|❌ FAIL|0%|Non-functional|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+    # No JSON file found - test didn't generate results
+    echo "$lang|❌ FAIL|0%|No Test Results|0|0|0|0|0|0"
+    return 0
 }
 
 # Analyze all languages
