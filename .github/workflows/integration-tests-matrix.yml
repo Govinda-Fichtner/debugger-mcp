@@ -170,6 +170,7 @@ jobs:
           path: |
             ${{ matrix.language }}-test-output.txt
             ${{ matrix.language }}-test-clean.txt
+            test-results.json
           retention-days: 30
 
       - name: Parse ${{ matrix.language }} test results
