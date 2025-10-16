@@ -10,6 +10,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'Dockerfile.integration-tests'
