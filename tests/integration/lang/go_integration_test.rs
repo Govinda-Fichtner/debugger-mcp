@@ -500,7 +500,8 @@ Also create mcp_protocol_log.md documenting all interactions."#,
 
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
-        .arg("--dangerously-skip-permissions")
+        .arg("--allowedTools")
+        .arg("Write(/workspace/**)")
         .current_dir(&workspace_root)
         .output()
         .expect("Failed to run claude");
