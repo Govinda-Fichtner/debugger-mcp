@@ -171,6 +171,10 @@ jobs:
             ${{ matrix.language }}-test-output.txt
             ${{ matrix.language }}-test-clean.txt
             test-results.json
+            **/test-results.json
+            fizzbuzz.*
+            debug_prompt.md
+            mcp_protocol_log.md
           retention-days: 30
 
       - name: Parse ${{ matrix.language }} test results
