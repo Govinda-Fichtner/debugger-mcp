@@ -611,12 +611,29 @@ Also create mcp_protocol_log.md documenting all interactions."#,
     println!("\n📊 Claude Code Output:");
     println!("{}", String::from_utf8_lossy(&claude_output.stdout));
 
-    // 10. Verify protocol log
+    // 10. Verify protocol log and copy test-results.json
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
     let log_exists = protocol_log_path.exists();
 
     if log_exists {
         println!("✅ Protocol log created");
+    }
+
+    // Copy test-results.json from temp workspace to current directory for CI artifact collection
+    let test_results_src = workspace_root.join("test-results.json");
+    let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
+    if test_results_src.exists() {
+        fs::copy(&test_results_src, &test_results_dest)
+            .expect("Failed to copy test-results.json for artifact collection");
+        println!(
+            "✅ Copied test-results.json to {}",
+            test_results_dest.display()
+        );
+    } else {
+        println!(
+            "⚠️  test-results.json not found at {}",
+            test_results_src.display()
+        );
     }
 
     // 11. Cleanup
