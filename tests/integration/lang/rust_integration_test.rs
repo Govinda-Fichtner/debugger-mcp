@@ -646,7 +646,8 @@ Also create mcp_protocol_log.md documenting all interactions."#,
         .output();
 
     let _ = fs::remove_file(&workspace_prompt);
-    let _ = fs::remove_file(&protocol_log_path);
+    // NOTE: Do NOT delete protocol_log_path or test_results.json
+    // These files are needed by CI for artifact upload
 
     println!("\n🎉 Rust Claude Code integration test completed!");
 }

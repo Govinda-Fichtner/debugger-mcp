@@ -560,32 +560,32 @@ Also create mcp_protocol_log.md documenting all interactions."#,
     println!("\n📊 Claude Code Output:");
     println!("{}", String::from_utf8_lossy(&claude_output.stdout));
 
-    // 8. Verify protocol log and copy test-results.json
+    // 8. Verify protocol log and test-results.json exist
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
-    let log_exists = protocol_log_path.exists();
+    let test_results_path = workspace_root.join("test-results.json");
 
-    if log_exists {
-        println!("✅ Protocol log created");
+    if protocol_log_path.exists() {
+        println!("✅ Protocol log created at {}", protocol_log_path.display());
+    } else {
+        println!(
+            "⚠️  Protocol log not found at {}",
+            protocol_log_path.display()
+        );
     }
 
-    // Copy test-results.json from temp workspace to current directory for CI artifact collection
-    let test_results_src = workspace_root.join("test-results.json");
-    let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
-    if test_results_src.exists() {
-        fs::copy(&test_results_src, &test_results_dest)
-            .expect("Failed to copy test-results.json for artifact collection");
+    if test_results_path.exists() {
         println!(
-            "✅ Copied test-results.json to {}",
-            test_results_dest.display()
+            "✅ test-results.json created at {}",
+            test_results_path.display()
         );
     } else {
         println!(
             "⚠️  test-results.json not found at {}",
-            test_results_src.display()
+            test_results_path.display()
         );
     }
 
-    // 9. Cleanup
+    // 9. Cleanup (but preserve test artifacts for CI)
     let _ = Command::new("claude")
         .arg("mcp")
         .arg("remove")
@@ -595,7 +595,8 @@ Also create mcp_protocol_log.md documenting all interactions."#,
 
     let _ = fs::remove_file(&workspace_fizzbuzz);
     let _ = fs::remove_file(&workspace_prompt);
-    let _ = fs::remove_file(&protocol_log_path);
+    // NOTE: Do NOT delete protocol_log_path or test_results_path
+    // These files are needed by CI for artifact upload
 
     println!("\n🎉 Python Claude Code integration test completed!");
 }
