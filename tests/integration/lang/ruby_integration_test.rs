@@ -365,7 +365,7 @@ Test the debugger MCP server with Ruby:
 4. Continue and document results
 5. Disconnect
 
-IMPORTANT: At the end of testing, create a file named 'test-results.json' with this EXACT format:
+IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' in the current directory with this EXACT format:
 ```json
 {{
   "test_run": {{
@@ -395,7 +395,12 @@ IMPORTANT: At the end of testing, create a file named 'test-results.json' with t
 Set each boolean to true only if that specific operation completed successfully.
 Add errors array entries for any failures encountered.
 
-Also create mcp_protocol_log.md documenting all interactions."#,
+Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+
+**CRITICAL**: After creating both files:
+1. Use the Read tool to read back test-results.json
+2. Display the full content to verify it was written correctly
+3. Do NOT just claim you created the files - actually show the content!"#,
         fizzbuzz_path.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
