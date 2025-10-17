@@ -110,8 +110,10 @@ analyze_language() {
     # Parse JSON test results
     local json_file="${file%/*}/test-results.json"
     if [[ -f "$json_file" ]]; then
-        local json_result=$(analyze_language_json "$lang" "$json_file")
-        if [[ $? -eq 0 ]]; then
+        local json_result
+        json_result=$(analyze_language_json "$lang" "$json_file")
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
             echo "$json_result"
             return 0
         fi
