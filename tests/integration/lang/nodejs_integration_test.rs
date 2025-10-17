@@ -436,7 +436,7 @@ Also create mcp_protocol_log.md documenting all interactions."#,
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
         .arg("--allowedTools")
-        .arg("Write(/workspace/**) debugger-test-nodejs")
+        .arg("Write(/workspace/**) debugger-test-nodejs mcp__debugger-test-nodejs__*")
         .current_dir(&workspace_root)
         .output()
         .expect("Failed to run claude");
