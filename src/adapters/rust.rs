@@ -852,6 +852,190 @@ mod tests {
         assert_eq!(config["args"], json!(args));
     }
 
+    // ========================================================================
+    // Project Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_project_type_single_file_no_cargo() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary file NOT in any Cargo project
+        let temp_dir = TempDir::new().unwrap();
+        let standalone_file = temp_dir.path().join("hello.rs");
+        fs::write(&standalone_file, "fn main() {}").unwrap();
+
+        // Test detection - should be SingleFile
+        let result = RustAdapter::detect_project_type(standalone_file.to_str().unwrap());
+        assert!(result.is_ok());
+        match result.unwrap() {
+            RustProjectType::SingleFile(path) => {
+                assert_eq!(path, standalone_file);
+            }
+            _ => panic!("Expected SingleFile, got CargoProject"),
+        }
+    }
+
+    #[test]
+    fn test_detect_project_type_cargo_src_file() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary Cargo project
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_root = temp_dir.path();
+
+        // Create Cargo.toml
+        fs::write(cargo_root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        // Create src directory
+        fs::create_dir_all(cargo_root.join("src")).unwrap();
+
+        // Create source file
+        let src_file = cargo_root.join("src/main.rs");
+        fs::write(&src_file, "fn main() {}").unwrap();
+
+        // Test detection
+        let result = RustAdapter::detect_project_type(src_file.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            RustProjectType::CargoProject { root, manifest } => {
+                assert_eq!(root, cargo_root);
+                assert_eq!(manifest, cargo_root.join("Cargo.toml"));
+            }
+            _ => panic!("Expected CargoProject, got SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_detect_project_type_test_fixtures_exception() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary Cargo project with test fixtures
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_root = temp_dir.path();
+
+        // Create Cargo.toml
+        fs::write(cargo_root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        // Create tests/fixtures directory
+        fs::create_dir_all(cargo_root.join("tests/fixtures")).unwrap();
+
+        // Create fixture file
+        let fixture_file = cargo_root.join("tests/fixtures/fizzbuzz.rs");
+        fs::write(&fixture_file, "fn main() {}").unwrap();
+
+        // Test detection - should be SingleFile despite being in Cargo project
+        let result = RustAdapter::detect_project_type(fixture_file.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            RustProjectType::SingleFile(path) => {
+                assert_eq!(path, fixture_file);
+            }
+            _ => panic!("Expected SingleFile for tests/fixtures/, got CargoProject"),
+        }
+    }
+
+    #[test]
+    fn test_detect_project_type_cargo_tests_integration() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary Cargo project with integration test
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_root = temp_dir.path();
+
+        // Create Cargo.toml
+        fs::write(cargo_root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        // Create tests directory (NOT tests/fixtures)
+        fs::create_dir_all(cargo_root.join("tests")).unwrap();
+
+        // Create integration test file
+        let test_file = cargo_root.join("tests/integration_test.rs");
+        fs::write(&test_file, "#[test] fn it_works() {}").unwrap();
+
+        // Test detection - should be CargoProject (not in fixtures)
+        let result = RustAdapter::detect_project_type(test_file.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            RustProjectType::CargoProject { root, manifest } => {
+                assert_eq!(root, cargo_root);
+                assert_eq!(manifest, cargo_root.join("Cargo.toml"));
+            }
+            _ => panic!("Expected CargoProject for tests/integration_test.rs"),
+        }
+    }
+
+    #[test]
+    fn test_detect_project_type_cargo_examples() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary Cargo project with example
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_root = temp_dir.path();
+
+        // Create Cargo.toml
+        fs::write(cargo_root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        // Create examples directory
+        fs::create_dir_all(cargo_root.join("examples")).unwrap();
+
+        // Create example file
+        let example_file = cargo_root.join("examples/demo.rs");
+        fs::write(&example_file, "fn main() {}").unwrap();
+
+        // Test detection - should be CargoProject
+        let result = RustAdapter::detect_project_type(example_file.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            RustProjectType::CargoProject { root, manifest } => {
+                assert_eq!(root, cargo_root);
+                assert_eq!(manifest, cargo_root.join("Cargo.toml"));
+            }
+            _ => panic!("Expected CargoProject for examples/demo.rs"),
+        }
+    }
+
+    #[test]
+    fn test_detect_project_type_outside_cargo_subdirs() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create temporary Cargo project
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_root = temp_dir.path();
+
+        // Create Cargo.toml
+        fs::write(cargo_root.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+
+        // Create file OUTSIDE src/tests/examples/benches/bin
+        let other_file = cargo_root.join("script.rs");
+        fs::write(&other_file, "fn main() {}").unwrap();
+
+        // Test detection - should be SingleFile (not in Cargo subdirs)
+        let result = RustAdapter::detect_project_type(other_file.to_str().unwrap());
+        assert!(result.is_ok());
+
+        match result.unwrap() {
+            RustProjectType::SingleFile(path) => {
+                assert_eq!(path, other_file);
+            }
+            _ => panic!("Expected SingleFile for script.rs not in Cargo subdirs"),
+        }
+    }
+
+    // ========================================================================
+    // Compilation Tests
+    // ========================================================================
+
     // Compilation tests require rustc installed
     #[tokio::test]
     #[ignore] // Only run when rustc is available
