@@ -90,13 +90,7 @@ mod tests {
 
     #[test]
     fn test_rust_real_world_log() {
-        let log_path = PathBuf::from("ci-artifacts/rust-output/mcp_protocol_log.md");
-
-        if !log_path.exists() {
-            println!("⚠️  Skipping test: {} not found", log_path.display());
-            return;
-        }
-
+        let log_path = PathBuf::from("tests/fixtures/rust_mcp_protocol_log.md");
         let log_content = fs::read_to_string(&log_path).expect("Failed to read Rust protocol log");
 
         let result = reconstruct_test_results_from_protocol_log(&log_content, "rust");
@@ -124,13 +118,7 @@ mod tests {
 
     #[test]
     fn test_python_real_world_log() {
-        let log_path = PathBuf::from("ci-artifacts/python-output/mcp_protocol_log.md");
-
-        if !log_path.exists() {
-            println!("⚠️  Skipping test: {} not found", log_path.display());
-            return;
-        }
-
+        let log_path = PathBuf::from("tests/fixtures/python_mcp_protocol_log.md");
         let log_content =
             fs::read_to_string(&log_path).expect("Failed to read Python protocol log");
 
@@ -147,13 +135,7 @@ mod tests {
 
     #[test]
     fn test_go_real_world_log() {
-        let log_path = PathBuf::from("ci-artifacts/go-output/mcp_protocol_log.md");
-
-        if !log_path.exists() {
-            println!("⚠️  Skipping test: {} not found", log_path.display());
-            return;
-        }
-
+        let log_path = PathBuf::from("tests/fixtures/go_mcp_protocol_log.md");
         let log_content = fs::read_to_string(&log_path).expect("Failed to read Go protocol log");
 
         let result = reconstruct_test_results_from_protocol_log(&log_content, "go");
@@ -168,13 +150,7 @@ mod tests {
 
     #[test]
     fn test_nodejs_real_world_log() {
-        let log_path = PathBuf::from("ci-artifacts/nodejs-output/mcp_protocol_log.md");
-
-        if !log_path.exists() {
-            println!("⚠️  Skipping test: {} not found", log_path.display());
-            return;
-        }
-
+        let log_path = PathBuf::from("tests/fixtures/nodejs_mcp_protocol_log.md");
         let log_content =
             fs::read_to_string(&log_path).expect("Failed to read Node.js protocol log");
 
@@ -190,13 +166,7 @@ mod tests {
 
     #[test]
     fn test_ruby_real_world_log() {
-        let log_path = PathBuf::from("ci-artifacts/ruby-output/mcp_protocol_log.md");
-
-        if !log_path.exists() {
-            println!("⚠️  Skipping test: {} not found", log_path.display());
-            return;
-        }
-
+        let log_path = PathBuf::from("tests/fixtures/ruby_mcp_protocol_log.md");
         let log_content = fs::read_to_string(&log_path).expect("Failed to read Ruby protocol log");
 
         let result = reconstruct_test_results_from_protocol_log(&log_content, "ruby");
@@ -214,13 +184,7 @@ mod tests {
         let languages = vec!["rust", "python", "go", "nodejs", "ruby"];
 
         for lang in languages {
-            let log_path =
-                PathBuf::from(format!("ci-artifacts/{}-output/mcp_protocol_log.md", lang));
-
-            if !log_path.exists() {
-                println!("⚠️  Skipping {}: log not found", lang);
-                continue;
-            }
+            let log_path = PathBuf::from(format!("tests/fixtures/{}_mcp_protocol_log.md", lang));
 
             let log_content = fs::read_to_string(&log_path)
                 .unwrap_or_else(|_| panic!("Failed to read {} log", lang));
