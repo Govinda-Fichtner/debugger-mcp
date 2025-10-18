@@ -148,6 +148,11 @@ jobs:
 
       - name: Run ${{ matrix.language }} integration tests
         run: |
+          # Clean test binaries to ensure latest code is compiled
+          # This prevents Cargo from using cached test binaries that may be from before code changes
+          echo "Cleaning test binaries to force recompilation..."
+          rm -rf target/debug/deps/*${{ matrix.test_file }}*
+
           # Run language-specific tests inside Docker container
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
