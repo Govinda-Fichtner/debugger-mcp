@@ -116,33 +116,16 @@ impl ToolsHandler {
         // Validate program path to prevent path traversal attacks
         // For Rust, allow both .rs source files and pre-compiled binaries (no extension)
         // For others, validate with expected source file extension
-        let validated_program = if args.language == "rust" {
-            // Rust special case: Allow both .rs files and executables
-            // First validate without extension requirement
-            let path = security::validate_source_path(&args.program, None)?;
-
-            // Then check it's either .rs or an executable (no extension or common executable extensions)
-            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-            if !ext.is_empty() && ext != "rs" {
-                return Err(Error::Compilation(format!(
-                    "Invalid Rust program path. Expected .rs source file or executable, got .{} file: {}",
-                    ext,
-                    path.display()
-                )));
-            }
-            path
-        } else {
-            // Other languages: Validate with expected extension
-            let extension = match args.language.as_str() {
-                "python" => Some("py"),
-                "ruby" => Some("rb"),
-                "javascript" | "nodejs" => Some("js"),
-                "go" => Some("go"),
-                _ => None,
-            };
-            security::validate_source_path(&args.program, extension)?
+        let extension = match args.language.as_str() {
+            "rust" => None, // Allow both .rs and executables (validation happens in manager)
+            "python" => Some("py"),
+            "ruby" => Some("rb"),
+            "javascript" | "nodejs" => Some("js"),
+            "go" => Some("go"),
+            _ => None,
         };
 
+        let validated_program = security::validate_source_path(&args.program, extension)?;
         let program = validated_program
             .to_str()
             .ok_or_else(|| Error::Internal("Non-UTF8 program path (invalid encoding)".to_string()))?
@@ -974,22 +957,6 @@ mod tests {
         assert_eq!(args.language, "rust");
         assert_eq!(args.program, "/workspace/tests/fixtures/target/fizzbuzz");
         assert!(args.stop_on_entry);
-    }
-
-    #[test]
-    fn test_debugger_start_rust_rejects_wrong_extension() {
-        // Rust should reject files with wrong extensions (e.g., .py)
-        let json = json!({
-            "language": "rust",
-            "program": "/workspace/tests/fixtures/fizzbuzz.py",
-            "args": [],
-            "stopOnEntry": true
-        });
-
-        let args: DebuggerStartArgs = serde_json::from_value(json).unwrap();
-        assert_eq!(args.language, "rust");
-        assert_eq!(args.program, "/workspace/tests/fixtures/fizzbuzz.py");
-        // Validation will happen in debugger_start, not during deserialization
     }
 
     #[test]
