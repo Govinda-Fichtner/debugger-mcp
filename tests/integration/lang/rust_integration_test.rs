@@ -291,26 +291,19 @@ async fn test_rust_fizzbuzz_debugging_integration() {
         let session_manager = Arc::new(RwLock::new(SessionManager::new()));
         let tools_handler = ToolsHandler::new(Arc::clone(&session_manager));
 
-        // Get path to source and compile
+        // Get path to source file - MCP server will compile it
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let fizzbuzz_rs = PathBuf::from(manifest_dir).join("tests/fixtures/fizzbuzz.rs");
-
-        let binary_path = match compile_rust_fixture(&fizzbuzz_rs) {
-            Ok(path) => path,
-            Err(e) => {
-                println!("⚠️  Skipping Rust FizzBuzz test: {}", e);
-                return Ok(());
-            }
-        };
-
-        let binary_str = binary_path.to_string_lossy().to_string();
+        let fizzbuzz_str = fizzbuzz_rs.to_string_lossy().to_string();
 
         // 1. Start debugger session with stopOnEntry
-        println!("🔧 Starting Rust debug session for: {}", binary_str);
+        // Pass the SOURCE file - the MCP server will detect it's a standalone file
+        // and compile it with rustc before debugging
+        println!("🔧 Starting Rust debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
             "language": "rust",
-            "program": binary_str,
+            "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
             "stopOnEntry": true
