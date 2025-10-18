@@ -167,6 +167,59 @@ jobs:
           test -f ${{ matrix.language }}-test-output.txt || echo "Warning: Output file not created" > ${{ matrix.language }}-test-output.txt
           test -f ${{ matrix.language }}-test-clean.txt || cp ${{ matrix.language }}-test-output.txt ${{ matrix.language }}-test-clean.txt
 
+      - name: Inspect generated files before upload
+        if: always()
+        run: |
+          echo "================================================================"
+          echo "🔍 File Inspection for ${{ matrix.language }} Test"
+          echo "================================================================"
+          echo ""
+          echo "📂 Current directory: $(pwd)"
+          echo "📂 Workspace: ${{ github.workspace }}"
+          echo ""
+          echo "📋 All files in current directory:"
+          ls -lah
+          echo ""
+          echo "🔍 Test-related files:"
+          echo ""
+
+          # Check test-results.json in current directory
+          if [ -f "test-results.json" ]; then
+            echo "✅ test-results.json found in current directory"
+            ls -lh test-results.json
+            echo "📄 File size: $(wc -c < test-results.json) bytes"
+            echo "📄 First 200 chars:"
+            head -c 200 test-results.json || echo "(empty or binary)"
+            echo ""
+          else
+            echo "❌ test-results.json NOT found in current directory"
+          fi
+
+          # Search for test-results.json anywhere
+          echo "🔍 Searching for test-results.json files everywhere:"
+          find . -name "test-results.json" -type f -exec ls -lh {} \; 2>/dev/null || echo "No test-results.json files found"
+          echo ""
+
+          # Check protocol log
+          if [ -f "mcp_protocol_log.md" ]; then
+            echo "✅ mcp_protocol_log.md found"
+            ls -lh mcp_protocol_log.md
+          else
+            echo "❌ mcp_protocol_log.md NOT found"
+          fi
+          echo ""
+
+          # Check fizzbuzz files
+          echo "📋 FizzBuzz files:"
+          ls -lh fizzbuzz.* 2>/dev/null || echo "No fizzbuzz files found"
+          echo ""
+
+          # Show last 50 lines of test output for context
+          echo "📋 Last 50 lines of test output:"
+          tail -50 ${{ matrix.language }}-test-output.txt
+          echo ""
+          echo "================================================================"
+
       - name: Upload ${{ matrix.language }} test output
         uses: actions/upload-artifact@v4
         if: always()
@@ -181,6 +234,19 @@ jobs:
             debug_prompt.md
             mcp_protocol_log.md
           retention-days: 30
+
+      - name: Upload all JSON files for debugging
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: json-files-${{ matrix.language }}
+          path: |
+            **/*.json
+            !node_modules/**
+            !target/**
+            !.cargo/**
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Parse ${{ matrix.language }} test results
         if: always()

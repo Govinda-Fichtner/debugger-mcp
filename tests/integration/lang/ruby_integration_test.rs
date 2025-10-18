@@ -536,17 +536,40 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
     // 8.5. Extract test-results.json from Claude's output if it wasn't written to file
     let test_results_src = workspace_root.join("test-results.json");
 
-    // Check if Claude actually wrote a VALID file (not just any file)
-    let mut needs_extraction = !test_results_src.exists()
-        || fs::metadata(&test_results_src)
+    println!("\n🔍 STEP 8.5: Validating test-results.json");
+    println!("📂 Source path: {}", test_results_src.display());
+    println!("📂 Workspace root: {}", workspace_root.display());
+
+    // Check if file exists and get metadata
+    let file_exists = test_results_src.exists();
+    let file_size = if file_exists {
+        fs::metadata(&test_results_src)
             .map(|m| m.len())
             .unwrap_or(0)
-            == 0;
+    } else {
+        0
+    };
+
+    println!("📊 File exists: {}", file_exists);
+    println!("📊 File size: {} bytes", file_size);
+
+    // Check if Claude actually wrote a VALID file (not just any file)
+    let mut needs_extraction = !file_exists || file_size == 0;
 
     // ENHANCED: Also validate the file contains valid, parseable JSON
     if !needs_extraction && test_results_src.exists() {
+        println!("🔍 Validating file content...");
         if let Ok(content) = fs::read_to_string(&test_results_src) {
             let trimmed = content.trim();
+            println!(
+                "📄 Content length: {} bytes (trimmed: {} bytes)",
+                content.len(),
+                trimmed.len()
+            );
+            println!(
+                "📄 First 100 chars: {}",
+                &trimmed.chars().take(100).collect::<String>()
+            );
 
             // Check if file is empty or doesn't contain required fields
             if trimmed.is_empty()
@@ -554,6 +577,12 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
                 || !trimmed.contains("\"operations\"")
             {
                 println!("⚠️  test-results.json exists but is empty or missing required fields");
+                println!("   - Empty: {}", trimmed.is_empty());
+                println!("   - Has 'test_run': {}", trimmed.contains("\"test_run\""));
+                println!(
+                    "   - Has 'operations': {}",
+                    trimmed.contains("\"operations\"")
+                );
                 needs_extraction = true;
             } else {
                 // Validate it's actually parseable JSON
@@ -625,19 +654,81 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
     }
 
     // Copy test-results.json from temp workspace to current directory for CI artifact collection
+    println!("\n🔍 STEP 8.6: Copying test-results.json for artifact collection");
     let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
+    println!("📂 Destination path: {}", test_results_dest.display());
+
     if test_results_src.exists() {
+        let src_size = fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        println!("📊 Source file size: {} bytes", src_size);
+
         fs::copy(&test_results_src, &test_results_dest)
             .expect("Failed to copy test-results.json for artifact collection");
-        println!(
-            "✅ Copied test-results.json to {}",
-            test_results_dest.display()
-        );
+
+        let dest_size = fs::metadata(&test_results_dest)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        println!("📊 Destination file size: {} bytes", dest_size);
+
+        if src_size == dest_size {
+            println!(
+                "✅ Copied test-results.json to {} ({} bytes)",
+                test_results_dest.display(),
+                dest_size
+            );
+        } else {
+            println!(
+                "⚠️  File sizes don't match! Source: {}, Dest: {}",
+                src_size, dest_size
+            );
+        }
     } else {
         println!(
             "⚠️  test-results.json not found at {}",
             test_results_src.display()
         );
+    }
+
+    // Final verification - list all files in workspace and current directory
+    println!("\n🔍 STEP 8.7: Final file verification");
+    println!(
+        "📂 Files in workspace root ({}/):",
+        workspace_root.display()
+    );
+    if let Ok(entries) = fs::read_dir(&workspace_root) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                println!(
+                    "   - {} ({} bytes)",
+                    entry.file_name().to_string_lossy(),
+                    metadata.len()
+                );
+            }
+        }
+    }
+
+    println!(
+        "📂 Files in current directory ({}/):",
+        std::env::current_dir().unwrap().display()
+    );
+    if let Ok(entries) = fs::read_dir(std::env::current_dir().unwrap()) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file()
+                    && (entry.file_name().to_string_lossy().contains("test-results")
+                        || entry.file_name().to_string_lossy().contains("fizzbuzz")
+                        || entry.file_name().to_string_lossy().contains("protocol"))
+                {
+                    println!(
+                        "   - {} ({} bytes)",
+                        entry.file_name().to_string_lossy(),
+                        metadata.len()
+                    );
+                }
+            }
+        }
     }
 
     // 9. Cleanup
