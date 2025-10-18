@@ -337,13 +337,25 @@ jobs:
           chmod +x scripts/analyze-test-results.sh
 
           # Run analysis with debug logging
-          # Script writes to both stdout (summary.txt) and analysis-debug.log
+          # The script outputs everything to analysis-debug.log via tee
           ./scripts/analyze-test-results.sh test-artifacts/ analysis-debug.log || true
+
+          # Extract the summary table from the debug log (everything after "INTEGRATION TEST SUMMARY")
+          if [ -f analysis-debug.log ]; then
+            # Find the line with "INTEGRATION TEST SUMMARY" and extract everything after it
+            awk '/📊 INTEGRATION TEST SUMMARY/,0' analysis-debug.log > summary.txt || echo "Failed to extract summary" > summary.txt
+          else
+            echo "⚠️ Debug log not created" > summary.txt
+          fi
 
           # Add to GitHub Step Summary
           echo "## 🎉 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          cat summary.txt >> $GITHUB_STEP_SUMMARY || echo "⚠️ No summary generated" >> $GITHUB_STEP_SUMMARY
+          if [ -f summary.txt ] && [ -s summary.txt ]; then
+            cat summary.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No summary generated" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Add debug log info to summary
