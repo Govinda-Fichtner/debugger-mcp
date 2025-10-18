@@ -627,14 +627,16 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
         }
     }
 
-    // Copy test-results.json from temp workspace to current directory for CI artifact collection
-    let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
+    // Verify test-results.json is ready for CI artifact collection
+    // NOTE: No copy needed! workspace_root == current_dir in CI, copying to itself truncates to 0 bytes
     if test_results_src.exists() {
-        fs::copy(&test_results_src, &test_results_dest)
-            .expect("Failed to copy test-results.json for artifact collection");
+        let size = fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0);
         println!(
-            "✅ Copied test-results.json to {}",
-            test_results_dest.display()
+            "✅ test-results.json ready at {} ({} bytes)",
+            test_results_src.display(),
+            size
         );
     } else {
         println!(

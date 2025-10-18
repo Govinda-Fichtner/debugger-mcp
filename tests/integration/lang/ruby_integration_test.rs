@@ -653,40 +653,29 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
         }
     }
 
-    // Copy test-results.json from temp workspace to current directory for CI artifact collection
-    println!("\n🔍 STEP 8.6: Copying test-results.json for artifact collection");
-    let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
-    println!("📂 Destination path: {}", test_results_dest.display());
+    // Verify test-results.json is ready for CI artifact collection
+    // NOTE: No copy needed! The file is already in workspace root, which is where CI expects it.
+    // Previously, we tried to copy /workspace/test-results.json to /workspace/test-results.json
+    // (same path), which truncated the file to 0 bytes!
+    println!("\n🔍 STEP 8.6: Verifying test-results.json for artifact collection");
 
-    if test_results_src.exists() {
-        let src_size = fs::metadata(&test_results_src)
+    let final_size = if test_results_src.exists() {
+        fs::metadata(&test_results_src)
             .map(|m| m.len())
-            .unwrap_or(0);
-        println!("📊 Source file size: {} bytes", src_size);
+            .unwrap_or(0)
+    } else {
+        0
+    };
 
-        fs::copy(&test_results_src, &test_results_dest)
-            .expect("Failed to copy test-results.json for artifact collection");
-
-        let dest_size = fs::metadata(&test_results_dest)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        println!("📊 Destination file size: {} bytes", dest_size);
-
-        if src_size == dest_size {
-            println!(
-                "✅ Copied test-results.json to {} ({} bytes)",
-                test_results_dest.display(),
-                dest_size
-            );
-        } else {
-            println!(
-                "⚠️  File sizes don't match! Source: {}, Dest: {}",
-                src_size, dest_size
-            );
-        }
+    if final_size > 0 {
+        println!(
+            "✅ test-results.json ready at {} ({} bytes)",
+            test_results_src.display(),
+            final_size
+        );
     } else {
         println!(
-            "⚠️  test-results.json not found at {}",
+            "⚠️  test-results.json is empty or missing at {}",
             test_results_src.display()
         );
     }
