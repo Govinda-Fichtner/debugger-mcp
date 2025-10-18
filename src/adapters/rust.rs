@@ -236,6 +236,19 @@ impl RustAdapter {
                     if let Some(std::path::Component::Normal(comp)) = first_component {
                         let comp_str = comp.to_string_lossy();
                         if cargo_subdirs.contains(&comp_str.as_ref()) {
+                            // EXCEPTION: tests/fixtures/ are NOT part of the Cargo project
+                            // These are standalone test files that should be compiled with rustc
+                            let relative_str = relative.to_string_lossy();
+                            if relative_str.starts_with("tests/fixtures/")
+                                || relative_str.starts_with("tests\\fixtures\\")
+                            {
+                                debug!(
+                                    "🔍 [RUST] File is in tests/fixtures/ - treating as standalone file"
+                                );
+                                info!("📄 [RUST] Single file project: {}", source_path);
+                                return Ok(RustProjectType::SingleFile(source));
+                            }
+
                             info!("📦 [RUST] Found Cargo project: {}", dir.display());
                             info!("📦 [RUST] Manifest: {}", manifest.display());
                             info!("📦 [RUST] Source is under {}/", comp_str);
