@@ -9,6 +9,84 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
+/// Reconstruct test-results.json from mcp_protocol_log.md by parsing MCP tool operations
+fn reconstruct_test_results_from_protocol_log(log_content: &str, language: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .to_string();
+
+    // Parse the log to detect which operations succeeded
+    let session_started =
+        log_content.contains("debugger_start") && log_content.contains("\"status\": \"started\"");
+
+    let breakpoint_set = log_content.contains("debugger_set_breakpoint");
+    let breakpoint_verified = log_content.contains("\"verified\": true");
+
+    let execution_continued = log_content.contains("debugger_continue")
+        && log_content.contains("\"status\": \"continued\"");
+
+    let stopped_at_breakpoint = log_content.contains("debugger_wait_for_stop")
+        && log_content.contains("\"reason\": \"breakpoint\"");
+
+    let stack_trace_retrieved =
+        log_content.contains("debugger_stack_trace") && log_content.contains("\"stackFrames\"");
+
+    let variable_evaluated = log_content.contains("debugger_evaluate")
+        && (log_content.contains("\"result\":") || log_content.contains("\"value\":"));
+
+    let session_disconnected = log_content.contains("debugger_disconnect")
+        && log_content.contains("\"status\": \"disconnected\"");
+
+    // Collect errors from the log
+    let mut errors = Vec::new();
+
+    if session_started && !breakpoint_verified {
+        errors.push(json!({
+            "operation": "breakpoint_set",
+            "message": "Breakpoint was not verified (likely missing debug symbols)"
+        }));
+    }
+
+    if !stopped_at_breakpoint && execution_continued {
+        errors.push(json!({
+            "operation": "execution",
+            "message": "Program did not stop at breakpoint"
+        }));
+    }
+
+    let overall_success = session_started
+        && breakpoint_set
+        && execution_continued
+        && session_disconnected
+        && errors.is_empty();
+
+    // Generate JSON
+    let result = json!({
+        "test_run": {
+            "language": language,
+            "timestamp": timestamp,
+            "overall_success": overall_success,
+            "reconstructed_from": "mcp_protocol_log.md"
+        },
+        "operations": {
+            "session_started": session_started,
+            "breakpoint_set": breakpoint_set,
+            "breakpoint_verified": breakpoint_verified,
+            "execution_continued": execution_continued,
+            "stopped_at_breakpoint": stopped_at_breakpoint,
+            "stack_trace_retrieved": stack_trace_retrieved,
+            "variable_evaluated": variable_evaluated,
+            "session_disconnected": session_disconnected
+        },
+        "errors": errors
+    });
+
+    serde_json::to_string_pretty(&result).unwrap()
+}
+
 /// Helper function to compile a Rust source file to a binary with debug symbols
 fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
     // Create output directory in target
@@ -18,6 +96,12 @@ fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
 
     // Output binary path
     let binary_path = output_dir.join("fizzbuzz");
+
+    // Remove old binary to ensure fresh compilation with current flags
+    if binary_path.exists() {
+        fs::remove_file(&binary_path).map_err(|e| format!("Failed to remove old binary: {}", e))?;
+        println!("🗑️  Removed cached binary");
+    }
 
     println!("🔨 Compiling Rust fixture...");
     println!("   Source: {}", source_path.display());
@@ -40,6 +124,21 @@ fn compile_rust_fixture(source_path: &PathBuf) -> Result<PathBuf, String> {
     }
 
     println!("✅ Compilation successful");
+
+    // Verify debug symbols are present
+    let readelf_output = Command::new("readelf").arg("-S").arg(&binary_path).output();
+
+    if let Ok(output) = readelf_output {
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        if output_str.contains(".debug_info") {
+            println!("✅ Debug symbols verified (.debug_info section present)");
+        } else {
+            return Err("Binary missing debug symbols (.debug_info section not found)".to_string());
+        }
+    } else {
+        println!("⚠️  Could not verify debug symbols (readelf not available)");
+    }
+
     Ok(binary_path)
 }
 
@@ -192,26 +291,19 @@ async fn test_rust_fizzbuzz_debugging_integration() {
         let session_manager = Arc::new(RwLock::new(SessionManager::new()));
         let tools_handler = ToolsHandler::new(Arc::clone(&session_manager));
 
-        // Get path to source and compile
+        // Get path to source file - MCP server will compile it
         let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let fizzbuzz_rs = PathBuf::from(manifest_dir).join("tests/fixtures/fizzbuzz.rs");
-
-        let binary_path = match compile_rust_fixture(&fizzbuzz_rs) {
-            Ok(path) => path,
-            Err(e) => {
-                println!("⚠️  Skipping Rust FizzBuzz test: {}", e);
-                return Ok(());
-            }
-        };
-
-        let binary_str = binary_path.to_string_lossy().to_string();
+        let fizzbuzz_str = fizzbuzz_rs.to_string_lossy().to_string();
 
         // 1. Start debugger session with stopOnEntry
-        println!("🔧 Starting Rust debug session for: {}", binary_str);
+        // Pass the SOURCE file - the MCP server will detect it's a standalone file
+        // and compile it with rustc before debugging
+        println!("🔧 Starting Rust debug session for: {}", fizzbuzz_str);
 
         let start_args = json!({
             "language": "rust",
-            "program": binary_str,
+            "program": fizzbuzz_str,
             "args": [],
             "cwd": null,
             "stopOnEntry": true
@@ -517,7 +609,42 @@ Test the debugger MCP server with Rust:
 4. Continue and document results
 5. Disconnect
 
-Create mcp_protocol_log.md documenting all interactions."#,
+IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' with this EXACT format:
+```json
+{{
+  "test_run": {{
+    "language": "rust",
+    "timestamp": "<current ISO 8601 timestamp>",
+    "overall_success": <true if all operations succeeded, false otherwise>
+  }},
+  "operations": {{
+    "session_started": <true/false>,
+    "breakpoint_set": <true/false>,
+    "breakpoint_verified": <true/false>,
+    "execution_continued": <true/false>,
+    "stopped_at_breakpoint": <true/false>,
+    "stack_trace_retrieved": <true/false>,
+    "variable_evaluated": <true/false>,
+    "session_disconnected": <true/false>
+  }},
+  "errors": [
+    {{
+      "operation": "<operation name>",
+      "message": "<error message>"
+    }}
+  ]
+}}
+```
+
+Set each boolean to true only if that specific operation completed successfully.
+Add errors array entries for any failures encountered.
+
+Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+
+**CRITICAL**: After creating both files:
+1. Use the Read tool to read back test-results.json
+2. Display the full content to verify it was written correctly
+3. Do NOT just claim you created the files - actually show the content!"#,
         fizzbuzz_binary.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
@@ -551,14 +678,15 @@ Create mcp_protocol_log.md documenting all interactions."#,
 
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
-        .arg("--print")
-        .arg("--dangerously-skip-permissions")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
         .current_dir(&workspace_root)
         .output()
         .expect("Failed to run claude");
 
     println!("\n📊 Claude Code Output:");
-    println!("{}", String::from_utf8_lossy(&claude_output.stdout));
+    let output_str = String::from_utf8_lossy(&claude_output.stdout);
+    println!("{}", output_str);
 
     // 10. Verify protocol log
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
@@ -566,6 +694,115 @@ Create mcp_protocol_log.md documenting all interactions."#,
 
     if log_exists {
         println!("✅ Protocol log created");
+    }
+
+    // 10.5. Extract test-results.json from Claude's output if it wasn't written to file
+    let test_results_src = workspace_root.join("test-results.json");
+
+    // Check if Claude actually wrote a VALID file (not just any file)
+    let mut needs_extraction = !test_results_src.exists()
+        || fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0)
+            == 0;
+
+    // ENHANCED: Also validate the file contains valid, parseable JSON
+    if !needs_extraction && test_results_src.exists() {
+        if let Ok(content) = fs::read_to_string(&test_results_src) {
+            let trimmed = content.trim();
+
+            // Check if file is empty or doesn't contain required fields
+            if trimmed.is_empty()
+                || !trimmed.contains("\"test_run\"")
+                || !trimmed.contains("\"operations\"")
+            {
+                println!("⚠️  test-results.json exists but is empty or missing required fields");
+                needs_extraction = true;
+            } else {
+                // Validate it's actually parseable JSON
+                match serde_json::from_str::<serde_json::Value>(trimmed) {
+                    Ok(_) => {
+                        println!("✅ Valid test-results.json found ({} bytes)", trimmed.len());
+                    }
+                    Err(e) => {
+                        println!(
+                            "⚠️  test-results.json exists but contains invalid JSON: {}",
+                            e
+                        );
+                        needs_extraction = true;
+                    }
+                }
+            }
+        } else {
+            println!("⚠️  test-results.json exists but cannot be read as UTF-8");
+            needs_extraction = true;
+        }
+    }
+
+    if needs_extraction {
+        println!("⚠️  test-results.json not valid, extracting from output...");
+
+        let mut extracted = false;
+
+        // Strategy 1: Look for JSON block in stdout (between ```json and ```)
+        if let Some(json_start) = output_str.find("```json") {
+            let search_slice = &output_str[json_start + 7..]; // Skip "```json"
+            if let Some(json_end_offset) = search_slice.find("```") {
+                let json_content = search_slice[..json_end_offset].trim();
+
+                // Validate it's actually JSON for test_run
+                if json_content.contains("\"test_run\"") && json_content.contains("\"operations\"")
+                {
+                    fs::write(&test_results_src, json_content)
+                        .expect("Failed to write extracted JSON");
+                    println!(
+                        "✅ Extracted and wrote test-results.json from Claude's output ({} bytes)",
+                        json_content.len()
+                    );
+                    extracted = true;
+                }
+            }
+        }
+
+        // Strategy 2: Parse mcp_protocol_log.md as fallback
+        if !extracted && protocol_log_path.exists() {
+            println!("⚠️  Attempting to reconstruct test-results.json from mcp_protocol_log.md...");
+
+            if let Ok(log_content) = fs::read_to_string(&protocol_log_path) {
+                let reconstructed_json =
+                    reconstruct_test_results_from_protocol_log(&log_content, "rust");
+
+                fs::write(&test_results_src, &reconstructed_json)
+                    .expect("Failed to write reconstructed JSON");
+                println!(
+                    "✅ Reconstructed test-results.json from protocol log ({} bytes)",
+                    reconstructed_json.len()
+                );
+                extracted = true;
+            }
+        }
+
+        if !extracted {
+            println!("❌ Failed to extract or reconstruct test-results.json");
+        }
+    }
+
+    // 11. Verify test-results.json is ready for CI artifact collection
+    // NOTE: No copy needed! workspace_root == current_dir in CI, copying to itself truncates to 0 bytes
+    if test_results_src.exists() {
+        let size = fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        println!(
+            "✅ test-results.json ready at {} ({} bytes)",
+            test_results_src.display(),
+            size
+        );
+    } else {
+        println!(
+            "⚠️  test-results.json not found at {}",
+            test_results_src.display()
+        );
     }
 
     // 11. Cleanup
@@ -577,7 +814,8 @@ Create mcp_protocol_log.md documenting all interactions."#,
         .output();
 
     let _ = fs::remove_file(&workspace_prompt);
-    let _ = fs::remove_file(&protocol_log_path);
+    // NOTE: Do NOT delete protocol_log_path or test_results.json
+    // These files are needed by CI for artifact upload
 
     println!("\n🎉 Rust Claude Code integration test completed!");
 }

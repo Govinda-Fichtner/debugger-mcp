@@ -1,0 +1,23 @@
+{
+  "test_run": {
+    "language": "LANGUAGE_NAME",
+    "timestamp": "ISO_8601_TIMESTAMP",
+    "overall_success": true
+  },
+  "operations": {
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  },
+  "errors": [],
+  "metadata": {
+    "session_id": "SESSION_ID",
+    "program_path": "PROGRAM_PATH",
+    "breakpoint_line": 5
+  }
+}

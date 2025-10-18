@@ -26,6 +26,7 @@ RUN rm -f /etc/apt/sources.list.d/* && \
     lldb \
     ca-certificates \
     unzip \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go 1.23.1 (newer version required by Delve 1.25+, which requires Go 1.22+)

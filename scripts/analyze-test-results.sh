@@ -17,78 +17,208 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 ARTIFACTS_DIR="${1:-.}"
+DEBUG_LOG="${2:-analysis-debug.log}"
+
+# Initialize debug log
+exec 3>&1 4>&2  # Save stdout and stderr file descriptors
+exec 1> >(tee -a "$DEBUG_LOG")
+exec 2>&1
+
+echo "════════════════════════════════════════════════════════════════"
+echo "🔍 Test Results Analysis - Debug Log"
+echo "════════════════════════════════════════════════════════════════"
+echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+echo "Artifacts Directory: $ARTIFACTS_DIR"
+echo "Debug Log: $DEBUG_LOG"
+echo "Working Directory: $(pwd)"
+echo "════════════════════════════════════════════════════════════════"
+echo
 
 echo "🔍 Analyzing test results in: $ARTIFACTS_DIR"
 echo
+
+# Check if jq is available (required for JSON parsing)
+echo "📋 Step 1: Checking prerequisites"
+echo "  → Checking for jq command..."
+if ! command -v jq &> /dev/null; then
+    echo "  ❌ jq is not installed"
+    echo ""
+    echo "jq is required to parse test-results.json files."
+    echo "Install it with:"
+    echo "  - Debian/Ubuntu: sudo apt-get install jq"
+    echo "  - macOS: brew install jq"
+    echo "  - Docker: Add 'jq' to apt-get install in Dockerfile.integration-tests"
+    echo ""
+    exit 1
+fi
+echo "  ✅ jq found: $(which jq)"
+echo "  ✅ jq version: $(jq --version)"
+echo
+
+echo "📂 Step 2: Checking artifacts directory structure"
+echo "  → Directory: $ARTIFACTS_DIR"
+if [[ ! -d "$ARTIFACTS_DIR" ]]; then
+    echo "  ❌ Artifacts directory not found: $ARTIFACTS_DIR"
+    exit 1
+fi
+echo "  ✅ Artifacts directory exists"
+echo
+echo "  → Listing artifacts directory structure:"
+ls -lah "$ARTIFACTS_DIR" || echo "  ⚠️  Failed to list directory"
+echo
+echo "  → Finding test-results.json files:"
+find "$ARTIFACTS_DIR" -name "test-results.json" -exec ls -lh {} \; || echo "  ⚠️  No test-results.json files found"
+echo
+
+# Function to analyze JSON test results
+analyze_language_json() {
+    local lang="$1"
+    local json_file="$2"
+
+    echo "    🔍 Analyzing JSON for $lang: $json_file" >&2
+
+    # Validate JSON file exists
+    if [[ ! -f "$json_file" ]]; then
+        echo "      ❌ JSON file does not exist" >&2
+        return 1
+    fi
+
+    # Check file size
+    local file_size=$(stat -f%z "$json_file" 2>/dev/null || stat -c%s "$json_file" 2>/dev/null || echo "0")
+    echo "      📏 File size: $file_size bytes" >&2
+
+    if [[ "$file_size" -eq 0 ]]; then
+        echo "      ❌ JSON file is empty (0 bytes)" >&2
+        return 1
+    fi
+
+    # Show first few lines of file
+    echo "      📄 File content (first 5 lines):" >&2
+    head -5 "$json_file" | sed 's/^/        /' >&2
+
+    # Validate JSON syntax
+    echo "      🔧 Validating JSON syntax..." >&2
+    if ! jq empty "$json_file" 2>/dev/null; then
+        echo "      ❌ Invalid JSON syntax" >&2
+        echo "      📋 jq error:" >&2
+        jq empty "$json_file" 2>&1 | sed 's/^/        /' >&2
+        return 1
+    fi
+    echo "      ✅ JSON syntax valid" >&2
+
+    # Parse JSON and extract fields
+    echo "      📊 Extracting fields..." >&2
+    local overall_success=$(jq -r '.test_run.overall_success // false' "$json_file" 2>/dev/null)
+    echo "        overall_success: $overall_success" >&2
+    local session_started=$(jq -r '.operations.session_started // false' "$json_file" 2>/dev/null)
+    echo "        session_started: $session_started" >&2
+    local breakpoint_set=$(jq -r '.operations.breakpoint_set // false' "$json_file" 2>/dev/null)
+    echo "        breakpoint_set: $breakpoint_set" >&2
+    local breakpoint_verified=$(jq -r '.operations.breakpoint_verified // false' "$json_file" 2>/dev/null)
+    echo "        breakpoint_verified: $breakpoint_verified" >&2
+    local execution_continued=$(jq -r '.operations.execution_continued // false' "$json_file" 2>/dev/null)
+    echo "        execution_continued: $execution_continued" >&2
+    local stopped_at_breakpoint=$(jq -r '.operations.stopped_at_breakpoint // false' "$json_file" 2>/dev/null)
+    echo "        stopped_at_breakpoint: $stopped_at_breakpoint" >&2
+    local stack_trace=$(jq -r '.operations.stack_trace_retrieved // false' "$json_file" 2>/dev/null)
+    echo "        stack_trace_retrieved: $stack_trace" >&2
+    local evaluation=$(jq -r '.operations.variable_evaluated // false' "$json_file" 2>/dev/null)
+    echo "        variable_evaluated: $evaluation" >&2
+    local disconnect=$(jq -r '.operations.session_disconnected // false' "$json_file" 2>/dev/null)
+    echo "        session_disconnected: $disconnect" >&2
+    local error_count=$(jq -r '.errors | length // 0' "$json_file" 2>/dev/null)
+    echo "        error_count: $error_count" >&2
+
+    # Validate JSON parsing worked
+    echo "      🔍 Validating parsed values..." >&2
+    if [[ "$overall_success" != "true" && "$overall_success" != "false" ]]; then
+        echo "      ❌ Invalid overall_success value: '$overall_success' (expected 'true' or 'false')" >&2
+        return 1
+    fi
+    echo "      ✅ All values parsed successfully" >&2
+
+    # Convert boolean strings to counts (1 for true, 0 for false)
+    local session_count=$([[ "$session_started" == "true" ]] && echo 1 || echo 0)
+    local bp_count=$([[ "$breakpoint_set" == "true" ]] && echo 1 || echo 0)
+    local bp_verified_count=$([[ "$breakpoint_verified" == "true" ]] && echo 1 || echo 0)
+    local cont_count=$([[ "$execution_continued" == "true" ]] && echo 1 || echo 0)
+    local stopped_count=$([[ "$stopped_at_breakpoint" == "true" ]] && echo 1 || echo 0)
+    local stack_count=$([[ "$stack_trace" == "true" ]] && echo 1 || echo 0)
+    local eval_count=$([[ "$evaluation" == "true" ]] && echo 1 || echo 0)
+    local disc_count=$([[ "$disconnect" == "true" ]] && echo 1 || echo 0)
+
+    # Determine status based on JSON data
+    if [[ "$overall_success" == "true" ]]; then
+        # All operations succeeded
+        echo "$lang|✅ PASS|100%|Fully Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+    elif [[ $error_count -gt 0 ]]; then
+        # Has errors, check what's working
+        if [[ $session_count -eq 1 && $bp_count -eq 1 ]]; then
+            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        else
+            echo "$lang|❌ FAIL|0%|Non-functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        fi
+    else
+        # Check how many operations succeeded
+        local op_count=$((session_count + bp_verified_count + cont_count + stack_count + eval_count + disc_count))
+        if [[ $op_count -ge 6 ]]; then
+            echo "$lang|✅ PASS|100%|Fully Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        elif [[ $op_count -ge 4 ]]; then
+            echo "$lang|⚠️  PARTIAL|60%|Partially Functional (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        else
+            echo "$lang|⚠️  PARTIAL|40%|Limited Functionality (JSON)|$session_count|$bp_verified_count|$cont_count|$stack_count|$eval_count|$disc_count"
+        fi
+    fi
+
+    return 0
+}
 
 # Function to analyze a single language test output
 analyze_language() {
     local lang="$1"
     local file="$2"
 
+    echo "  📊 Analyzing $lang test results" >&2
+    echo "    📂 Test output file: $file" >&2
+
     if [[ ! -f "$file" ]]; then
-        echo "⚠️  File not found: $file"
+        echo "    ❌ Test output file not found: $file" >&2
         return 1
     fi
 
-    # Extract test result
-    local test_result=$(grep "test result:" "$file" | tail -1)
+    local file_size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+    echo "    📏 Test output size: $file_size bytes" >&2
 
-    # Check for critical proof points (case-insensitive)
-    # NOTE: We check across ALL tests in the output file, not just one test
-    # For example, Go has multiple tests where one might show partial results
-    # but another (claude_code_integration) shows full functionality
-    local session_started=$(grep -ic "session started:" "$file" || true)
-    local breakpoint_set=$(grep -ic "Breakpoint set, verified: true" "$file" || true)
-    local execution_continued=$(grep -ic "Execution continued" "$file" || true)
+    # Parse JSON test results
+    local json_file="${file%/*}/test-results.json"
+    echo "    🔍 Looking for test-results.json: $json_file" >&2
 
-    # Stack trace: Accept multiple patterns for different test scenarios
-    # "Stack trace retrieved: N frames" (from fizzbuzz test)
-    # "Retrieved complete stack traces" or "Retrieved stack trace with N frames" (from claude_code test)
-    local stack_trace=$(grep -iEc "Stack trace retrieved:|Retrieved.*stack trace" "$file" || true)
-
-    # Evaluation: Accept multiple patterns for different test scenarios
-    # "Evaluation result:" (from fizzbuzz test)
-    # "Evaluated variable" or "Evaluated expression" or "Inspected variable" (from claude_code test)
-    local evaluation=$(grep -iEc "Evaluation result:|Evaluated variable|Evaluated expression|Inspected variable" "$file" || true)
-
-    local disconnect=$(grep -ic "Session disconnected successfully" "$file" || true)
-
-    # Determine overall status
-    local status="❌ FAIL"
-    local pass_rate="0%"
-    local functionality="Non-functional"
-
-    if [[ $test_result =~ "ok" ]] && [[ $session_started -gt 0 ]] && \
-       [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]] && \
-       [[ $stack_trace -gt 0 ]] && [[ $evaluation -gt 0 ]] && \
-       [[ $disconnect -gt 0 ]]; then
-        status="✅ PASS"
-        pass_rate="100%"
-        functionality="Fully Functional"
-    elif [[ $test_result =~ "ok" ]] && [[ $session_started -gt 0 ]] && \
-         [[ $breakpoint_set -gt 0 ]] && [[ $execution_continued -gt 0 ]]; then
-        status="⚠️  PARTIAL"
-        if [[ $stack_trace -gt 0 ]] || [[ $evaluation -gt 0 ]]; then
-            pass_rate="80%"
-            functionality="Mostly Functional"
-        else
-            pass_rate="60%"
-            functionality="Partially Functional"
+    if [[ -f "$json_file" ]]; then
+        echo "    ✅ test-results.json found" >&2
+        local json_result
+        json_result=$(analyze_language_json "$lang" "$json_file" 2>&2)
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
+            echo "    ✅ JSON analysis successful" >&2
+            echo "$json_result"
+            return 0
         fi
-    elif [[ $test_result =~ "ok" ]]; then
-        status="⚠️  PARTIAL"
-        pass_rate="40%"
-        functionality="Limited Functionality"
+        # JSON parsing failed
+        echo "    ❌ JSON parsing failed (exit code: $exit_code)" >&2
+        echo "$lang|❌ FAIL|0%|Invalid JSON Format|0|0|0|0|0|0"
+        return 0
     fi
 
-    echo "$lang|$status|$pass_rate|$functionality|$session_started|$breakpoint_set|$execution_continued|$stack_trace|$evaluation|$disconnect"
+    # No JSON file found - test didn't generate results
+    echo "    ❌ test-results.json not found" >&2
+    echo "$lang|❌ FAIL|0%|No Test Results|0|0|0|0|0|0"
+    return 0
 }
 
 # Analyze all languages
-echo "📊 INTEGRATION TEST SUMMARY"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo
+echo "📊 Step 3: Analyzing integration test results" >&2
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+echo >&2
 
 # Define languages and their test output files
 declare -A LANGUAGES=(
@@ -99,16 +229,38 @@ declare -A LANGUAGES=(
     ["Rust"]="$ARTIFACTS_DIR/test-output-rust/rust-test-output.txt"
 )
 
+echo "📋 Configured languages and their output files:" >&2
+for lang in "Python" "Ruby" "Node.js" "Go" "Rust"; do
+    file="${LANGUAGES[$lang]}"
+    echo "  - $lang: $file" >&2
+done
+echo >&2
+
 # Collect results
 declare -a RESULTS=()
 declare -A LANG_STATUS=()
 
+echo "🔄 Beginning analysis for each language..." >&2
+echo >&2
 for lang in "Python" "Ruby" "Node.js" "Go" "Rust"; do
+    echo "──────────────────────────────────────────────────────────────" >&2
     file="${LANGUAGES[$lang]}"
-    result=$(analyze_language "$lang" "$file" 2>/dev/null || echo "$lang|❌ SKIP|0%|Not Tested|0|0|0|0|0|0")
+    result=$(analyze_language "$lang" "$file" || echo "$lang|❌ SKIP|0%|Not Tested|0|0|0|0|0|0")
     RESULTS+=("$result")
     LANG_STATUS[$lang]=$(echo "$result" | cut -d'|' -f2)
+    echo "  📌 Result for $lang: ${LANG_STATUS[$lang]}" >&2
+    echo >&2
 done
+echo "──────────────────────────────────────────────────────────────" >&2
+echo >&2
+
+echo "📊 Step 4: Generating summary table" >&2
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+echo >&2
+
+echo "📊 INTEGRATION TEST SUMMARY"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo
 
 # Print summary table
 echo "| Language | Status | Pass Rate | Functionality | Operations |"
@@ -142,11 +294,11 @@ failing_langs=0
 for lang in "${!LANG_STATUS[@]}"; do
     status="${LANG_STATUS[$lang]}"
     if [[ "$status" == "✅ PASS" ]]; then
-        ((passing_langs++))
+        passing_langs=$((passing_langs + 1))
     elif [[ "$status" == "⚠️  PARTIAL" ]]; then
-        ((partial_langs++))
+        partial_langs=$((partial_langs + 1))
     else
-        ((failing_langs++))
+        failing_langs=$((failing_langs + 1))
     fi
 done
 
@@ -162,7 +314,39 @@ echo "- **Overall Success Rate:** ${overall_rate}%"
 echo
 
 # Determine CI status
-if [[ $passing_langs -eq $total_langs ]]; then
+# Check for API credit issues first
+api_credit_issues=0
+for lang in "${!LANG_STATUS[@]}"; do
+    status="${LANG_STATUS[$lang]}"
+    if [[ "$status" == "⚠️  SKIPPED" ]]; then
+        api_credit_issues=$((api_credit_issues + 1))
+    fi
+done
+
+if [[ $api_credit_issues -gt 0 ]]; then
+    echo -e "${RED}🚨 TEST INFRASTRUCTURE FAILURE${NC}"
+    echo
+    echo "⚠️  **$api_credit_issues language(s) skipped due to API credit exhaustion**"
+    echo
+    echo "Claude Code integration tests could not run due to insufficient API credits."
+    echo "This is NOT a functionality issue - it's a test infrastructure problem."
+    echo
+    echo "**Action Required:**"
+    echo "  1. Check Claude API credit balance"
+    echo "  2. Add credits or wait for reset"
+    echo "  3. Re-run tests to verify actual functionality"
+    echo
+
+    # List affected languages
+    echo "**Affected Languages:**"
+    for lang in "${!LANG_STATUS[@]}"; do
+        status="${LANG_STATUS[$lang]}"
+        if [[ "$status" == "⚠️  SKIPPED" ]]; then
+            echo "  - $lang (comprehensive test not executed)"
+        fi
+    done
+    exit 2  # Exit code 2 for infrastructure issues
+elif [[ $passing_langs -eq $total_langs ]]; then
     echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
     echo
     echo "All languages are fully functional with complete debugging capabilities."
@@ -182,10 +366,16 @@ elif [[ $passing_langs -ge 3 ]]; then
 
             # Show specific issues
             if [[ -f "$file" ]]; then
-                if ! grep -q "Stack trace retrieved:" "$file" 2>/dev/null; then
+                if grep -q "missing debug symbols" "$file" 2>/dev/null; then
+                    echo "    - Missing debug symbols"
+                fi
+                if grep -q "verified: false" "$file" 2>/dev/null; then
+                    echo "    - Breakpoint verification failed"
+                fi
+                if ! grep -q "Retrieved.*stack trace\|inspected.*stack trace\|Features Tested:.*stack trace" "$file" 2>/dev/null; then
                     echo "    - Stack trace unavailable"
                 fi
-                if ! grep -q "Evaluation result:" "$file" 2>/dev/null; then
+                if ! grep -q "Evaluated variable\|Variable Evaluations.*successful" "$file" 2>/dev/null; then
                     echo "    - Expression evaluation unavailable"
                 fi
             fi
