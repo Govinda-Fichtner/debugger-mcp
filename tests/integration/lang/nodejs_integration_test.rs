@@ -447,7 +447,8 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
         .expect("Failed to run claude");
 
     println!("\n📊 Claude Code Output:");
-    println!("{}", String::from_utf8_lossy(&claude_output.stdout));
+    let output_str = String::from_utf8_lossy(&claude_output.stdout);
+    println!("{}", output_str);
 
     // 8. Verify protocol log and copy test-results.json
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
@@ -457,8 +458,39 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
         println!("✅ Protocol log created");
     }
 
-    // Copy test-results.json from temp workspace to current directory for CI artifact collection
+    // 8.5. Extract test-results.json from Claude's output if it wasn't written to file
     let test_results_src = workspace_root.join("test-results.json");
+
+    // Check if Claude actually wrote the file
+    if !test_results_src.exists()
+        || fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0)
+            == 0
+    {
+        println!("⚠️  test-results.json not created by Claude Code, extracting from output...");
+
+        // Look for JSON block in output (between ```json and ```)
+        if let Some(json_start) = output_str.find("```json") {
+            let search_slice = &output_str[json_start + 7..]; // Skip "```json"
+            if let Some(json_end_offset) = search_slice.find("```") {
+                let json_content = search_slice[..json_end_offset].trim();
+
+                // Validate it's actually JSON for test_run
+                if json_content.contains("\"test_run\"") && json_content.contains("\"operations\"")
+                {
+                    fs::write(&test_results_src, json_content)
+                        .expect("Failed to write extracted JSON");
+                    println!(
+                        "✅ Extracted and wrote test-results.json from Claude's output ({} bytes)",
+                        json_content.len()
+                    );
+                }
+            }
+        }
+    }
+
+    // Copy test-results.json from temp workspace to current directory for CI artifact collection
     let test_results_dest = std::env::current_dir().unwrap().join("test-results.json");
     if test_results_src.exists() {
         fs::copy(&test_results_src, &test_results_dest)
