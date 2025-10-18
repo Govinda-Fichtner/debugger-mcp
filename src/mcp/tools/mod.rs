@@ -114,9 +114,10 @@ impl ToolsHandler {
         let args: DebuggerStartArgs = serde_json::from_value(arguments)?;
 
         // Validate program path to prevent path traversal attacks
-        // For Rust, validate with .rs extension; for others, allow any file
+        // For Rust, allow both .rs source files and pre-compiled binaries (no extension)
+        // For others, validate with expected source file extension
         let extension = match args.language.as_str() {
-            "rust" => Some("rs"),
+            "rust" => None, // Allow both .rs and executables (validation happens in manager)
             "python" => Some("py"),
             "ruby" => Some("rb"),
             "javascript" | "nodejs" => Some("js"),
@@ -924,6 +925,38 @@ mod tests {
 
         let result = serde_json::from_value::<DebuggerStartArgs>(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_debugger_start_rust_source_file() {
+        // Rust with .rs source file should deserialize successfully
+        let json = json!({
+            "language": "rust",
+            "program": "/workspace/tests/fixtures/fizzbuzz.rs",
+            "args": [],
+            "stopOnEntry": true
+        });
+
+        let args: DebuggerStartArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.language, "rust");
+        assert_eq!(args.program, "/workspace/tests/fixtures/fizzbuzz.rs");
+        assert!(args.stop_on_entry);
+    }
+
+    #[test]
+    fn test_debugger_start_rust_precompiled_binary() {
+        // Rust with pre-compiled binary (no extension) should deserialize successfully
+        let json = json!({
+            "language": "rust",
+            "program": "/workspace/tests/fixtures/target/fizzbuzz",
+            "args": [],
+            "stopOnEntry": true
+        });
+
+        let args: DebuggerStartArgs = serde_json::from_value(json).unwrap();
+        assert_eq!(args.language, "rust");
+        assert_eq!(args.program, "/workspace/tests/fixtures/target/fizzbuzz");
+        assert!(args.stop_on_entry);
     }
 
     #[test]
