@@ -706,14 +706,48 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
     // 10.5. Extract test-results.json from Claude's output if it wasn't written to file
     let test_results_src = workspace_root.join("test-results.json");
 
-    // Check if Claude actually wrote the file
-    if !test_results_src.exists()
+    // Check if Claude actually wrote a VALID file (not just any file)
+    let mut needs_extraction = !test_results_src.exists()
         || fs::metadata(&test_results_src)
             .map(|m| m.len())
             .unwrap_or(0)
-            == 0
-    {
-        println!("⚠️  test-results.json not created by Claude Code, extracting from output...");
+            == 0;
+
+    // ENHANCED: Also validate the file contains valid, parseable JSON
+    if !needs_extraction && test_results_src.exists() {
+        if let Ok(content) = fs::read_to_string(&test_results_src) {
+            let trimmed = content.trim();
+
+            // Check if file is empty or doesn't contain required fields
+            if trimmed.is_empty()
+                || !trimmed.contains("\"test_run\"")
+                || !trimmed.contains("\"operations\"")
+            {
+                println!("⚠️  test-results.json exists but is empty or missing required fields");
+                needs_extraction = true;
+            } else {
+                // Validate it's actually parseable JSON
+                match serde_json::from_str::<serde_json::Value>(trimmed) {
+                    Ok(_) => {
+                        println!("✅ Valid test-results.json found ({} bytes)", trimmed.len());
+                    }
+                    Err(e) => {
+                        println!(
+                            "⚠️  test-results.json exists but contains invalid JSON: {}",
+                            e
+                        );
+                        needs_extraction = true;
+                    }
+                }
+            }
+        } else {
+            println!("⚠️  test-results.json exists but cannot be read as UTF-8");
+            needs_extraction = true;
+        }
+    }
+
+    if needs_extraction {
+        println!("⚠️  test-results.json not valid, extracting from output...");
 
         let mut extracted = false;
 
