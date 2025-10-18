@@ -265,14 +265,25 @@ jobs:
           # Make script executable
           chmod +x scripts/analyze-test-results.sh
 
-          # Run analysis and capture output
-          ./scripts/analyze-test-results.sh test-artifacts/ > summary.txt 2>&1 || true
+          # Run analysis with debug logging
+          # Script writes to both stdout (summary.txt) and analysis-debug.log
+          ./scripts/analyze-test-results.sh test-artifacts/ analysis-debug.log || true
 
           # Add to GitHub Step Summary
           echo "## 🎉 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          cat summary.txt >> $GITHUB_STEP_SUMMARY
+          cat summary.txt >> $GITHUB_STEP_SUMMARY || echo "⚠️ No summary generated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Add debug log info to summary
+          if [ -f analysis-debug.log ]; then
+            echo "### 🔍 Debug Information" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Detailed debug log available in artifacts: \`analysis-debug.log\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Log size: $(wc -c < analysis-debug.log) bytes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload analysis summary
         uses: actions/upload-artifact@v4
@@ -280,4 +291,12 @@ jobs:
         with:
           name: test-analysis-summary
           path: summary.txt
+          retention-days: 30
+
+      - name: Upload analysis debug log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-analysis-debug-log
+          path: analysis-debug.log
           retention-days: 30
