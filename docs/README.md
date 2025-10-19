@@ -6,44 +6,51 @@ Complete documentation for the DAP-based MCP debugging server enabling AI-assist
 
 ## 📁 Documentation Structure
 
-### [**Architecture/**](./Architecture/) 🏗️
-System design and technical decisions
+All documentation files are organized in a flat structure with category prefixes for easy navigation:
 
-- **[DAP_MCP_SERVER_PROPOSAL.md](./Architecture/DAP_MCP_SERVER_PROPOSAL.md)** - Complete architecture proposal (68 pages)
+### Architecture Documentation (`ARCHITECTURE_*.md`)
+
+System design and technical decisions:
+
+- **[ARCHITECTURE_PROPOSAL.md](./ARCHITECTURE_PROPOSAL.md)** - Complete architecture proposal (68 pages)
   - System design, MCP interface, multi-language abstraction, implementation roadmap
-- **[COMPONENTS.md](./Architecture/architecture/COMPONENTS.md)** - Detailed component specifications
+- **[ARCHITECTURE_COMPONENTS.md](./ARCHITECTURE_COMPONENTS.md)** - Detailed component specifications
   - Module structure, concurrency patterns, testing strategy
-- **[LOGGING_ARCHITECTURE.md](./Architecture/LOGGING_ARCHITECTURE.md)** - Logging system design
-- **[rust-mcp-technology-stack.md](./Architecture/rust-mcp-technology-stack.md)** - Technology choices and rationale
+- **[ARCHITECTURE_LOGGING.md](./ARCHITECTURE_LOGGING.md)** - Logging system design
+- **[ARCHITECTURE_TECHNOLOGY_STACK.md](./ARCHITECTURE_TECHNOLOGY_STACK.md)** - Technology choices and rationale
 
-### [**Contributing/**](./Contributing/) 🤝
-Guides for developers and contributors
+### Contributing Documentation (`CONTRIBUTING_*.md`)
 
-- **[GETTING_STARTED.md](./Contributing/GETTING_STARTED.md)** - Developer quick start guide
+Guides for developers and contributors:
+
+- **[CONTRIBUTING_GETTING_STARTED.md](./CONTRIBUTING_GETTING_STARTED.md)** - Developer quick start guide
   - Setup, building, development workflow, testing
-- **[TESTING.md](./Contributing/TESTING.md)** - Testing guide
-- **[TESTING_STRATEGY.md](./Contributing/TESTING_STRATEGY.md)** - Testing approach and philosophy
-- **[TESTING_EXAMPLE.md](./Contributing/TESTING_EXAMPLE.md)** - Code examples for tests
-- **[PRE_COMMIT_SETUP.md](./Contributing/PRE_COMMIT_SETUP.md)** - Pre-commit hooks setup
-- **[INSTALLATION_CHECKLIST.md](./Contributing/INSTALLATION_CHECKLIST.md)** - Tool installation steps
-- **[ADDING_NEW_LANGUAGE.md](./Contributing/ADDING_NEW_LANGUAGE.md)** - How to add language support
+- **[CONTRIBUTING_TESTING_GUIDE.md](./CONTRIBUTING_TESTING_GUIDE.md)** - Comprehensive testing guide
+  - Unit tests, integration tests, test strategy, coverage goals
+- **[CONTRIBUTING_PRE_COMMIT.md](./CONTRIBUTING_PRE_COMMIT.md)** - Pre-commit hooks setup
+- **[CONTRIBUTING_INSTALLATION.md](./CONTRIBUTING_INSTALLATION.md)** - Tool installation steps
+- **[CONTRIBUTING_ADDING_LANGUAGE.md](./CONTRIBUTING_ADDING_LANGUAGE.md)** - How to add language support
 
-### [**Usage/**](./Usage/) 📖
-User guides and deployment
+### Usage Documentation (`USAGE_*.md`)
 
-- **[DOCKER.md](./Usage/DOCKER.md)** - Docker deployment guide
+User guides and deployment:
+
+- **[USAGE_DOCKER.md](./USAGE_DOCKER.md)** - Docker deployment guide
   - Container setup, MCP client integration, production deployment
-- **[TROUBLESHOOTING.md](./Usage/TROUBLESHOOTING.md)** - Common issues and solutions
-- **[EXPRESSION_SYNTAX_GUIDE.md](./Usage/EXPRESSION_SYNTAX_GUIDE.md)** - Language-specific expression syntax
-- **[INTEGRATION_TESTS.md](./Usage/INTEGRATION_TESTS.md)** - Integration test specifications
+- **[USAGE_TROUBLESHOOTING.md](./USAGE_TROUBLESHOOTING.md)** - Common issues and solutions
+- **[USAGE_EXPRESSION_SYNTAX.md](./USAGE_EXPRESSION_SYNTAX.md)** - Language-specific expression syntax
+- **[USAGE_INTEGRATION_TESTS.md](./USAGE_INTEGRATION_TESTS.md)** - Integration test specifications
 
-### [**Processes/**](./Processes/) ⚙️
-Development and release processes
+### Process Documentation (`PROCESS_*.md`)
 
-- **[CI_CD_PIPELINE.md](./Processes/CI_CD_PIPELINE.md)** - CI/CD configuration and workflows
-- **[CROSS_PLATFORM_BUILDS.md](./Processes/CROSS_PLATFORM_BUILDS.md)** - Building for multiple platforms
-- **[RELEASE_PROCESS.md](./Processes/RELEASE_PROCESS.md)** - How to create releases
-- **[LOG_VALIDATION_SYSTEM.md](./Processes/LOG_VALIDATION_SYSTEM.md)** - Log validation system
+Development and release processes:
+
+- **[PROCESS_CI_WORKFLOWS.md](./PROCESS_CI_WORKFLOWS.md)** - CI/CD workflows and pipelines
+  - ci.yml and integration-tests-matrix.yml explained
+  - Success/failure criteria, troubleshooting
+- **[PROCESS_CROSS_PLATFORM_BUILDS.md](./PROCESS_CROSS_PLATFORM_BUILDS.md)** - Building for multiple platforms
+- **[PROCESS_RELEASE.md](./PROCESS_RELEASE.md)** - How to create releases
+- **[PROCESS_LOG_VALIDATION.md](./PROCESS_LOG_VALIDATION.md)** - Log validation system
 
 ---
 
@@ -52,29 +59,28 @@ Development and release processes
 ### I want to...
 
 **Understand the architecture**
-1. Read the [Architecture Proposal](./Architecture/DAP_MCP_SERVER_PROPOSAL.md) (Executive Summary + Architecture sections)
-2. Review [Component Specifications](./Architecture/architecture/COMPONENTS.md)
-3. Check [Technology Stack](./Architecture/rust-mcp-technology-stack.md) rationale
+1. Read the [Architecture Proposal](./ARCHITECTURE_PROPOSAL.md) (Executive Summary + Architecture sections)
+2. Review [Component Specifications](./ARCHITECTURE_COMPONENTS.md)
+3. Check [Technology Stack](./ARCHITECTURE_TECHNOLOGY_STACK.md) rationale
 
 **Contribute to the codebase**
-1. Start with [Getting Started Guide](./Contributing/GETTING_STARTED.md)
-2. Set up [Pre-commit Hooks](./Contributing/PRE_COMMIT_SETUP.md)
-3. Follow [Testing Strategy](./Contributing/TESTING_STRATEGY.md)
-4. Reference [Testing Examples](./Contributing/TESTING_EXAMPLE.md)
+1. Start with [Getting Started Guide](./CONTRIBUTING_GETTING_STARTED.md)
+2. Set up [Pre-commit Hooks](./CONTRIBUTING_PRE_COMMIT.md)
+3. Follow [Testing Guide](./CONTRIBUTING_TESTING_GUIDE.md)
 
 **Deploy or use the server**
-1. Follow [Docker Deployment](./Usage/DOCKER.md) guide
-2. Refer to [Troubleshooting](./Usage/TROUBLESHOOTING.md) if issues arise
-3. Use [Expression Syntax Guide](./Usage/EXPRESSION_SYNTAX_GUIDE.md) for language-specific queries
+1. Follow [Docker Deployment](./USAGE_DOCKER.md) guide
+2. Refer to [Troubleshooting](./USAGE_TROUBLESHOOTING.md) if issues arise
+3. Use [Expression Syntax Guide](./USAGE_EXPRESSION_SYNTAX.md) for language-specific queries
 
 **Add a new programming language**
-1. Read [Adding New Language Guide](./Contributing/ADDING_NEW_LANGUAGE.md)
-2. Review [Architecture Proposal](./Architecture/DAP_MCP_SERVER_PROPOSAL.md) Section 6 (Multi-Language Abstraction)
+1. Read [Adding New Language Guide](./CONTRIBUTING_ADDING_LANGUAGE.md)
+2. Review [Architecture Proposal](./ARCHITECTURE_PROPOSAL.md) Section 6 (Multi-Language Abstraction)
 
 **Work on CI/CD or releases**
-1. Understand [CI/CD Pipeline](./Processes/CI_CD_PIPELINE.md)
-2. Follow [Release Process](./Processes/RELEASE_PROCESS.md)
-3. Check [Cross-Platform Builds](./Processes/CROSS_PLATFORM_BUILDS.md)
+1. Understand [CI Workflows](./PROCESS_CI_WORKFLOWS.md)
+2. Follow [Release Process](./PROCESS_RELEASE.md)
+3. Check [Cross-Platform Builds](./PROCESS_CROSS_PLATFORM_BUILDS.md)
 
 ---
 
@@ -85,7 +91,7 @@ Development and release processes
 A **Debug Adapter Protocol (DAP) based Model Context Protocol (MCP) server** that enables AI coding agents (Claude, Gemini CLI, etc.) to programmatically debug applications across multiple programming languages through a unified interface.
 
 **Key Features:**
-- 🌍 **Language-agnostic**: Supports Python, Ruby, JavaScript/Node.js, Go, Rust, C/C++ (via 40+ DAP implementations)
+- 🌍 **Language-agnostic**: Supports Python, Ruby, JavaScript/Node.js, Go, Rust (via 40+ DAP implementations)
 - 🤖 **AI-native**: Native MCP protocol for seamless AI agent integration
 - 🔧 **Production-ready**: Rust + Tokio for reliability and performance
 - 🔌 **Extensible**: Plugin system for new debuggers without core changes
@@ -111,18 +117,19 @@ A **Debug Adapter Protocol (DAP) based Model Context Protocol (MCP) server** tha
 
 - ✅ Multi-language support (Python, Ruby, Node.js, Go, Rust)
 - ✅ 13 MCP tools fully functional
-- ✅ 100+ comprehensive tests
+- ✅ 193 comprehensive unit tests
+- ✅ 5 language integration tests (100% pass rate)
 - ✅ Docker deployment support
 - ✅ Complete documentation
 
 **Supported Languages:**
 | Language | Status | Test Coverage |
 |----------|--------|---------------|
-| Python | ✅ Production | 100% |
-| Ruby | ✅ Production | 100% |
-| Node.js | ✅ Production | 100% |
-| Go | ✅ Production | 100% |
-| Rust | ✅ Production | 100% |
+| Python   | ✅ Production | 100% Functional |
+| Ruby     | ✅ Production | 100% Functional |
+| Node.js  | ✅ Production | 100% Functional |
+| Go       | ✅ Production | 100% Functional |
+| Rust     | ✅ Production | 100% Functional |
 
 ---
 
@@ -147,15 +154,5 @@ A **Debug Adapter Protocol (DAP) based Model Context Protocol (MCP) server** tha
 
 ---
 
-## 📝 Historical Documentation
-
-Historical implementation notes, proposals, research, and completed work have been archived in Obsidian for reference:
-- Location: `/Development Projects/Debugger-MCP/Documentation/`
-- Includes: Status reports, bug fixes, proposals, research, deep-dives
-
-This keeps the repository focused on current, actionable documentation while preserving the complete project history.
-
----
-
-**Last Updated**: 2025-10-10
-**Documentation Version**: 2.0 (Reorganized Structure)
+**Last Updated**: 2025-10-19
+**Documentation Version**: 3.0 (Flat Structure with Category Prefixes)

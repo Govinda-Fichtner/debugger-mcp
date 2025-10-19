@@ -1,141 +1,38 @@
-# DAP MCP Server - Debug Adapter Protocol for AI Agents
+# DAP MCP Server
 
-**Enable AI coding agents to programmatically debug applications across multiple programming languages.**
+[![CI](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml)
+[![Integration Tests](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml/badge.svg)](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml)
+
+Enable AI agents to programmatically debug applications across multiple languages through a unified MCP interface.
+
+---
 
 ## What is This?
 
-A Rust-based MCP (Model Context Protocol) server that exposes debugging capabilities to AI assistants like Claude Desktop by bridging to the Debug Adapter Protocol (DAP).
+A Rust-based **MCP (Model Context Protocol) server** that exposes debugging capabilities to AI assistants (Claude, Gemini CLI, etc.) by bridging to the **Debug Adapter Protocol (DAP)**.
 
-**In short**: AI agents can now set breakpoints, step through code, inspect variables, and investigate bugs autonomously.
+**In short:** AI agents can set breakpoints, step through code, inspect variables, and investigate bugs autonomously across Python, Ruby, Node.js, Go, and Rust.
 
-## Status
+---
 
-🎉 **Phase: Multi-Language Support - Production-Ready** 🎉
+## Quick Start
 
-- ✅ Comprehensive architecture (see [docs/](docs/))
-- ✅ MCP server with STDIO transport
-- ✅ Complete DAP client with async correlation
-- ✅ Debug session management
-- ✅ 13 MCP tools implemented
-- ✅ **5 languages fully validated**: Python, Ruby, Node.js, Go, Rust
-- ✅ Comprehensive integration tests - All passing
-- ✅ Language-specific Docker images
-- ✅ **End-to-end validation with Claude** - 100% success rate
+### 1. Install
 
-## Quick Links
-
-- **[Documentation Hub](docs/README.md)** - Complete documentation index
-- **[Getting Started](docs/Contributing/GETTING_STARTED.md)** - Developer setup
-- **[Docker Deployment](docs/Usage/DOCKER.md)** - Deployment guide (recommended)
-- **[Troubleshooting](docs/Usage/TROUBLESHOOTING.md)** - Common issues
-- **[Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)** - Complete system design
-
-## Features
-
-### Supported Languages ✅
-
-| Language | Debugger | Status | Docker Image |
-|----------|----------|--------|--------------|
-| **Python** | debugpy | ✅ Production | `Dockerfile.python` |
-| **Ruby** | rdbg (debug gem) | ✅ Production | `Dockerfile.ruby` |
-| **Node.js** | vscode-js-debug | ✅ Production | `Dockerfile.nodejs` |
-| **Rust** | CodeLLDB | ✅ Production | `Dockerfile.rust` |
-| **Go** | delve | ✅ Production | - |
-
-### Implemented Features ✅
-- ✅ Start/stop debugging sessions
-- ✅ Set source breakpoints
-- ✅ Execution control (continue, step, wait)
-- ✅ Expression evaluation
-- ✅ Stack trace inspection
-- ✅ Session state queries
-
-### Planned Features
-- ⏳ Conditional breakpoints, logpoints
-- ⏳ Exception breakpoints
-- ⏳ Multi-threaded debugging
-- ⏳ Remote debugging
-
-## Architecture
-
-```
-AI Agent (Claude Desktop, Gemini CLI, etc.)
-    ↕ MCP Protocol (JSON-RPC)
-┌─────────────────────────────────────────┐
-│     DAP MCP Server (Rust/Tokio)         │
-│  ┌────────────────────────────────────┐ │
-│  │  MCP Protocol Layer                │ │
-│  │  (Resources + Tools)               │ │
-│  └──────────────┬─────────────────────┘ │
-│  ┌──────────────┴─────────────────────┐ │
-│  │  Language-Agnostic Abstraction     │ │
-│  └──────────────┬─────────────────────┘ │
-│  ┌──────────────┴─────────────────────┐ │
-│  │  DAP Protocol Client               │ │
-│  └──────────────┬─────────────────────┘ │
-└─────────────────┼─────────────────────────┘
-                  ↕ Debug Adapter Protocol
-        ┌─────────┼──────────┐
-   debugpy      rdbg    node-debug   delve  CodeLLDB
-   (Python)   (Ruby)    (Node.js)    (Go)   (Rust/C++)
-```
-
-## Usage
-
-### Option 1: Docker (Recommended)
-
-Choose the Docker image based on your project's language:
-
+**Docker (Recommended):**
 ```bash
-# For Python projects
+# Choose image for your language
 docker build -f Dockerfile.python -t debugger-mcp:python .
 docker run -i debugger-mcp:python
-
-# For Ruby projects
-docker build -f Dockerfile.ruby -t debugger-mcp:ruby .
-docker run -i debugger-mcp:ruby
-
-# For Node.js projects
-docker build -f Dockerfile.nodejs -t debugger-mcp:nodejs .
-docker run -i debugger-mcp:nodejs
-
-# For Rust projects
-docker build -f Dockerfile.rust -t debugger-mcp:rust .
-docker run -i debugger-mcp:rust
 ```
 
-**Configure with Claude Desktop:**
-
-```json
-{
-  "mcpServers": {
-    "debugger": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "/home/user/projects:/workspace",
-        "debugger-mcp:nodejs"
-      ]
-    }
-  }
-}
-```
-
-**🚨 Important**: When debugging with Docker, use `/workspace/...` paths (container) not `/home/user/projects/...` paths (host)!
-
-See [Docker Documentation](docs/Usage/DOCKER.md) for complete deployment guide.
-
-### Option 2: Native Install
-
+**Native:**
 ```bash
-# Build from source
 cargo build --release
-
-# Run as MCP Server
 ./target/release/debugger_mcp serve
 ```
 
-**Configure with Claude Desktop:**
+### 2. Configure Claude Desktop
 
 ```json
 {
@@ -148,140 +45,279 @@ cargo build --release
 }
 ```
 
-### Example: AI-Assisted Debugging
+### 3. Debug
 
-**Python Example:**
+Start debugging from Claude!
+
+**Detailed setup:** [Getting Started Guide](docs/Contributing/GETTING_STARTED.md)
+
+---
+
+## Status
+
+🎉 **Production-Ready** - Multi-Language Support
+
+**Supported Languages:** Python, Ruby, Node.js, Go, Rust (all 100% functional)
+
+### Continuous Integration
+
+| Workflow | Purpose | Latest Status |
+|----------|---------|---------------|
+| **[CI](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml)** | Code quality, security, unit tests (193 tests) | ![CI](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml/badge.svg) |
+| **[Integration Tests](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml)** | End-to-end debugging across 5 languages | ![Integration](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml/badge.svg) |
+
+**Latest Results:**
+
+| Language | Status | Operations | Functionality |
+|----------|--------|------------|---------------|
+| Python   | ✅ PASS | SBCTED     | 100% Functional |
+| Ruby     | ✅ PASS | SBCTED     | 100% Functional |
+| Node.js  | ✅ PASS | SBCTED     | 100% Functional |
+| Go       | ✅ PASS | SBCTED     | 100% Functional |
+| Rust     | ✅ PASS | SBCTED     | 100% Functional |
+
+**Legend:** S=Session Start, B=Breakpoint, C=Continue, T=Trace, E=Evaluate, D=Disconnect
+
+**Understanding CI:** See [CI Workflows Documentation](docs/Processes/CI_WORKFLOWS.md)
+
+---
+
+## Features
+
+### Supported Languages
+
+| Language | Debugger | Docker Image |
+|----------|----------|--------------|
+| Python   | debugpy  | `Dockerfile.python` |
+| Ruby     | rdbg     | `Dockerfile.ruby` |
+| Node.js  | vscode-js-debug | `Dockerfile.nodejs` |
+| Go       | delve    | `Dockerfile.go` |
+| Rust     | CodeLLDB | `Dockerfile.rust` |
+
+### Debugging Capabilities
+
+✅ **Current:**
+- Start/stop debugging sessions
+- Set source breakpoints
+- Execution control (continue, step over/into/out, pause)
+- Expression evaluation
+- Stack trace inspection
+- Variable inspection
+
+⏳ **Planned:**
+- Conditional breakpoints & logpoints
+- Exception breakpoints
+- Multi-threaded debugging
+- Remote debugging
+- Data breakpoints
+
+---
+
+## Architecture
+
+```
+AI Agent (Claude, Gemini, etc.)
+    ↕ MCP Protocol (JSON-RPC)
+┌──────────────────────────────────┐
+│   DAP MCP Server (Rust/Tokio)   │
+│ ┌─────────────────────────────┐  │
+│ │  MCP Layer (Tools/Resources)│  │
+│ └──────────┬──────────────────┘  │
+│ ┌──────────┴──────────────────┐  │
+│ │  Language-Agnostic Core     │  │
+│ └──────────┬──────────────────┘  │
+│ ┌──────────┴──────────────────┐  │
+│ │  DAP Protocol Client        │  │
+│ └─────────────────────────────┘  │
+└──────────┼───────────────────────┘
+           ↕ Debug Adapter Protocol
+    ┌──────┴──────┐
+debugpy  rdbg  delve  CodeLLDB
+(Python)(Ruby) (Go)  (Rust/C++)
+```
+
+**Deep dive:** [Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
+
+---
+
+## Usage Example
+
 ```
 User: "My Python script crashes. Can you debug it?"
 
 Claude:
-  → debugger_start(language="python", program="/workspace/script.py", stopOnEntry=true)
+  → debugger_start(language="python", program="/workspace/script.py")
   → debugger_set_breakpoint(sourcePath="/workspace/script.py", line=42)
   → debugger_continue()
   → debugger_wait_for_stop()
   [Program stops at breakpoint]
   → stack = debugger_stack_trace()
-  → debugger_evaluate(expression="user_data", frameId=stack.stackFrames[0].id)
+  → debugger_evaluate(expression="user_data")
 
   "The crash occurs because 'user_data' is None when fetch_user() fails.
    The code doesn't check for None before accessing user_data.name..."
 ```
 
-See [Expression Syntax Guide](docs/Usage/EXPRESSION_SYNTAX_GUIDE.md) for language-specific evaluation syntax.
+**Expression syntax by language:** [Expression Guide](docs/Usage/EXPRESSION_SYNTAX_GUIDE.md)
 
-## Technology Stack
+---
 
-| Component | Technology | Why? |
-|-----------|-----------|------|
-| Language | Rust | Safety, performance, async |
-| CLI | Clap | Industry standard |
-| Async Runtime | Tokio | Comprehensive, battle-tested |
-| Serialization | serde | De facto standard |
-| Error Handling | anyhow + thiserror | Ergonomic, clear errors |
-| Logging | tracing | Structured, async-aware |
+## Common Issues
+
+**❓ Breakpoint not verified?**
+→ Ensure debug symbols: `-g` flag for rustc/gcc, `debugpy` for Python
+→ Check source path matches exactly
+
+**❓ Session timeout?**
+→ Verify debugger installed: `pip install debugpy`, `gem install debug`, etc.
+→ Check debugger in PATH
+
+**❓ Docker path issues?**
+→ Use container paths: `/workspace/...` (not host paths like `/home/user/...`)
+→ Ensure volume mounted correctly
+
+**Full guide:** [Troubleshooting Documentation](docs/Usage/TROUBLESHOOTING.md)
+
+---
+
+## Documentation
+
+### By Use Case
+
+**🚀 Getting started?**
+→ [Getting Started Guide](docs/Contributing/GETTING_STARTED.md)
+
+**🐳 Deploying with Docker?**
+→ [Docker Deployment Guide](docs/Usage/DOCKER.md)
+
+**🏗️ Understanding architecture?**
+→ [Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
+
+**➕ Adding a new language?**
+→ [New Language Guide](docs/Contributing/ADDING_NEW_LANGUAGE.md)
+
+**✅ Understanding CI/CD?**
+→ [CI Workflows](docs/Processes/CI_WORKFLOWS.md)
+
+**🐛 Troubleshooting issues?**
+→ [Troubleshooting Guide](docs/Usage/TROUBLESHOOTING.md)
+
+**🧪 Writing tests?**
+→ [Testing Guide](docs/Contributing/TESTING_GUIDE.md)
+
+### Documentation Structure
+
+- **[Architecture/](docs/Architecture/)** - System design, components, technical decisions
+- **[Contributing/](docs/Contributing/)** - Developer guides, testing, setup
+- **[Usage/](docs/Usage/)** - Deployment, Docker, expressions, troubleshooting
+- **[Processes/](docs/Processes/)** - CI/CD, releases, cross-platform builds
+
+**Complete index:** [docs/README.md](docs/README.md)
+
+---
 
 ## Development
 
 ### Prerequisites
 
 - Rust 1.70+ (`rustup update`)
-- Python 3.8+ with debugpy (`pip install debugpy`)
-- (Optional) Ruby 3.0+ with rdbg (`gem install debug`)
+- Docker (for integration tests)
+- Language-specific debuggers (for testing):
+  - Python: `pip install debugpy`
+  - Ruby: `gem install debug`
+  - Node.js: `npm install -g node-debug2`
 
-### Quick Start
+### Build & Test
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/debugger_mcp
-cd debugger_mcp
+# Clone
+git clone https://github.com/Govinda-Fichtner/debugger-mcp.git
+cd debugger-mcp
 
 # Install pre-commit hooks (recommended)
 pre-commit install --install-hooks
 pre-commit install --hook-type commit-msg
 pre-commit install --hook-type pre-push
 
-# Run tests
+# Build
+cargo build --release
+
+# Run unit tests
 cargo test
 
-# Run server
-cargo run -- serve
+# Run integration tests (requires debuggers)
+cargo test --test '*integration*' -- --ignored
 ```
 
 ### Pre-commit Hooks
 
-The project uses automated git hooks for code quality:
+Automated quality checks run before commit/push:
+- Formatting (`cargo fmt`)
+- Linting (`cargo clippy`)
+- Unit tests
+- Security scanning (`gitleaks`, `cargo-audit`)
+- Code coverage (60% minimum)
 
-- **Rust linting** (clippy, rustfmt)
-- **Security scanning** (gitleaks, cargo-audit, cargo-deny)
-- **Test execution** (unit tests on commit, all tests on push)
-- **Code coverage** (60% minimum threshold)
-- **Commit message validation** (Conventional Commits)
+**Setup:** [Pre-commit Guide](docs/Contributing/PRE_COMMIT_SETUP.md)
 
-See [Pre-commit Setup Guide](docs/Contributing/PRE_COMMIT_SETUP.md) for installation instructions.
+---
 
-## Documentation
+## Contributing
 
-### Quick Navigation
+We welcome contributions! See [Getting Started](docs/Contributing/GETTING_STARTED.md) for:
+- Development setup
+- Architecture overview
+- Testing guidelines
+- Code style
 
-**Want to understand the architecture?**
-→ Start with [Architecture Proposal](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
+**Contribution workflow:**
+1. Fork repository
+2. Create feature branch
+3. Make changes with tests
+4. Run `pre-commit run --all-files`
+5. Submit pull request
 
-**Want to contribute?**
-→ Start with [Getting Started Guide](docs/Contributing/GETTING_STARTED.md)
-
-**Want to deploy?**
-→ Start with [Docker Deployment](docs/Usage/DOCKER.md)
-
-**Want to add a new language?**
-→ See [Adding New Language Guide](docs/Contributing/ADDING_NEW_LANGUAGE.md)
-
-**Full documentation index:**
-→ See [docs/README.md](docs/README.md)
-
-### Documentation Structure
-
-- **[Architecture/](docs/Architecture/)** - System design and technical decisions
-- **[Contributing/](docs/Contributing/)** - Developer guides and setup
-- **[Usage/](docs/Usage/)** - Deployment and user guides
-- **[Processes/](docs/Processes/)** - Development and release processes
+---
 
 ## Roadmap
 
-### ✅ Phase 0: Research & Architecture (Complete)
-Research, design, comprehensive documentation
+### ✅ Completed Phases
 
-### ✅ Phase 1: MVP - Python Support (Complete)
-MCP server, DAP client, core tools, integration tests
+- **Phase 0:** Research & Architecture
+- **Phase 1:** MVP - Python Support
+- **Phase 2:** Ruby Validation
+- **Phase 3:** Multi-Language Support (Python, Ruby, Node.js, Go, Rust)
 
-### ✅ Phase 2: Ruby Validation (Complete)
-Ruby support, language abstraction validation, entry breakpoint solution
+### 🚧 Current Phase
 
-### ✅ Phase 3: Multi-Language Support (Complete)
-Node.js, Rust, Go support, Docker images, production-ready
+**Phase 4: Production Features**
+- Conditional breakpoints
+- Exception handling
+- Security hardening
+- Performance optimization
 
-### 📅 Phase 4: Production Features (In Progress)
-Conditional breakpoints, exception handling, security hardening
+### 📅 Future Phases
 
-### 📅 Phase 5: Community (Future)
-Open source release, plugin API, VS Code extension
+**Phase 5: Community**
+- Open source release
+- Plugin API
+- VS Code extension
+- Additional languages (Java, C#, PHP)
 
-## Historical Documentation
+---
 
-Historical implementation notes, proposals, research, and completed work have been archived for reference:
-- **Location**: Personal Obsidian vault at `/Development Projects/Debugger-MCP/Documentation/`
-- **Contents**: Status reports, bug fixes, postmortems, proposals, research, deep-dives
-- **Purpose**: Preserve complete project history while keeping repository focused on current documentation
+## Technology Stack
 
-This keeps the repository clean and focused while maintaining full historical context for future reference.
+| Component | Technology | Rationale |
+|-----------|-----------|-----------|
+| Language | Rust | Memory safety, performance, async |
+| CLI | Clap | Industry standard, derive macros |
+| Async Runtime | Tokio | Battle-tested, comprehensive |
+| Serialization | serde + serde_json | De facto standard |
+| Error Handling | anyhow + thiserror | Ergonomic, clear messages |
+| Logging | tracing | Structured, async-aware |
 
-## Contributing (Future)
-
-Once open source:
-1. Read [Getting Started](docs/Contributing/GETTING_STARTED.md)
-2. Review [Architecture](docs/Architecture/DAP_MCP_SERVER_PROPOSAL.md)
-3. Check GitHub issues
-4. Follow [Testing Strategy](docs/Contributing/TESTING_STRATEGY.md)
-5. Submit PR with tests
+---
 
 ## License
 
@@ -291,4 +327,4 @@ TBD (likely MIT or Apache 2.0)
 
 **Built with ❤️ and 🦀 using Rust**
 
-*Last Updated: 2025-10-10*
+*Last Updated: 2025-10-19*

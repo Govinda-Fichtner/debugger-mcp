@@ -18,3 +18,19 @@ tests/test_*.sh
 docs/research/
 docs/*_FIX*.md
 docs/*_VALIDATED*.md
+
+# IDE files
+.idea/
+
+# Temporary CI artifacts
+ci-artifacts/
+
+# Test logs and generated files
+*.log
+test-results.json
+mcp_protocol_log.md
+
+# Temporary cleanup and planning docs
+CLEANUP_*.md
+REORGANIZATION_PLAN.md
+README_OLD.md
