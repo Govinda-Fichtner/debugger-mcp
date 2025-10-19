@@ -30,7 +30,7 @@ ci-artifacts/
 test-results.json
 mcp_protocol_log.md
 
-# Temporary cleanup and planning docs
-CLEANUP_*.md
-REORGANIZATION_PLAN.md
-README_OLD.md
+# Ignore all markdown files in root except README.md and CLAUDE.md
+/*.md
+!/README.md
+!/CLAUDE.md
