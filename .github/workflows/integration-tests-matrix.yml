@@ -234,16 +234,8 @@ jobs:
           echo ""
           echo "================================================================"
 
-      - name: Install AI client CLI (${{ matrix.ai_client }})
-        run: |
-          if [ "${{ matrix.ai_client }}" = "codex" ]; then
-            # Install Codex CLI
-            npm install -g @openai/codex
-
-            # Login to Codex with API key
-            echo "${{ secrets.OPENAI_API_KEY }}" | codex login --with-api-key
-          fi
-          # Claude Code CLI is not needed in CI (tests run inside Docker)
+      # AI CLI tools (Claude Code, Codex) are installed inside Docker image
+      # No host installation needed - tests run inside container
 
       - name: Install debugger for ${{ matrix.language }}
         run: |

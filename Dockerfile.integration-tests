@@ -46,11 +46,12 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python && \
 # Install Ruby debug gem
 RUN gem install debug
 
-# Install Claude Code CLI (Node.js-based)
-# This allows running the claude_code_integration_test
-# Note: If running tests that require API access, pass ANTHROPIC_API_KEY as environment variable:
-#   docker run -e ANTHROPIC_API_KEY=your_key_here debugger-mcp:integration-tests
-RUN npm install -g @anthropic-ai/claude-code
+# Install AI coding assistants CLI tools (Node.js-based)
+# Claude Code: for claude_code_integration_test
+# Codex: for codex_*_integration_test
+# Note: If running tests that require API access, pass API keys as environment variables:
+#   docker run -e ANTHROPIC_API_KEY=key1 -e OPENAI_API_KEY=key2 debugger-mcp:integration-tests
+RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
 # Ensure npm global binaries are in PATH
 # npm on Debian installs global binaries to /usr/local/lib/node_modules/.bin
@@ -114,9 +115,9 @@ if [ "$(id -u)" = "0" ]; then
 
     # Switch to testuser and run the command
     # Export all arguments as environment variable to pass through su
-    # Preserve ANTHROPIC_API_KEY for Claude CLI authentication
+    # Preserve API keys for AI CLI authentication
     export DOCKER_CMD="$*"
-    exec su testuser -c "export ANTHROPIC_API_KEY='$ANTHROPIC_API_KEY'; cd /workspace && eval \"\$DOCKER_CMD\""
+    exec su testuser -c "export ANTHROPIC_API_KEY='$ANTHROPIC_API_KEY'; export OPENAI_API_KEY='$OPENAI_API_KEY'; cd /workspace && eval \"\$DOCKER_CMD\""
 else
     # Already running as testuser, just execute the command
     cd /workspace
