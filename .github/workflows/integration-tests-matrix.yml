@@ -263,6 +263,9 @@ jobs:
 
       - name: Collect coverage for ${{ matrix.language }} integration test
         run: |
+          # Create coverage output directory
+          mkdir -p coverage-${{ matrix.language }}
+
           # Collect coverage for this language's integration test on host
           # Debugger was installed in previous step
           cargo tarpaulin \
