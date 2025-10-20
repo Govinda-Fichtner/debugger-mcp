@@ -258,7 +258,8 @@ jobs:
 
           # Remove any existing coverage directories from previous runs
           # They may be owned by Docker's testuser and cause permission errors
-          rm -rf coverage-* || true
+          # Use sudo to ensure we can remove them even if owned by Docker user
+          sudo rm -rf coverage-* || true
 
       - name: Install cargo-tarpaulin for coverage collection
         uses: taiki-e/install-action@v2
