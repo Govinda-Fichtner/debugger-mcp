@@ -1,13 +1,8 @@
-use debugger_mcp::debug::SessionManager;
-use debugger_mcp::mcp::resources::ResourcesHandler;
-use debugger_mcp::mcp::tools::ToolsHandler;
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::RwLock;
 
 /// Reconstruct test-results.json from mcp_protocol_log.md by parsing MCP tool operations
 fn reconstruct_test_results_from_protocol_log(log_content: &str, language: &str) -> String {
@@ -265,10 +260,14 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
     fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     // Get OPENAI_API_KEY from environment
-    let openai_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
-        println!("⚠️  OPENAI_API_KEY not set, skipping test");
-        return;
-    });
+    let openai_key = match std::env::var("OPENAI_API_KEY") {
+        Ok(key) => key,
+        Err(_) => {
+            println!("⚠️  OPENAI_API_KEY not set, skipping test");
+            println!("   Set OPENAI_API_KEY environment variable to run this test");
+            return;
+        }
+    };
 
     // Login to Codex with API key
     println!("\n🔑 Step 3: Logging in to Codex...");
