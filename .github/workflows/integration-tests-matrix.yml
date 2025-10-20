@@ -250,11 +250,15 @@ jobs:
               ;;
           esac
 
-      - name: Fix target directory permissions after Docker run
+      - name: Fix permissions after Docker run
         run: |
-          # Docker runs as testuser, but GitHub runner needs access to target/
-          # Fix ownership so cargo tarpaulin can access/clean the directory
+          # Docker runs as testuser, but GitHub runner needs access to directories
+          # Fix ownership so cargo tarpaulin can access/clean the directories
           sudo chown -R $(whoami):$(whoami) target/ || true
+
+          # Remove any existing coverage directories from previous runs
+          # They may be owned by Docker's testuser and cause permission errors
+          rm -rf coverage-* || true
 
       - name: Install cargo-tarpaulin for coverage collection
         uses: taiki-e/install-action@v2
