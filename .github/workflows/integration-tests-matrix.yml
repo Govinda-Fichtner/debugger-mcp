@@ -227,7 +227,7 @@ jobs:
               python3 -m pip install debugpy
               ;;
             ruby)
-              gem install debug
+              sudo gem install debug
               ;;
             nodejs)
               # GitHub runners have Node.js built-in debugger
