@@ -221,12 +221,15 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo >&2
 
 # Define languages and their test output files
+# After adding ai_client dimension, artifacts are named test-output-{language}-{ai_client}
+# For the main summary, we use Claude tests (the original 5 language tests)
+# Codex tests are additional parallel validation
 declare -A LANGUAGES=(
-    ["Python"]="$ARTIFACTS_DIR/test-output-python/python-test-output.txt"
-    ["Ruby"]="$ARTIFACTS_DIR/test-output-ruby/ruby-test-output.txt"
-    ["Node.js"]="$ARTIFACTS_DIR/test-output-nodejs/nodejs-test-output.txt"
-    ["Go"]="$ARTIFACTS_DIR/test-output-go/go-test-output.txt"
-    ["Rust"]="$ARTIFACTS_DIR/test-output-rust/rust-test-output.txt"
+    ["Python"]="$ARTIFACTS_DIR/test-output-python-claude/python-test-output.txt"
+    ["Ruby"]="$ARTIFACTS_DIR/test-output-ruby-claude/ruby-test-output.txt"
+    ["Node.js"]="$ARTIFACTS_DIR/test-output-nodejs-claude/nodejs-test-output.txt"
+    ["Go"]="$ARTIFACTS_DIR/test-output-go-claude/go-test-output.txt"
+    ["Rust"]="$ARTIFACTS_DIR/test-output-rust-claude/rust-test-output.txt"
 )
 
 echo "📋 Configured languages and their output files:" >&2
