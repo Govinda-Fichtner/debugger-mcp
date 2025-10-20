@@ -30,6 +30,10 @@ ci-artifacts/
 test-results.json
 mcp_protocol_log.md
 
+# Coverage profiling data
+*.profraw
+*.profdata
+
 # Ignore all markdown files in root except README.md and CLAUDE.md
 /*.md
 !/README.md

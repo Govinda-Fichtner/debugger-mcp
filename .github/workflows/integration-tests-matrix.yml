@@ -220,6 +220,65 @@ jobs:
           echo ""
           echo "================================================================"
 
+      - name: Install debugger for ${{ matrix.language }}
+        run: |
+          case "${{ matrix.language }}" in
+            python)
+              python3 -m pip install debugpy
+              ;;
+            ruby)
+              gem install debug
+              ;;
+            nodejs)
+              # GitHub runners have Node.js built-in debugger
+              node --version
+              ;;
+            go)
+              go install github.com/go-delve/delve/cmd/dlv@latest
+              echo "$HOME/go/bin" >> $GITHUB_PATH
+              ;;
+            rust)
+              # Install CodeLLDB
+              CODELLDB_VERSION=v1.11.3
+              CODELLDB_FILE="codelldb-linux-x64.vsix"
+              curl -L https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/${CODELLDB_FILE} -o /tmp/codelldb.vsix
+              cd /tmp && unzip -q codelldb.vsix "extension/*"
+              sudo mkdir -p /usr/local/lib/codelldb
+              sudo mv extension/* /usr/local/lib/codelldb/
+              sudo chmod +x /usr/local/lib/codelldb/adapter/codelldb
+              echo "/usr/local/lib/codelldb/adapter" >> $GITHUB_PATH
+              ;;
+          esac
+
+      - name: Install cargo-tarpaulin for coverage collection
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      - name: Collect coverage for ${{ matrix.language }} integration test
+        run: |
+          # Collect coverage for this language's integration test on host
+          # Debugger was installed in previous step
+          cargo tarpaulin \
+            --test ${{ matrix.test_file }} \
+            --exclude-files 'tests/*' \
+            --ignored \
+            --timeout 120 \
+            --out Xml \
+            --output-dir coverage-${{ matrix.language }} \
+            || echo "Coverage collection failed, continuing..."
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage-${{ matrix.language }}/cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: integration-${{ matrix.language }}
+          fail_ci_if_error: false
+          name: integration-${{ matrix.language }}-coverage
+          verbose: true
+
       - name: Upload ${{ matrix.language }} test output
         uses: actions/upload-artifact@v4
         if: always()
@@ -233,6 +292,7 @@ jobs:
             fizzbuzz.*
             debug_prompt.md
             mcp_protocol_log.md
+            coverage-${{ matrix.language }}/
           retention-days: 30
 
       - name: Upload all JSON files for debugging
