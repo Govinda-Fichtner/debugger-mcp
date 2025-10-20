@@ -89,40 +89,45 @@ jobs:
 
   # Matrix strategy: Run tests for each language in parallel
   test-language:
-    name: Test ${{ matrix.language }}
+    name: Test ${{ matrix.language }} (${{ matrix.ai_client }})
     needs: [build-docker, build-binary]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false  # Continue testing other languages if one fails
       matrix:
-        language:
-          - python
-          - ruby
-          - nodejs
-          - go
-          - rust
         include:
-          # Language-specific metadata
+          # Claude Code integration tests
           - language: python
             test_file: python_integration_test
             emoji: 🐍
             adapter: debugpy
+            ai_client: claude
           - language: ruby
             test_file: ruby_integration_test
             emoji: 💎
             adapter: rdbg/debug gem
+            ai_client: claude
           - language: nodejs
             test_file: nodejs_integration_test
             emoji: 🟢
             adapter: vscode-js-debug
+            ai_client: claude
           - language: go
             test_file: go_integration_test
             emoji: 🐹
             adapter: Delve
+            ai_client: claude
           - language: rust
             test_file: rust_integration_test
             emoji: 🦀
             adapter: CodeLLDB
+            ai_client: claude
+          # Codex integration tests (starting with Rust)
+          - language: rust
+            test_file: codex_rust_integration_test
+            emoji: 🦀
+            adapter: CodeLLDB
+            ai_client: codex
 
     steps:
       - name: Checkout code
@@ -154,10 +159,19 @@ jobs:
           rm -rf target/debug/deps/*${{ matrix.test_file }}*
 
           # Run language-specific tests inside Docker container
+          # Set environment variable based on AI client
+          if [ "${{ matrix.ai_client }}" = "codex" ]; then
+            AI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+            AI_KEY_NAME="OPENAI_API_KEY"
+          else
+            AI_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
+            AI_KEY_NAME="ANTHROPIC_API_KEY"
+          fi
+
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
-            -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
+            -e "${AI_KEY_NAME}=${AI_API_KEY}" \
             debugger-mcp:integration-tests \
             sh -c 'cd /workspace && \
               cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
@@ -220,6 +234,17 @@ jobs:
           echo ""
           echo "================================================================"
 
+      - name: Install AI client CLI (${{ matrix.ai_client }})
+        run: |
+          if [ "${{ matrix.ai_client }}" = "codex" ]; then
+            # Install Codex CLI
+            npm install -g @openai/codex-cli
+
+            # Login to Codex with API key
+            echo "${{ secrets.OPENAI_API_KEY }}" | codex login --with-api-key
+          fi
+          # Claude Code CLI is not needed in CI (tests run inside Docker)
+
       - name: Install debugger for ${{ matrix.language }}
         run: |
           case "${{ matrix.language }}" in
@@ -266,12 +291,12 @@ jobs:
         with:
           tool: cargo-tarpaulin
 
-      - name: Collect coverage for ${{ matrix.language }} integration test
+      - name: Collect coverage for ${{ matrix.language }} (${{ matrix.ai_client }}) integration test
         run: |
           # Create coverage output directory with sudo to avoid permission issues
           # Workspace may have restrictive permissions after Docker operations
-          sudo mkdir -p coverage-${{ matrix.language }}
-          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}
+          sudo mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }}
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }}
 
           # Collect coverage for this language's integration test on host
           # Debugger was installed in previous step
@@ -281,25 +306,25 @@ jobs:
             --ignored \
             --timeout 120 \
             --out Xml \
-            --output-dir coverage-${{ matrix.language }} \
+            --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
             || echo "Coverage collection failed, continuing..."
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./coverage-${{ matrix.language }}/cobertura.xml
+          files: ./coverage-${{ matrix.language }}-${{ matrix.ai_client }}/cobertura.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: integration-${{ matrix.language }}
+          flags: integration-${{ matrix.language }}-${{ matrix.ai_client }}
           fail_ci_if_error: false
-          name: integration-${{ matrix.language }}-coverage
+          name: integration-${{ matrix.language }}-${{ matrix.ai_client }}-coverage
           verbose: true
 
-      - name: Upload ${{ matrix.language }} test output
+      - name: Upload ${{ matrix.language }} (${{ matrix.ai_client }}) test output
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-output-${{ matrix.language }}
+          name: test-output-${{ matrix.language }}-${{ matrix.ai_client }}
           path: |
             ${{ matrix.language }}-test-output.txt
             ${{ matrix.language }}-test-clean.txt
@@ -308,14 +333,14 @@ jobs:
             fizzbuzz.*
             debug_prompt.md
             mcp_protocol_log.md
-            coverage-${{ matrix.language }}/
+            coverage-${{ matrix.language }}-${{ matrix.ai_client }}/
           retention-days: 30
 
       - name: Upload all JSON files for debugging
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: json-files-${{ matrix.language }}
+          name: json-files-${{ matrix.language }}-${{ matrix.ai_client }}
           path: |
             **/*.json
             !node_modules/**
@@ -355,11 +380,12 @@ jobs:
           echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "ignored_tests=${IGNORED_TESTS:-0}" >> $GITHUB_OUTPUT
 
-      - name: Generate ${{ matrix.language }} test summary
+      - name: Generate ${{ matrix.language }} (${{ matrix.ai_client }}) test summary
         if: always()
         run: |
-          echo "## ${{ matrix.emoji }} ${{ matrix.language }} Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "## ${{ matrix.emoji }} ${{ matrix.language }} Integration Tests (${{ matrix.ai_client }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**AI Client:** ${{ matrix.ai_client }}" >> $GITHUB_STEP_SUMMARY
           echo "**Adapter:** ${{ matrix.adapter }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 

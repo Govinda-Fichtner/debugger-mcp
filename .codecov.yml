@@ -55,6 +55,12 @@ flags:
       - src/
     carryforward: false
 
+  # Integration tests - Rust (Codex)
+  integration-rust-codex:
+    paths:
+      - src/
+    carryforward: false
+
 # Comment configuration for PR comments
 comment:
   layout: "header, diff, flags, components"
