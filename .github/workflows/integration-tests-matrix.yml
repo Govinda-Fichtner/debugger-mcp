@@ -10,6 +10,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'scripts/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'Dockerfile.integration-tests'
@@ -147,6 +148,11 @@ jobs:
 
       - name: Run ${{ matrix.language }} integration tests
         run: |
+          # Clean test binaries to ensure latest code is compiled
+          # This prevents Cargo from using cached test binaries that may be from before code changes
+          echo "Cleaning test binaries to force recompilation..."
+          rm -rf target/debug/deps/*${{ matrix.test_file }}*
+
           # Run language-specific tests inside Docker container
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
@@ -161,6 +167,134 @@ jobs:
           test -f ${{ matrix.language }}-test-output.txt || echo "Warning: Output file not created" > ${{ matrix.language }}-test-output.txt
           test -f ${{ matrix.language }}-test-clean.txt || cp ${{ matrix.language }}-test-output.txt ${{ matrix.language }}-test-clean.txt
 
+      - name: Inspect generated files before upload
+        if: always()
+        run: |
+          echo "================================================================"
+          echo "🔍 File Inspection for ${{ matrix.language }} Test"
+          echo "================================================================"
+          echo ""
+          echo "📂 Current directory: $(pwd)"
+          echo "📂 Workspace: ${{ github.workspace }}"
+          echo ""
+          echo "📋 All files in current directory:"
+          ls -lah
+          echo ""
+          echo "🔍 Test-related files:"
+          echo ""
+
+          # Check test-results.json in current directory
+          if [ -f "test-results.json" ]; then
+            echo "✅ test-results.json found in current directory"
+            ls -lh test-results.json
+            echo "📄 File size: $(wc -c < test-results.json) bytes"
+            echo "📄 First 200 chars:"
+            head -c 200 test-results.json || echo "(empty or binary)"
+            echo ""
+          else
+            echo "❌ test-results.json NOT found in current directory"
+          fi
+
+          # Search for test-results.json anywhere
+          echo "🔍 Searching for test-results.json files everywhere:"
+          find . -name "test-results.json" -type f -exec ls -lh {} \; 2>/dev/null || echo "No test-results.json files found"
+          echo ""
+
+          # Check protocol log
+          if [ -f "mcp_protocol_log.md" ]; then
+            echo "✅ mcp_protocol_log.md found"
+            ls -lh mcp_protocol_log.md
+          else
+            echo "❌ mcp_protocol_log.md NOT found"
+          fi
+          echo ""
+
+          # Check fizzbuzz files
+          echo "📋 FizzBuzz files:"
+          ls -lh fizzbuzz.* 2>/dev/null || echo "No fizzbuzz files found"
+          echo ""
+
+          # Show last 50 lines of test output for context
+          echo "📋 Last 50 lines of test output:"
+          tail -50 ${{ matrix.language }}-test-output.txt
+          echo ""
+          echo "================================================================"
+
+      - name: Install debugger for ${{ matrix.language }}
+        run: |
+          case "${{ matrix.language }}" in
+            python)
+              python3 -m pip install debugpy
+              ;;
+            ruby)
+              sudo gem install debug
+              ;;
+            nodejs)
+              # GitHub runners have Node.js built-in debugger
+              node --version
+              ;;
+            go)
+              go install github.com/go-delve/delve/cmd/dlv@latest
+              echo "$HOME/go/bin" >> $GITHUB_PATH
+              ;;
+            rust)
+              # Install CodeLLDB
+              CODELLDB_VERSION=v1.11.3
+              CODELLDB_FILE="codelldb-linux-x64.vsix"
+              curl -L https://github.com/vadimcn/codelldb/releases/download/${CODELLDB_VERSION}/${CODELLDB_FILE} -o /tmp/codelldb.vsix
+              cd /tmp && unzip -q codelldb.vsix "extension/*"
+              sudo mkdir -p /usr/local/lib/codelldb
+              sudo mv extension/* /usr/local/lib/codelldb/
+              sudo chmod +x /usr/local/lib/codelldb/adapter/codelldb
+              echo "/usr/local/lib/codelldb/adapter" >> $GITHUB_PATH
+              ;;
+          esac
+
+      - name: Fix permissions after Docker run
+        run: |
+          # Docker runs as testuser, but GitHub runner needs access to directories
+          # Fix ownership so cargo tarpaulin can access/clean the directories
+          sudo chown -R $(whoami):$(whoami) target/ || true
+
+          # Remove any existing coverage directories from previous runs
+          # They may be owned by Docker's testuser and cause permission errors
+          # Use sudo to ensure we can remove them even if owned by Docker user
+          sudo rm -rf coverage-* || true
+
+      - name: Install cargo-tarpaulin for coverage collection
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      - name: Collect coverage for ${{ matrix.language }} integration test
+        run: |
+          # Create coverage output directory with sudo to avoid permission issues
+          # Workspace may have restrictive permissions after Docker operations
+          sudo mkdir -p coverage-${{ matrix.language }}
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}
+
+          # Collect coverage for this language's integration test on host
+          # Debugger was installed in previous step
+          cargo tarpaulin \
+            --test ${{ matrix.test_file }} \
+            --exclude-files 'tests/*' \
+            --ignored \
+            --timeout 120 \
+            --out Xml \
+            --output-dir coverage-${{ matrix.language }} \
+            || echo "Coverage collection failed, continuing..."
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage-${{ matrix.language }}/cobertura.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: integration-${{ matrix.language }}
+          fail_ci_if_error: false
+          name: integration-${{ matrix.language }}-coverage
+          verbose: true
+
       - name: Upload ${{ matrix.language }} test output
         uses: actions/upload-artifact@v4
         if: always()
@@ -169,7 +303,26 @@ jobs:
           path: |
             ${{ matrix.language }}-test-output.txt
             ${{ matrix.language }}-test-clean.txt
+            test-results.json
+            **/test-results.json
+            fizzbuzz.*
+            debug_prompt.md
+            mcp_protocol_log.md
+            coverage-${{ matrix.language }}/
           retention-days: 30
+
+      - name: Upload all JSON files for debugging
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: json-files-${{ matrix.language }}
+          path: |
+            **/*.json
+            !node_modules/**
+            !target/**
+            !.cargo/**
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Parse ${{ matrix.language }} test results
         if: always()
@@ -259,14 +412,37 @@ jobs:
           # Make script executable
           chmod +x scripts/analyze-test-results.sh
 
-          # Run analysis and capture output
-          ./scripts/analyze-test-results.sh test-artifacts/ > summary.txt 2>&1 || true
+          # Run analysis with debug logging
+          # The script outputs everything to analysis-debug.log via tee
+          ./scripts/analyze-test-results.sh test-artifacts/ analysis-debug.log || true
+
+          # Extract the summary table from the debug log (everything after "INTEGRATION TEST SUMMARY")
+          if [ -f analysis-debug.log ]; then
+            # Find the line with "INTEGRATION TEST SUMMARY" and extract everything after it
+            awk '/📊 INTEGRATION TEST SUMMARY/,0' analysis-debug.log > summary.txt || echo "Failed to extract summary" > summary.txt
+          else
+            echo "⚠️ Debug log not created" > summary.txt
+          fi
 
           # Add to GitHub Step Summary
           echo "## 🎉 Integration Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          cat summary.txt >> $GITHUB_STEP_SUMMARY
+          if [ -f summary.txt ] && [ -s summary.txt ]; then
+            cat summary.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No summary generated" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Add debug log info to summary
+          if [ -f analysis-debug.log ]; then
+            echo "### 🔍 Debug Information" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Detailed debug log available in artifacts: \`analysis-debug.log\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Log size: $(wc -c < analysis-debug.log) bytes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload analysis summary
         uses: actions/upload-artifact@v4
@@ -274,4 +450,12 @@ jobs:
         with:
           name: test-analysis-summary
           path: summary.txt
+          retention-days: 30
+
+      - name: Upload analysis debug log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-analysis-debug-log
+          path: analysis-debug.log
           retention-days: 30

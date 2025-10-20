@@ -74,7 +74,8 @@ fn test_rust_launch_args_no_cwd() {
 
     assert_eq!(launch_args["program"], binary_path);
     assert_eq!(launch_args["stopOnEntry"], false);
-    assert!(launch_args["cwd"].is_null());
+    // When cwd is None, defaults to /workspace for DWARF path resolution
+    assert_eq!(launch_args["cwd"], "/workspace");
 }
 
 /// Test that stopOnEntry can be disabled

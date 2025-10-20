@@ -9,6 +9,84 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 
+/// Reconstruct test-results.json from mcp_protocol_log.md by parsing MCP tool operations
+fn reconstruct_test_results_from_protocol_log(log_content: &str, language: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        .to_string();
+
+    // Parse the log to detect which operations succeeded
+    let session_started =
+        log_content.contains("debugger_start") && log_content.contains("\"status\": \"started\"");
+
+    let breakpoint_set = log_content.contains("debugger_set_breakpoint");
+    let breakpoint_verified = log_content.contains("\"verified\": true");
+
+    let execution_continued = log_content.contains("debugger_continue")
+        && log_content.contains("\"status\": \"continued\"");
+
+    let stopped_at_breakpoint = log_content.contains("debugger_wait_for_stop")
+        && log_content.contains("\"reason\": \"breakpoint\"");
+
+    let stack_trace_retrieved =
+        log_content.contains("debugger_stack_trace") && log_content.contains("\"stackFrames\"");
+
+    let variable_evaluated = log_content.contains("debugger_evaluate")
+        && (log_content.contains("\"result\":") || log_content.contains("\"value\":"));
+
+    let session_disconnected = log_content.contains("debugger_disconnect")
+        && log_content.contains("\"status\": \"disconnected\"");
+
+    // Collect errors from the log
+    let mut errors = Vec::new();
+
+    if session_started && !breakpoint_verified {
+        errors.push(json!({
+            "operation": "breakpoint_set",
+            "message": "Breakpoint was not verified (likely missing debug symbols)"
+        }));
+    }
+
+    if !stopped_at_breakpoint && execution_continued {
+        errors.push(json!({
+            "operation": "execution",
+            "message": "Program did not stop at breakpoint"
+        }));
+    }
+
+    let overall_success = session_started
+        && breakpoint_set
+        && execution_continued
+        && session_disconnected
+        && errors.is_empty();
+
+    // Generate JSON
+    let result = json!({
+        "test_run": {
+            "language": language,
+            "timestamp": timestamp,
+            "overall_success": overall_success,
+            "reconstructed_from": "mcp_protocol_log.md"
+        },
+        "operations": {
+            "session_started": session_started,
+            "breakpoint_set": breakpoint_set,
+            "breakpoint_verified": breakpoint_verified,
+            "execution_continued": execution_continued,
+            "stopped_at_breakpoint": stopped_at_breakpoint,
+            "stack_trace_retrieved": stack_trace_retrieved,
+            "variable_evaluated": variable_evaluated,
+            "session_disconnected": session_disconnected
+        },
+        "errors": errors
+    });
+
+    serde_json::to_string_pretty(&result).unwrap()
+}
+
 /// Test Ruby language detection
 #[tokio::test]
 #[ignore]
@@ -365,7 +443,42 @@ Test the debugger MCP server with Ruby:
 4. Continue and document results
 5. Disconnect
 
-Create mcp_protocol_log.md documenting all interactions."#,
+IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' in the current directory with this EXACT format:
+```json
+{{
+  "test_run": {{
+    "language": "ruby",
+    "timestamp": "<current ISO 8601 timestamp>",
+    "overall_success": <true if all operations succeeded, false otherwise>
+  }},
+  "operations": {{
+    "session_started": <true/false>,
+    "breakpoint_set": <true/false>,
+    "breakpoint_verified": <true/false>,
+    "execution_continued": <true/false>,
+    "stopped_at_breakpoint": <true/false>,
+    "stack_trace_retrieved": <true/false>,
+    "variable_evaluated": <true/false>,
+    "session_disconnected": <true/false>
+  }},
+  "errors": [
+    {{
+      "operation": "<operation name>",
+      "message": "<error message>"
+    }}
+  ]
+}}
+```
+
+Set each boolean to true only if that specific operation completed successfully.
+Add errors array entries for any failures encountered.
+
+Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+
+**CRITICAL**: After creating both files:
+1. Use the Read tool to read back test-results.json
+2. Display the full content to verify it was written correctly
+3. Do NOT just claim you created the files - actually show the content!"#,
         fizzbuzz_path.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
@@ -402,21 +515,209 @@ Create mcp_protocol_log.md documenting all interactions."#,
 
     let claude_output = Command::new("claude")
         .arg(&prompt_content)
-        .arg("--print")
-        .arg("--dangerously-skip-permissions")
+        .arg("--permission-mode")
+        .arg("bypassPermissions")
         .current_dir(&workspace_root)
         .output()
         .expect("Failed to run claude");
 
     println!("\n📊 Claude Code Output:");
-    println!("{}", String::from_utf8_lossy(&claude_output.stdout));
+    let output_str = String::from_utf8_lossy(&claude_output.stdout);
+    println!("{}", output_str);
 
-    // 8. Verify protocol log
+    // 8. Verify protocol log and copy test-results.json
     let protocol_log_path = workspace_root.join("mcp_protocol_log.md");
     let log_exists = protocol_log_path.exists();
 
     if log_exists {
         println!("✅ Protocol log created");
+    }
+
+    // 8.5. Extract test-results.json from Claude's output if it wasn't written to file
+    let test_results_src = workspace_root.join("test-results.json");
+
+    println!("\n🔍 STEP 8.5: Validating test-results.json");
+    println!("📂 Source path: {}", test_results_src.display());
+    println!("📂 Workspace root: {}", workspace_root.display());
+
+    // Check if file exists and get metadata
+    let file_exists = test_results_src.exists();
+    let file_size = if file_exists {
+        fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    println!("📊 File exists: {}", file_exists);
+    println!("📊 File size: {} bytes", file_size);
+
+    // Check if Claude actually wrote a VALID file (not just any file)
+    let mut needs_extraction = !file_exists || file_size == 0;
+
+    // ENHANCED: Also validate the file contains valid, parseable JSON
+    if !needs_extraction && test_results_src.exists() {
+        println!("🔍 Validating file content...");
+        if let Ok(content) = fs::read_to_string(&test_results_src) {
+            let trimmed = content.trim();
+            println!(
+                "📄 Content length: {} bytes (trimmed: {} bytes)",
+                content.len(),
+                trimmed.len()
+            );
+            println!(
+                "📄 First 100 chars: {}",
+                &trimmed.chars().take(100).collect::<String>()
+            );
+
+            // Check if file is empty or doesn't contain required fields
+            if trimmed.is_empty()
+                || !trimmed.contains("\"test_run\"")
+                || !trimmed.contains("\"operations\"")
+            {
+                println!("⚠️  test-results.json exists but is empty or missing required fields");
+                println!("   - Empty: {}", trimmed.is_empty());
+                println!("   - Has 'test_run': {}", trimmed.contains("\"test_run\""));
+                println!(
+                    "   - Has 'operations': {}",
+                    trimmed.contains("\"operations\"")
+                );
+                needs_extraction = true;
+            } else {
+                // Validate it's actually parseable JSON
+                match serde_json::from_str::<serde_json::Value>(trimmed) {
+                    Ok(_) => {
+                        println!("✅ Valid test-results.json found ({} bytes)", trimmed.len());
+                    }
+                    Err(e) => {
+                        println!(
+                            "⚠️  test-results.json exists but contains invalid JSON: {}",
+                            e
+                        );
+                        needs_extraction = true;
+                    }
+                }
+            }
+        } else {
+            println!("⚠️  test-results.json exists but cannot be read as UTF-8");
+            needs_extraction = true;
+        }
+    }
+
+    if needs_extraction {
+        println!("⚠️  test-results.json not valid, extracting from output...");
+
+        let mut extracted = false;
+
+        // Strategy 1: Look for JSON block in stdout (between ```json and ```)
+        if let Some(json_start) = output_str.find("```json") {
+            let search_slice = &output_str[json_start + 7..]; // Skip "```json"
+            if let Some(json_end_offset) = search_slice.find("```") {
+                let json_content = search_slice[..json_end_offset].trim();
+
+                // Validate it's actually JSON for test_run
+                if json_content.contains("\"test_run\"") && json_content.contains("\"operations\"")
+                {
+                    fs::write(&test_results_src, json_content)
+                        .expect("Failed to write extracted JSON");
+                    println!(
+                        "✅ Extracted and wrote test-results.json from Claude's output ({} bytes)",
+                        json_content.len()
+                    );
+                    extracted = true;
+                }
+            }
+        }
+
+        // Strategy 2: Parse mcp_protocol_log.md as fallback
+        if !extracted && protocol_log_path.exists() {
+            println!("⚠️  Attempting to reconstruct test-results.json from mcp_protocol_log.md...");
+
+            if let Ok(log_content) = fs::read_to_string(&protocol_log_path) {
+                let reconstructed_json =
+                    reconstruct_test_results_from_protocol_log(&log_content, "ruby");
+
+                fs::write(&test_results_src, &reconstructed_json)
+                    .expect("Failed to write reconstructed JSON");
+                println!(
+                    "✅ Reconstructed test-results.json from protocol log ({} bytes)",
+                    reconstructed_json.len()
+                );
+                extracted = true;
+            }
+        }
+
+        if !extracted {
+            println!("❌ Failed to extract or reconstruct test-results.json");
+        }
+    }
+
+    // Verify test-results.json is ready for CI artifact collection
+    // NOTE: No copy needed! The file is already in workspace root, which is where CI expects it.
+    // Previously, we tried to copy /workspace/test-results.json to /workspace/test-results.json
+    // (same path), which truncated the file to 0 bytes!
+    println!("\n🔍 STEP 8.6: Verifying test-results.json for artifact collection");
+
+    let final_size = if test_results_src.exists() {
+        fs::metadata(&test_results_src)
+            .map(|m| m.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    if final_size > 0 {
+        println!(
+            "✅ test-results.json ready at {} ({} bytes)",
+            test_results_src.display(),
+            final_size
+        );
+    } else {
+        println!(
+            "⚠️  test-results.json is empty or missing at {}",
+            test_results_src.display()
+        );
+    }
+
+    // Final verification - list all files in workspace and current directory
+    println!("\n🔍 STEP 8.7: Final file verification");
+    println!(
+        "📂 Files in workspace root ({}/):",
+        workspace_root.display()
+    );
+    if let Ok(entries) = fs::read_dir(&workspace_root) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                println!(
+                    "   - {} ({} bytes)",
+                    entry.file_name().to_string_lossy(),
+                    metadata.len()
+                );
+            }
+        }
+    }
+
+    println!(
+        "📂 Files in current directory ({}/):",
+        std::env::current_dir().unwrap().display()
+    );
+    if let Ok(entries) = fs::read_dir(std::env::current_dir().unwrap()) {
+        for entry in entries.flatten() {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_file()
+                    && (entry.file_name().to_string_lossy().contains("test-results")
+                        || entry.file_name().to_string_lossy().contains("fizzbuzz")
+                        || entry.file_name().to_string_lossy().contains("protocol"))
+                {
+                    println!(
+                        "   - {} ({} bytes)",
+                        entry.file_name().to_string_lossy(),
+                        metadata.len()
+                    );
+                }
+            }
+        }
     }
 
     // 9. Cleanup
@@ -429,7 +730,8 @@ Create mcp_protocol_log.md documenting all interactions."#,
 
     let _ = fs::remove_file(&workspace_fizzbuzz);
     let _ = fs::remove_file(&workspace_prompt);
-    let _ = fs::remove_file(&protocol_log_path);
+    // NOTE: Do NOT delete protocol_log_path or test_results.json
+    // These files are needed by CI for artifact upload
 
     println!("\n🎉 Ruby Claude Code integration test completed!");
 }

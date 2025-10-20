@@ -1,0 +1,70 @@
+# Codecov Configuration
+# Manages merged coverage reports from unit tests and integration tests
+
+coverage:
+  status:
+    # Overall project coverage target
+    project:
+      default:
+        target: 27%
+        threshold: 2%
+        if_ci_failed: error
+
+    # Patch coverage (for changed lines in PRs)
+    patch:
+      default:
+        target: 40%
+        threshold: 10%
+        if_ci_failed: error
+
+# Flag management for different test types
+flags:
+  # Unit tests (from ci.yml)
+  unit-tests:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Python
+  integration-python:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Ruby
+  integration-ruby:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Node.js
+  integration-nodejs:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Go
+  integration-go:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Rust
+  integration-rust:
+    paths:
+      - src/
+    carryforward: false
+
+# Comment configuration for PR comments
+comment:
+  layout: "header, diff, flags, components"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+# Ignore test files from coverage
+ignore:
+  - "tests/**/*"
+  - "**/*test.rs"
+  - "**/tests.rs"

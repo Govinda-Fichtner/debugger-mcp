@@ -18,3 +18,23 @@ tests/test_*.sh
 docs/research/
 docs/*_FIX*.md
 docs/*_VALIDATED*.md
+
+# IDE files
+.idea/
+
+# Temporary CI artifacts
+ci-artifacts/
+
+# Test logs and generated files
+*.log
+test-results.json
+mcp_protocol_log.md
+
+# Coverage profiling data
+*.profraw
+*.profdata
+
+# Ignore all markdown files in root except README.md and CLAUDE.md
+/*.md
+!/README.md
+!/CLAUDE.md

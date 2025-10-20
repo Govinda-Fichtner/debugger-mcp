@@ -236,6 +236,19 @@ impl RustAdapter {
                     if let Some(std::path::Component::Normal(comp)) = first_component {
                         let comp_str = comp.to_string_lossy();
                         if cargo_subdirs.contains(&comp_str.as_ref()) {
+                            // EXCEPTION: tests/fixtures/ are NOT part of the Cargo project
+                            // These are standalone test files that should be compiled with rustc
+                            let relative_str = relative.to_string_lossy();
+                            if relative_str.starts_with("tests/fixtures/")
+                                || relative_str.starts_with("tests\\fixtures\\")
+                            {
+                                debug!(
+                                    "🔍 [RUST] File is in tests/fixtures/ - treating as standalone file"
+                                );
+                                info!("📄 [RUST] Single file project: {}", source_path);
+                                return Ok(RustProjectType::SingleFile(source));
+                            }
+
                             info!("📦 [RUST] Found Cargo project: {}", dir.display());
                             info!("📦 [RUST] Manifest: {}", manifest.display());
                             info!("📦 [RUST] Source is under {}/", comp_str);
@@ -642,8 +655,18 @@ impl RustAdapter {
             "sourceMap": {".": "."},
         });
 
+        // Set working directory for proper source path resolution
+        // CodeLLDB needs cwd to resolve relative paths in DWARF debug info
+        // When rustc compiles with relative source paths (e.g., "tests/fixtures/fizzbuzz.rs"),
+        // it embeds DW_AT_comp_dir (e.g., "/workspace") and relative directory entries.
+        // CodeLLDB must combine comp_dir + relative_path to find source files.
+        // Setting cwd ensures CodeLLDB can resolve these paths correctly.
         if let Some(cwd_path) = cwd {
             launch["cwd"] = json!(cwd_path);
+        } else {
+            // Default to /workspace (common in Docker/CI environments)
+            // This matches the compilation directory embedded in DWARF debug info
+            launch["cwd"] = json!("/workspace");
         }
 
         launch
@@ -800,7 +823,8 @@ mod tests {
         assert_eq!(config["program"], binary);
         assert_eq!(config["args"], json!([]));
         assert_eq!(config["stopOnEntry"], false);
-        assert!(config["cwd"].is_null());
+        // When cwd is None, defaults to /workspace for DWARF path resolution
+        assert_eq!(config["cwd"], "/workspace");
     }
 
     #[test]
