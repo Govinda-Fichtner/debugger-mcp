@@ -122,7 +122,27 @@ jobs:
             emoji: 🦀
             adapter: CodeLLDB
             ai_client: claude
-          # Codex integration tests (starting with Rust)
+          # Codex integration tests (all 5 languages)
+          - language: python
+            test_file: codex_python_integration_test
+            emoji: 🐍
+            adapter: debugpy
+            ai_client: codex
+          - language: ruby
+            test_file: codex_ruby_integration_test
+            emoji: 💎
+            adapter: rdbg/debug gem
+            ai_client: codex
+          - language: nodejs
+            test_file: codex_nodejs_integration_test
+            emoji: 🟢
+            adapter: vscode-js-debug
+            ai_client: codex
+          - language: go
+            test_file: codex_go_integration_test
+            emoji: 🐹
+            adapter: Delve
+            ai_client: codex
           - language: rust
             test_file: codex_rust_integration_test
             emoji: 🦀
