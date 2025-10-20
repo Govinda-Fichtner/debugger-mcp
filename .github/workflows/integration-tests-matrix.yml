@@ -159,19 +159,12 @@ jobs:
           rm -rf target/debug/deps/*${{ matrix.test_file }}*
 
           # Run language-specific tests inside Docker container
-          # Set environment variable based on AI client
-          if [ "${{ matrix.ai_client }}" = "codex" ]; then
-            AI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
-            AI_KEY_NAME="OPENAI_API_KEY"
-          else
-            AI_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
-            AI_KEY_NAME="ANTHROPIC_API_KEY"
-          fi
-
+          # Pass both API keys - test will use the one it needs
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -e RUST_BACKTRACE=1 \
-            -e "${AI_KEY_NAME}=${AI_API_KEY}" \
+            -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
             debugger-mcp:integration-tests \
             sh -c 'cd /workspace && \
               cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
