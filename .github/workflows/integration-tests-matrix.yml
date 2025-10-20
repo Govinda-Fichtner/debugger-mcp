@@ -238,7 +238,7 @@ jobs:
         run: |
           if [ "${{ matrix.ai_client }}" = "codex" ]; then
             # Install Codex CLI
-            npm install -g @openai/codex-cli
+            npm install -g @openai/codex
 
             # Login to Codex with API key
             echo "${{ secrets.OPENAI_API_KEY }}" | codex login --with-api-key
