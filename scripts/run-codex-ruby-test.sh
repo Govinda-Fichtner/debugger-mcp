@@ -48,13 +48,23 @@ else
     echo "✅ debug gem available"
 fi
 
-BINARY_PATH="$WORKSPACE_ROOT/target/release/debugger_mcp"
-if [ ! -f "$BINARY_PATH" ]; then
-    echo "❌ MCP server binary not found at: $BINARY_PATH"
-    echo "   Build with: cargo build --release"
+# Check for binary in release or debug directory
+BINARY_PATH_RELEASE="$WORKSPACE_ROOT/target/release/debugger_mcp"
+BINARY_PATH_DEBUG="$WORKSPACE_ROOT/target/debug/debugger_mcp"
+
+if [ -f "$BINARY_PATH_RELEASE" ]; then
+    BINARY_PATH="$BINARY_PATH_RELEASE"
+    echo "✅ MCP server binary (release): $BINARY_PATH"
+elif [ -f "$BINARY_PATH_DEBUG" ]; then
+    BINARY_PATH="$BINARY_PATH_DEBUG"
+    echo "✅ MCP server binary (debug): $BINARY_PATH"
+else
+    echo "❌ MCP server binary not found at either:"
+    echo "   - $BINARY_PATH_RELEASE"
+    echo "   - $BINARY_PATH_DEBUG"
+    echo "   Build with: cargo build --release (or cargo build for debug)"
     exit 1
 fi
-echo "✅ MCP server binary: $BINARY_PATH"
 
 echo ""
 
