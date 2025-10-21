@@ -130,25 +130,29 @@ echo ""
 echo "🔧 Step 4: Registering MCP server with Codex..."
 echo "──────────────────────────────────────"
 
-MCP_SERVER_NAME="debugger-test-rust-simplified"
+MCP_SERVER_NAME="debugger-rust"
 
-# Remove any existing registration
-codex mcp remove "$MCP_SERVER_NAME" 2>/dev/null || true
-
-# Register pointing directly to local binary
-REGISTER_OUTPUT=$(codex mcp add "$MCP_SERVER_NAME" -- "$BINARY_PATH" serve 2>&1)
-REGISTER_EXIT=$?
-
-if [ $REGISTER_EXIT -ne 0 ]; then
-    echo "⚠️  MCP registration had issues (may be expected):"
-    echo "$REGISTER_OUTPUT"
+# Check if server already exists (Docker container)
+if codex mcp list 2>&1 | grep -q "^$MCP_SERVER_NAME"; then
+    echo "✅ MCP server '$MCP_SERVER_NAME' already registered (using existing Docker container)"
 else
-    echo "✅ MCP server registered as: $MCP_SERVER_NAME"
-fi
+    echo "⚠️  MCP server '$MCP_SERVER_NAME' not found, registering local binary..."
+    # Register pointing directly to local binary
+    REGISTER_OUTPUT=$(codex mcp add "$MCP_SERVER_NAME" -- "$BINARY_PATH" serve 2>&1)
+    REGISTER_EXIT=$?
 
-# Give MCP server a moment to initialize
-echo "⏳ Waiting 2 seconds for MCP server to initialize..."
-sleep 2
+    if [ $REGISTER_EXIT -ne 0 ]; then
+        echo "❌ MCP registration failed:"
+        echo "$REGISTER_OUTPUT"
+        exit 1
+    else
+        echo "✅ MCP server registered as: $MCP_SERVER_NAME"
+    fi
+
+    # Give MCP server a moment to initialize
+    echo "⏳ Waiting 2 seconds for MCP server to initialize..."
+    sleep 2
+fi
 
 echo ""
 
@@ -159,28 +163,172 @@ echo "────────────────────────�
 PROMPT_FILE="$WORKSPACE_ROOT/debug_prompt.md"
 
 cat > "$PROMPT_FILE" << EOF
-# Rust Debugging Test with Codex
+# Rust Debugging Test with Codex - Enhanced Version
 
-**IMPORTANT**: You have access to an MCP server called \`debugger-test-rust-simplified\` that provides debugging tools.
+**IMPORTANT**: You have access to an MCP server called \`debugger-rust\` that provides debugging tools.
 
-**Step 1: First, list ALL available tools and resources from the \`debugger-test-rust-simplified\` MCP server**
-Use the list_mcp_tools MCP tool to show what debugging capabilities are available.
+---
 
-**Step 2: Then perform the debugging test:**
-1. Use the debugger tools from \`debugger-test-rust-simplified\` to start a debugging session for: $FIZZBUZZ_BINARY
-2. Set a breakpoint at line 5
-3. Continue execution until the breakpoint is hit
-4. Get the stack trace
-5. Evaluate a variable
-6. Disconnect the debugging session
+## PHASE 1: MCP Resource Discovery
 
-IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' with this EXACT format:
+**Before starting any debugging operations, perform thorough discovery:**
+
+### Step 1A: List Available Resources
+Call \`list_mcp_resources\` on the \`debugger-rust\` MCP server to discover:
+- Session management resources (debugger://sessions)
+- Workflow templates (debugger://workflows)
+- State machine documentation
+- Any other available resources
+
+Document ALL discovered resources with their URIs and descriptions.
+
+### Step 1B: List Available Tools
+Call \`list_mcp_tools\` to enumerate all debugging capabilities:
+- Session management tools (debugger_start, debugger_disconnect, etc.)
+- Execution control tools (debugger_continue, debugger_step_*, etc.)
+- Inspection tools (debugger_stack_trace, debugger_evaluate, etc.)
+- State query tools (debugger_session_state, debugger_wait_for_stop, etc.)
+
+Document each tool name and its purpose.
+
+**Why this matters**: Understanding available resources and tools helps plan an effective debugging workflow and verifies the MCP server is properly configured.
+
+---
+
+## PHASE 2: Debugging Workflow
+
+**Execute the following steps IN ORDER, documenting EVERY operation:**
+
+### Step 2.1: Start Debug Session ✓
+**Tool**: \`debugger_start\`
+**Parameters**:
+\`\`\`json
+{
+  "language": "rust",
+  "program": "$FIZZBUZZ_BINARY",
+  "stopOnEntry": true
+}
+\`\`\`
+**Expected Response**: Session ID and status "started"
+**Verification**: Confirm you received a valid session ID (UUID format)
+
+### Step 2.2: Wait for Entry Point + Verify State ✓
+**Tool**: \`debugger_wait_for_stop\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id-from-step-2.1>",
+  "timeoutMs": 5000
+}
+\`\`\`
+**Expected Response**: State "Stopped" with reason "entry" or "exception"
+
+**THEN IMMEDIATELY call** \`debugger_session_state\`:
+\`\`\`json
+{
+  "sessionId": "<session-id>"
+}
+\`\`\`
+**Why**: Verify the session is in a stopped state before setting breakpoints
+**Document**: Current state, stop reason, and thread ID
+
+### Step 2.3: Set Breakpoint ✓
+**Tool**: \`debugger_set_breakpoint\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>",
+  "sourcePath": "/workspace/tests/fixtures/fizzbuzz.rs",
+  "line": 5
+}
+\`\`\`
+**Expected Response**: \`verified: true\`, confirming breakpoint is set at line 5
+**Verification**: Check that line number and source path match your request
+**Note**: Line 5 is the first if statement in the fizzbuzz function
+
+### Step 2.4: Continue Execution ✓
+**Tool**: \`debugger_continue\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>"
+}
+\`\`\`
+**Expected Response**: \`status: "continued"\`
+**Verification**: Session should transition from Stopped → Running state
+
+### Step 2.5: Wait for Breakpoint Hit + Verify State ✓
+**Tool**: \`debugger_wait_for_stop\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>",
+  "timeoutMs": 5000
+}
+\`\`\`
+**Expected Response**: State "Stopped" with reason "breakpoint"
+
+**THEN IMMEDIATELY call** \`debugger_session_state\`:
+\`\`\`json
+{
+  "sessionId": "<session-id>"
+}
+\`\`\`
+**Why**: Confirm we stopped at the breakpoint, not due to an error
+**Document**: Stop reason, thread ID, and any additional details
+
+### Step 2.6: Retrieve Stack Trace ✓
+**Tool**: \`debugger_stack_trace\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>"
+}
+\`\`\`
+**Expected Response**: Array of stack frames with at least 2 frames
+**Verification**:
+- Top frame should be \`fizzbuzz::fizzbuzz\` at line 5
+- Caller frame should be \`fizzbuzz::main\` at line 18
+**Document**: How many frames total? What are the top 3 frames?
+
+### Step 2.7: Evaluate Variable ✓
+**Tool**: \`debugger_evaluate\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>",
+  "expression": "n",
+  "frameId": <frame-id-from-stack-trace>
+}
+\`\`\`
+**Expected Response**: \`result: "1"\` (first iteration of fizzbuzz loop)
+**Verification**: Value should be 1 (i32 type)
+**Context**: Variable 'n' is the parameter to the fizzbuzz function
+
+### Step 2.8: Disconnect Session ✓
+**Tool**: \`debugger_disconnect\`
+**Parameters**:
+\`\`\`json
+{
+  "sessionId": "<session-id>"
+}
+\`\`\`
+**Expected Response**: \`status: "disconnected"\`
+**Verification**: Clean termination without errors
+
+---
+
+## PHASE 3: Documentation Requirements
+
+### test-results.json Format
+
+**USE THE WRITE TOOL** to create 'test-results.json' with this EXACT format:
 \`\`\`json
 {
   "test_run": {
     "language": "rust",
     "timestamp": "<current ISO 8601 timestamp>",
-    "overall_success": <true if all operations succeeded, false otherwise>,
+    "overall_success": <true if ALL operations succeeded, false if ANY failed>,
     "ai_client": "codex"
   },
   "operations": {
@@ -202,15 +350,135 @@ IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 
 }
 \`\`\`
 
-Set each boolean to true only if that specific operation completed successfully.
-Add errors array entries for any failures encountered.
+**Set each boolean to true ONLY if that specific operation completed successfully.**
+**Add errors array entries for ANY failures encountered (include operation name and error message).**
 
-Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+### STRATEGY 3: SPECIFIC OPERATION SEQUENCE WITH CONTEXT
 
-**CRITICAL**: After creating both files:
-1. Use the Read tool to read back test-results.json
-2. Display the full content to verify it was written correctly
-3. Do NOT just claim you created the files - actually show the content!
+**Your Task**: Debug the Rust fizzbuzz program at \`$FIZZBUZZ_BINARY\` using these MCP tools.
+
+**MCP Server**: \`debugger-rust\`
+**Source File**: \`/workspace/tests/fixtures/fizzbuzz.rs\`
+
+---
+
+## Required Operation Sequence
+
+Perform these operations IN ORDER. Each step builds on the previous one:
+
+### 1. Discover Available Tools
+\`\`\`
+list_mcp_resources(server="debugger-rust")
+list_mcp_tools
+\`\`\`
+**Why**: Verify the MCP server is responding correctly.
+
+### 2. Start Debug Session
+\`\`\`
+debugger_start(
+  language="rust",
+  program="$FIZZBUZZ_BINARY",
+  stopOnEntry=true
+)
+\`\`\`
+**Expected**: Returns a sessionId (UUID format).
+**Why**: Launches the binary under debugger control, paused at entry point.
+
+### 3. Wait for Entry Point
+\`\`\`
+debugger_wait_for_stop(
+  sessionId=<id-from-step-2>,
+  timeoutMs=5000
+)
+\`\`\`
+**Expected**: State "Stopped", reason "entry" or "exception".
+**Why**: Program stops at entry before executing user code.
+
+### 4. Verify Session State (NEW - you're not doing this currently)
+\`\`\`
+debugger_session_state(sessionId=<id>)
+\`\`\`
+**Expected**: Confirms state is "Stopped".
+**Why**: State verification before setting breakpoints ensures debugging workflow correctness.
+
+### 5. Set Breakpoint
+\`\`\`
+debugger_set_breakpoint(
+  sessionId=<id>,
+  sourcePath="/workspace/tests/fixtures/fizzbuzz.rs",
+  line=5
+)
+\`\`\`
+**Expected**: \`verified: true\`.
+**Why**: Line 5 is the first conditional in fizzbuzz function (\`n % 15 == 0\`).
+
+### 6. Continue Execution
+\`\`\`
+debugger_continue(sessionId=<id>)
+\`\`\`
+**Expected**: Status "continued".
+**Why**: Resume execution until breakpoint or program exit.
+
+### 7. Wait for Breakpoint Hit
+\`\`\`
+debugger_wait_for_stop(
+  sessionId=<id>,
+  timeoutMs=5000
+)
+\`\`\`
+**Expected**: State "Stopped", reason "breakpoint".
+**Why**: Program stops at line 5 when fizzbuzz(1) is called.
+
+### 8. Verify State After Breakpoint (NEW)
+\`\`\`
+debugger_session_state(sessionId=<id>)
+\`\`\`
+**Expected**: State "Stopped", thread ID available.
+**Why**: Confirms we're at the breakpoint before inspection.
+
+### 9. Get Stack Trace
+\`\`\`
+debugger_stack_trace(sessionId=<id>)
+\`\`\`
+**Expected**: Top frame at fizzbuzz.rs:5 in function \`fizzbuzz::fizzbuzz\`.
+**Why**: Verify call stack structure.
+
+### 10. Evaluate Variable
+\`\`\`
+debugger_evaluate(
+  sessionId=<id>,
+  frameId=<from-stack-trace>,
+  expression="n"
+)
+\`\`\`
+**Expected**: Result "1" (first call to fizzbuzz).
+**Why**: Verify variable inspection works.
+
+### 11. Disconnect
+\`\`\`
+debugger_disconnect(sessionId=<id>)
+\`\`\`
+**Expected**: Status "disconnected".
+**Why**: Clean session termination.
+
+---
+
+## Success Criteria
+
+1. ✅ All 11 operations complete successfully
+2. ✅ Steps 4 and 8 (debugger_session_state) are included - **you're currently skipping these**
+3. ✅ Steps 3 and 7 use \`timeoutMs: 5000\` parameter - **currently missing**
+4. ✅ Breakpoint verified=true
+5. ✅ Variable evaluation returns "1"
+
+---
+
+## Output Files
+
+Create two files (your concise format is fine):
+
+1. **test-results.json**: JSON with test_run and operations status
+2. **mcp_protocol_log.md**: Numbered list of operations (your current format works perfectly)
 EOF
 
 echo "✅ Prompt created: $PROMPT_FILE"
@@ -220,11 +488,19 @@ echo ""
 echo "🤖 Step 6: Running Codex debugging session..."
 echo "──────────────────────────────────────"
 
+# Clean up old artifacts BEFORE running Codex to ensure fresh validation
+echo "🧹 Removing stale artifacts from previous runs..."
+rm -f "$WORKSPACE_ROOT/test-results.json"
+rm -f "$WORKSPACE_ROOT/mcp_protocol_log.md"
+rm -f "$WORKSPACE_ROOT/codex-last-message.txt"
+echo "✅ Old artifacts removed"
+echo ""
+
 PROMPT_CONTENT=$(cat "$PROMPT_FILE")
 
-# Use timeout to prevent hanging (2 minutes max)
-echo "Running with 2-minute timeout..."
-CODEX_OUTPUT=$(timeout 120 codex exec \
+# Run Codex (with generous 10-minute timeout)
+echo "Running with default Codex model (no config parameters), 10-minute timeout and debug logging..."
+CODEX_OUTPUT=$(CODEX_LOG_LEVEL=debug timeout 600 codex exec \
     --json \
     --dangerously-bypass-approvals-and-sandbox \
     --output-last-message "$WORKSPACE_ROOT/codex-last-message.txt" \

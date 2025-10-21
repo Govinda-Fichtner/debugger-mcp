@@ -85,9 +85,10 @@ RUN go install github.com/go-delve/delve/cmd/dlv@latest && \
     cp /root/go/bin/dlv /usr/local/bin/dlv && \
     chmod +x /usr/local/bin/dlv
 
-# Note: Skipping cargo-nextest and cargo-tarpaulin due to edition2024 dependency issues
-# These tools require Rust 1.86+ which is not yet stable
-# We'll use standard cargo test for now (still runs tests in parallel)
+# Install cargo-tarpaulin for code coverage collection
+# Using version 0.31.2 which is compatible with Rust 1.83
+# Newer versions require Rust 1.86+ due to edition2024 dependencies
+RUN cargo install cargo-tarpaulin --version 0.31.2 --locked || echo "Warning: cargo-tarpaulin installation failed"
 
 # Set working directory
 WORKDIR /workspace

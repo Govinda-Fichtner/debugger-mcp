@@ -434,22 +434,172 @@ async fn test_ruby_claude_code_integration() {
     // 5. Create prompt
     let prompt_path = test_dir.join("debug_prompt.md");
     let prompt = format!(
-        r#"# Ruby Debugging Test
+        r#"# Ruby Debugging Test - Enhanced Version
 
-Test the debugger MCP server with Ruby:
-1. List available MCP tools
-2. Start debugging session for {}
-3. Set breakpoint at line 5
-4. Continue and document results
-5. Disconnect
+**IMPORTANT**: You have access to an MCP server called `debugger-test-ruby` that provides debugging tools.
 
-IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' in the current directory with this EXACT format:
+---
+
+## PHASE 1: MCP Resource Discovery
+
+**Before starting any debugging operations, perform thorough discovery:**
+
+### Step 1A: List Available Resources
+Call `list_mcp_resources` on the `debugger-test-ruby` MCP server to discover:
+- Session management resources (debugger://sessions)
+- Workflow templates (debugger://workflows)
+- State machine documentation
+- Any other available resources
+
+Document ALL discovered resources with their URIs and descriptions.
+
+### Step 1B: List Available Tools
+Call `list_mcp_tools` to enumerate all debugging capabilities:
+- Session management tools (debugger_start, debugger_disconnect, etc.)
+- Execution control tools (debugger_continue, debugger_step_*, etc.)
+- Inspection tools (debugger_stack_trace, debugger_evaluate, etc.)
+- State query tools (debugger_session_state, debugger_wait_for_stop, etc.)
+
+Document each tool name and its purpose.
+
+**Why this matters**: Understanding available resources and tools helps plan an effective debugging workflow and verifies the MCP server is properly configured.
+
+---
+
+## PHASE 2: Debugging Workflow
+
+**Execute the following steps IN ORDER, documenting EVERY operation:**
+
+### Step 2.1: Start Debug Session ✓
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{{
+  "language": "ruby",
+  "program": "{}",
+  "stopOnEntry": true
+}}
+```
+**Expected Response**: Session ID and status "started"
+**Verification**: Confirm you received a valid session ID (UUID format)
+
+### Step 2.2: Wait for Entry Point + Verify State ✓
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id-from-step-2.1>",
+  "timeoutMs": 5000
+}}
+```
+**Expected Response**: State "Stopped" with reason "entry" or "exception"
+
+**THEN IMMEDIATELY call** `debugger_session_state`:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Why**: Verify the session is in a stopped state before setting breakpoints
+**Document**: Current state, stop reason, and thread ID
+
+### Step 2.3: Set Breakpoint ✓
+**Tool**: `debugger_set_breakpoint`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "sourcePath": "{}",
+  "line": 5
+}}
+```
+**Expected Response**: `verified: true`, confirming breakpoint is set at line 5
+**Verification**: Check that line number and source path match your request
+**Note**: Line 5 is inside the fizzbuzz method checking n % 15
+
+### Step 2.4: Continue Execution ✓
+**Tool**: `debugger_continue`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: `status: "continued"`
+**Verification**: Session should transition from Stopped → Running state
+
+### Step 2.5: Wait for Breakpoint Hit + Verify State ✓
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "timeoutMs": 5000
+}}
+```
+**Expected Response**: State "Stopped" with reason "breakpoint"
+
+**THEN IMMEDIATELY call** `debugger_session_state`:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Why**: Confirm we stopped at the breakpoint, not due to an error
+**Document**: Stop reason, thread ID, and any additional details
+
+### Step 2.6: Retrieve Stack Trace ✓
+**Tool**: `debugger_stack_trace`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: Array of stack frames
+**Verification**:
+- Top frame should be in fizzbuzz method at line 5
+- Should show the main execution context as caller
+**Document**: How many frames total? What are the top 3 frames?
+
+### Step 2.7: Evaluate Variable ✓
+**Tool**: `debugger_evaluate`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "expression": "n",
+  "frameId": <frame-id-from-stack-trace>
+}}
+```
+**Expected Response**: Value should be 1 (first iteration)
+**Verification**: Variable 'n' is the parameter to the fizzbuzz method
+**Context**: First call to fizzbuzz with n=1
+
+### Step 2.8: Disconnect Session ✓
+**Tool**: `debugger_disconnect`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: `status: "disconnected"`
+**Verification**: Clean termination without errors
+
+---
+
+## PHASE 3: Documentation Requirements
+
+### test-results.json Format
+
+**USE THE WRITE TOOL** to create 'test-results.json' with this EXACT format:
 ```json
 {{
   "test_run": {{
     "language": "ruby",
     "timestamp": "<current ISO 8601 timestamp>",
-    "overall_success": <true if all operations succeeded, false otherwise>
+    "overall_success": <true if ALL operations succeeded, false if ANY failed>
   }},
   "operations": {{
     "session_started": <true/false>,
@@ -470,15 +620,68 @@ IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 
 }}
 ```
 
-Set each boolean to true only if that specific operation completed successfully.
-Add errors array entries for any failures encountered.
+**Set each boolean to true ONLY if that specific operation completed successfully.**
+**Add errors array entries for ANY failures encountered (include operation name and error message).**
 
-Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+### mcp_protocol_log.md Format
 
-**CRITICAL**: After creating both files:
-1. Use the Read tool to read back test-results.json
-2. Display the full content to verify it was written correctly
-3. Do NOT just claim you created the files - actually show the content!"#,
+**USE THE WRITE TOOL** to create 'mcp_protocol_log.md' with COMPREHENSIVE DETAIL.
+
+**TARGET**: Your mcp_protocol_log.md should be **AT LEAST 5000 bytes (≈200+ lines)** with detailed documentation.
+
+For EACH operation, document:
+- **Timestamp** (ISO 8601 format)
+- **Purpose** (why this step is needed)
+- **Tool name** (full MCP tool name)
+- **Complete request JSON** (all parameters)
+- **Complete response JSON** (all fields)
+- **Result** (✅ SUCCESS or ❌ FAILURE)
+- **Analysis** (what this tells us about the debugging session)
+
+Include sections for:
+1. Test Overview (language, program, timestamp, result)
+2. Phase 1: MCP Resource Discovery (resources and tools found)
+3. Phase 2: Debugging Operations (all 8+ steps with full detail)
+4. Summary table showing all operations and their status
+5. Key Findings about the debugger's behavior
+
+---
+
+## PHASE 4: Verification
+
+**After creating both files, you MUST:**
+
+1. **Use the Read tool** to read back test-results.json
+2. **Display the FULL content** to verify it was written correctly
+3. **Use the Read tool** to read back mcp_protocol_log.md
+4. **Display the first 100 lines** to verify detailed logging was created
+5. **Do NOT just claim you created the files** - actually show the content!
+6. **Verify file sizes**: test-results.json should be ~400-500 bytes, mcp_protocol_log.md should be 5000+ bytes
+
+**If either file is missing, empty, or malformed, explicitly state what went wrong.**
+
+---
+
+## Test Context
+
+**Fizzbuzz Source** (`{}`):
+- Line 5: First condition checking n % 15 == 0
+- Method: fizzbuzz(n) returns string ("FizzBuzz", "Fizz", "Buzz", or number)
+- Bug: Line 7 checks n % 4 instead of n % 5 (deliberate for testing)
+
+**Expected Execution Flow**:
+1. Program starts with stopOnEntry → stops at entry point
+2. Breakpoint set at line 5 (inside fizzbuzz method)
+3. Continue → program runs until first call to fizzbuzz(1)
+4. Breakpoint hit at line 5 with n=1
+5. Stack trace shows fizzbuzz method at line 5
+6. Evaluating 'n' returns 1
+7. Clean disconnect terminates session
+
+**Success Criteria**: All 8 operations complete without errors, detailed logs created, files verified.
+"#,
+        fizzbuzz_path.display(),
+        fizzbuzz_path.display(),
         fizzbuzz_path.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");

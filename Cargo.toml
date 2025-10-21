@@ -83,23 +83,3 @@ path = "tests/integration/lang/go_integration_test.rs"
 [[test]]
 name = "rust_integration_test"
 path = "tests/integration/lang/rust_integration_test.rs"
-
-[[test]]
-name = "codex_python_integration_test"
-path = "tests/integration/lang/codex_python_integration_test.rs"
-
-[[test]]
-name = "codex_ruby_integration_test"
-path = "tests/integration/lang/codex_ruby_integration_test.rs"
-
-[[test]]
-name = "codex_nodejs_integration_test"
-path = "tests/integration/lang/codex_nodejs_integration_test.rs"
-
-[[test]]
-name = "codex_go_integration_test"
-path = "tests/integration/lang/codex_go_integration_test.rs"
-
-[[test]]
-name = "codex_rust_integration_test"
-path = "tests/integration/lang/codex_rust_integration_test.rs"

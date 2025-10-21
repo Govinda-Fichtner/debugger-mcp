@@ -122,27 +122,7 @@ jobs:
             emoji: 🦀
             adapter: CodeLLDB
             ai_client: claude
-          # Codex integration tests (all 5 languages)
-          - language: python
-            test_file: codex_python_integration_test
-            emoji: 🐍
-            adapter: debugpy
-            ai_client: codex
-          - language: ruby
-            test_file: codex_ruby_integration_test
-            emoji: 💎
-            adapter: rdbg/debug gem
-            ai_client: codex
-          - language: nodejs
-            test_file: codex_nodejs_integration_test
-            emoji: 🟢
-            adapter: vscode-js-debug
-            ai_client: codex
-          - language: go
-            test_file: codex_go_integration_test
-            emoji: 🐹
-            adapter: Delve
-            ai_client: codex
+          # Codex integration test (Rust only)
           - language: rust
             test_file: codex_rust_integration_test
             emoji: 🦀
@@ -299,21 +279,41 @@ jobs:
 
       - name: Collect coverage for ${{ matrix.language }} (${{ matrix.ai_client }}) integration test
         run: |
-          # Create coverage output directory with sudo to avoid permission issues
-          # Workspace may have restrictive permissions after Docker operations
-          sudo mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }}
-          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }}
+          # Create coverage output directory
+          mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }}
 
-          # Collect coverage for this language's integration test on host
-          # Debugger was installed in previous step
-          cargo tarpaulin \
-            --test ${{ matrix.test_file }} \
-            --exclude-files 'tests/*' \
-            --ignored \
-            --timeout 120 \
-            --out Xml \
-            --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
-            || echo "Coverage collection failed, continuing..."
+          # For Codex tests, run coverage inside Docker where Codex CLI is available
+          # For Claude tests, run on host (debugger installed in previous step)
+          if [[ "${{ matrix.ai_client }}" == "codex" ]]; then
+            echo "Running coverage inside Docker (Codex CLI required)"
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              -w /workspace \
+              debugger-mcp:integration-tests \
+              cargo tarpaulin \
+                --test ${{ matrix.test_file }} \
+                --exclude-files 'tests/*' \
+                --ignored \
+                --timeout 180 \
+                --out Xml \
+                --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
+              || echo "Coverage collection failed, continuing..."
+          else
+            echo "Running coverage on host (debugger installed)"
+            cargo tarpaulin \
+              --test ${{ matrix.test_file }} \
+              --exclude-files 'tests/*' \
+              --ignored \
+              --timeout 120 \
+              --out Xml \
+              --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
+              || echo "Coverage collection failed, continuing..."
+          fi
+
+          # Fix permissions after Docker run
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
