@@ -38,3 +38,4 @@ mcp_protocol_log.md
 /*.md
 !/README.md
 !/CLAUDE.md
+.fuse_hidden*
