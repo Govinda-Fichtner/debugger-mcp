@@ -122,9 +122,29 @@ jobs:
             emoji: 🦀
             adapter: CodeLLDB
             ai_client: claude
-          # Codex integration test (Rust only)
+          # Codex integration tests (all 5 languages)
+          - language: python
+            test_file: python_integration_test
+            emoji: 🐍
+            adapter: debugpy
+            ai_client: codex
+          - language: ruby
+            test_file: ruby_integration_test
+            emoji: 💎
+            adapter: rdbg/debug gem
+            ai_client: codex
+          - language: nodejs
+            test_file: nodejs_integration_test
+            emoji: 🟢
+            adapter: vscode-js-debug
+            ai_client: codex
+          - language: go
+            test_file: go_integration_test
+            emoji: 🐹
+            adapter: Delve
+            ai_client: codex
           - language: rust
-            test_file: codex_rust_integration_test
+            test_file: rust_integration_test
             emoji: 🦀
             adapter: CodeLLDB
             ai_client: codex
@@ -154,22 +174,34 @@ jobs:
       - name: Run ${{ matrix.language }} integration tests
         timeout-minutes: 15
         run: |
-          # Clean test binaries to ensure latest code is compiled
-          # This prevents Cargo from using cached test binaries that may be from before code changes
-          echo "Cleaning test binaries to force recompilation..."
-          rm -rf target/debug/deps/*${{ matrix.test_file }}*
+          if [[ "${{ matrix.ai_client }}" == "codex" ]]; then
+            # Codex tests: Run shell script inside Docker
+            echo "Running Codex ${{ matrix.language }} test via script..."
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              debugger-mcp:integration-tests \
+              sh -c 'cd /workspace && bash scripts/run-codex-${{ matrix.language }}-test.sh' \
+              > ${{ matrix.language }}-test-output.txt 2>&1 || true
 
-          # Run language-specific tests inside Docker container
-          # Pass both API keys - test will use the one it needs
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -e RUST_BACKTRACE=1 \
-            -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
-            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-            debugger-mcp:integration-tests \
-            sh -c 'cd /workspace && \
-              cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
-              sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+            # Create clean output (remove ANSI codes)
+            sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt || true
+          else
+            # Claude tests: Run Cargo test inside Docker
+            echo "Running Claude ${{ matrix.language }} test via Cargo..."
+            # Clean test binaries to ensure latest code is compiled
+            rm -rf target/debug/deps/*${{ matrix.test_file }}*
+
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
+              -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              debugger-mcp:integration-tests \
+              sh -c 'cd /workspace && \
+                cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+          fi
 
           # Ensure files exist
           test -f ${{ matrix.language }}-test-output.txt || echo "Warning: Output file not created" > ${{ matrix.language }}-test-output.txt
