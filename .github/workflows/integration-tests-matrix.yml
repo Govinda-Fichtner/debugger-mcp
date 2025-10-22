@@ -311,10 +311,16 @@ jobs:
         with:
           tool: cargo-tarpaulin
 
+      - name: Prepare coverage directories
+        run: |
+          # Create coverage directory with sudo to avoid permission issues
+          # Docker may have created root-owned files in workspace
+          sudo mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
+
       - name: Collect coverage for ${{ matrix.language }} (${{ matrix.ai_client }}) integration test
         run: |
-          # Create coverage output directory
-          mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }}
+          # Coverage directory already created in previous step with correct permissions
 
           # For Codex tests, run coverage inside Docker where Codex CLI is available
           # For Claude tests, run on host (debugger installed in previous step)
