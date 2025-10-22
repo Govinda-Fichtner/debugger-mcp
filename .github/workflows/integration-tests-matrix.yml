@@ -399,27 +399,56 @@ jobs:
         if: always()
         id: parse_results
         run: |
-          # Parse test results for this language
-          TOTAL_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) {
-              if($i=="passed" || $i=="passed;") passed=$(i-1);
-              if($i=="failed" || $i=="failed;") failed=$(i-1);
-            }
-          } END {
-            print (passed+0) + (failed+0)
-          }' ${{ matrix.language }}-test-clean.txt || echo "0")
+          # Parse test results - handle both Claude (Cargo output) and Codex (JSON) formats
+          if [ "${{ matrix.ai_client }}" = "codex" ] && [ -f "test-results.json" ]; then
+            # Codex test: Parse test-results.json
+            # Count operations (8 total debugging operations)
+            TOTAL_OPS=8
 
-          PASSED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # Count successful operations (those that are true)
+            PASSED_OPS=$(jq '[.operations | to_entries[] | select(.value == true)] | length' test-results.json 2>/dev/null || echo "0")
 
-          FAILED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # Count failed operations (those that are false)
+            FAILED_OPS=$(jq '[.operations | to_entries[] | select(.value == false)] | length' test-results.json 2>/dev/null || echo "0")
 
-          IGNORED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # For Codex, we treat each operation as a "test"
+            TOTAL_TESTS=$TOTAL_OPS
+            PASSED_TESTS=$PASSED_OPS
+            FAILED_TESTS=$FAILED_OPS
+            IGNORED_TESTS=0
+
+            echo "📊 Codex test results from test-results.json:"
+            echo "   Total operations: $TOTAL_TESTS"
+            echo "   Passed operations: $PASSED_TESTS"
+            echo "   Failed operations: $FAILED_TESTS"
+          else
+            # Claude test: Parse Cargo test output
+            TOTAL_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) {
+                if($i=="passed" || $i=="passed;") passed=$(i-1);
+                if($i=="failed" || $i=="failed;") failed=$(i-1);
+              }
+            } END {
+              print (passed+0) + (failed+0)
+            }' ${{ matrix.language }}-test-clean.txt || echo "0")
+
+            PASSED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            FAILED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            IGNORED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            echo "📊 Claude test results from Cargo output:"
+            echo "   Total tests: $TOTAL_TESTS"
+            echo "   Passed tests: $PASSED_TESTS"
+            echo "   Failed tests: $FAILED_TESTS"
+          fi
 
           echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
@@ -436,12 +465,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Results" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Total Tests | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⏭️ Ignored | ${{ steps.parse_results.outputs.ignored_tests }} |" >> $GITHUB_STEP_SUMMARY
+
+          # Different labels for Claude (tests) vs Codex (operations)
+          if [ "${{ matrix.ai_client }}" = "codex" ]; then
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Operations | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "_Note: Codex tests measure debugging operations (session start, breakpoint, continue, stack trace, eval, disconnect)_" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⏭️ Ignored | ${{ steps.parse_results.outputs.ignored_tests }} |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ steps.parse_results.outputs.failed_tests }}" != "0" ]; then
