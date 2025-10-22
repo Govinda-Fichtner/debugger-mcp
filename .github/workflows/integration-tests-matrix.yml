@@ -181,11 +181,13 @@ jobs:
               -v ${{ github.workspace }}:/workspace \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               debugger-mcp:integration-tests \
-              sh -c 'cd /workspace && bash scripts/run-codex-${{ matrix.language }}-test.sh' \
-              > ${{ matrix.language }}-test-output.txt 2>&1 || true
+              sh -c 'cd /workspace && bash scripts/run-codex-${{ matrix.language }}-test.sh > ${{ matrix.language }}-test-output.txt 2>&1; exit 0'
 
-            # Create clean output (remove ANSI codes)
-            sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt || true
+            # Create clean output (remove ANSI codes) - inside Docker to avoid permission issues
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              debugger-mcp:integration-tests \
+              sh -c 'cd /workspace && sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt || true'
           else
             # Claude tests: Run Cargo test inside Docker
             echo "Running Claude ${{ matrix.language }} test via Cargo..."

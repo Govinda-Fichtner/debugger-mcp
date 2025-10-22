@@ -39,3 +39,12 @@ mcp_protocol_log.md
 !/README.md
 !/CLAUDE.md
 .fuse_hidden*
+
+# Codex test output files (temporary)
+*-test-output.txt
+*-test-clean.txt
+debug_prompt*.md
+codex-last-message.txt
+
+# Python cache
+tests/fixtures/__pycache__/
