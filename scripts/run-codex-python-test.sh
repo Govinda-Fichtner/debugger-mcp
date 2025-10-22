@@ -212,12 +212,12 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 {
   "sessionId": "<session-id>",
   "sourcePath": "/workspace/tests/fixtures/fizzbuzz.py",
-  "line": 2
+  "line": 18
 }
 \`\`\`
-**Expected Response**: \`verified: true\`, confirming breakpoint is set at line 2
+**Expected Response**: \`verified: true\`, confirming breakpoint is set at line 18
 **Verification**: Check that line number and source path match your request
-**Note**: Line 2 is the first if statement in the fizzbuzz function (n%15 == 0)
+**Note**: Line 18 is the first if statement in the fizzbuzz function (n%15 == 0)
 
 ### Step 2.4: Continue Execution ✓
 **Tool**: \`debugger_continue\`
@@ -260,7 +260,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 \`\`\`
 **Expected Response**: Array of stack frames with at least 2 frames
 **Verification**:
-- Top frame should be \`fizzbuzz\` at line 2
+- Top frame should be \`fizzbuzz\` at line 18
 - Caller frame should be in main module
 **Document**: How many frames total? What are the top 3 frames?
 
@@ -336,7 +336,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 3. \`debugger_start\` (program "$FIXTURE_SOURCE", stopOnEntry=true): session <id> started
 4. \`debugger_wait_for_stop\` (timeoutMs=5000): <describe result>
 5. \`debugger_session_state\`: <describe result>
-6. \`debugger_set_breakpoint\` (file "/workspace/tests/fixtures/fizzbuzz.py", line 2): <describe result>
+6. \`debugger_set_breakpoint\` (file "/workspace/tests/fixtures/fizzbuzz.py", line 18): <describe result>
 7. \`debugger_continue\`: <describe result>
 8. \`debugger_wait_for_stop\` (timeoutMs=5000): <describe result>
 9. \`debugger_session_state\`: <describe result>
@@ -386,16 +386,16 @@ debugger_session_state(sessionId=<id>)
 **Expected**: State "Stopped", includes reason and threadId.
 **Why**: Confirm session is ready for breakpoint setting.
 
-### 5. Set Breakpoint at Line 2
+### 5. Set Breakpoint at Line 18
 \`\`\`
 debugger_set_breakpoint(
   sessionId=<id>,
   sourcePath="/workspace/tests/fixtures/fizzbuzz.py",
-  line=2
+  line=18
 )
 \`\`\`
 **Expected**: \`verified: true\`
-**Why**: Line 2 is the first condition in fizzbuzz function.
+**Why**: Line 18 is the first condition in fizzbuzz function.
 
 ### 6. Continue to Breakpoint
 \`\`\`
@@ -424,7 +424,7 @@ debugger_session_state(sessionId=<id>)
 \`\`\`
 debugger_stack_trace(sessionId=<id>)
 \`\`\`
-**Expected**: Array of frames, top frame at fizzbuzz.py:2
+**Expected**: Array of frames, top frame at fizzbuzz.py:18
 
 ### 10. Evaluate Variable
 \`\`\`
@@ -448,7 +448,7 @@ debugger_disconnect(sessionId=<id>)
 ## Important Notes
 
 - **Use exact paths**: The source path must be \`/workspace/tests/fixtures/fizzbuzz.py\`
-- **Breakpoint line**: Line 2 is the first if statement checking \`n % 15 == 0\`
+- **Breakpoint line**: Line 18 is the first if statement checking \`n % 15 == 0\`
 - **Variable evaluation**: The variable 'n' should be 1 on first breakpoint hit
 - **Write files**: You MUST use the WRITE tool to create both test-results.json and mcp_protocol_log.md
 - **Document everything**: Every MCP call should be documented in the protocol log
