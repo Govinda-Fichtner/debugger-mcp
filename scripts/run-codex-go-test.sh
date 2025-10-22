@@ -195,33 +195,17 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 {
   "language": "go",
   "program": "$FIZZBUZZ_BINARY",
-  "stopOnEntry": true
+  "args": [],
+  "cwd": null,
+  "stopOnEntry": false
 }
 \`\`\`
 **Expected Response**: Session ID and status "started"
 **Verification**: Confirm you received a valid session ID (UUID format)
+**Note**: Go/Delve works better with pending breakpoints than stopOnEntry
+**Important**: With stopOnEntry: false, the program starts initializing immediately. We set the breakpoint next as a pending breakpoint.
 
-### Step 2.2: Wait for Entry Point + Verify State ✓
-**Tool**: \`debugger_wait_for_stop\`
-**Parameters**:
-\`\`\`json
-{
-  "sessionId": "<session-id-from-step-2.1>",
-  "timeoutMs": 5000
-}
-\`\`\`
-**Expected Response**: State "Stopped" with reason "entry" or "exception"
-
-**THEN IMMEDIATELY call** \`debugger_session_state\`:
-\`\`\`json
-{
-  "sessionId": "<session-id>"
-}
-\`\`\`
-**Why**: Verify the session is in a stopped state before setting breakpoints
-**Document**: Current state, stop reason, and thread ID
-
-### Step 2.3: Set Breakpoint ✓
+### Step 2.2: Set Breakpoint (Pending) ✓
 **Tool**: \`debugger_set_breakpoint\`
 **Parameters**:
 \`\`\`json
@@ -234,8 +218,9 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 **Expected Response**: \`verified: true\`, confirming breakpoint is set at line 13
 **Verification**: Check that line number and source path match your request
 **Note**: Line 13 is the first if statement in the fizzbuzz function (n%15 == 0)
+**Important**: This breakpoint is set as a pending breakpoint during initialization, before the program starts running
 
-### Step 2.4: Continue Execution ✓
+### Step 2.3: Continue Execution ✓
 **Tool**: \`debugger_continue\`
 **Parameters**:
 \`\`\`json
@@ -246,7 +231,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 **Expected Response**: \`status: "continued"\`
 **Verification**: Session should transition from Stopped → Running state
 
-### Step 2.5: Wait for Breakpoint Hit + Verify State ✓
+### Step 2.4: Wait for Breakpoint Hit + Verify State ✓
 **Tool**: \`debugger_wait_for_stop\`
 **Parameters**:
 \`\`\`json
@@ -266,7 +251,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 **Why**: Confirm we stopped at the breakpoint, not due to an error
 **Document**: Stop reason, thread ID, and any additional details
 
-### Step 2.6: Retrieve Stack Trace ✓
+### Step 2.5: Retrieve Stack Trace ✓
 **Tool**: \`debugger_stack_trace\`
 **Parameters**:
 \`\`\`json
@@ -280,7 +265,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 - Caller frame should be \`main.main\` at line 27 or 28
 **Document**: How many frames total? What are the top 3 frames?
 
-### Step 2.7: Evaluate Variable ✓
+### Step 2.6: Evaluate Variable ✓
 **Tool**: \`debugger_evaluate\`
 **Parameters**:
 \`\`\`json
@@ -294,7 +279,7 @@ Call \`list_mcp_resource_templates\` to enumerate available resource templates.
 **Verification**: Value should be 1 (int type)
 **Context**: Variable 'n' is the parameter to the fizzbuzz function
 
-### Step 2.8: Disconnect Session ✓
+### Step 2.7: Disconnect Session ✓
 **Tool**: \`debugger_disconnect\`
 **Parameters**:
 \`\`\`json
@@ -379,30 +364,16 @@ list_mcp_resource_templates(server="debugger-go")
 debugger_start(
   language="go",
   program="$FIZZBUZZ_BINARY",
-  stopOnEntry=true
+  args=[],
+  cwd=null,
+  stopOnEntry=false
 )
 \`\`\`
 **Expected**: Returns a sessionId (UUID format).
-**Why**: Launches the binary under debugger control, paused at entry point.
+**Why**: Launches the binary under debugger control with pending breakpoints.
+**Note**: Go/Delve works better with stopOnEntry=false and pending breakpoints.
 
-### 3. Wait for Entry Point
-\`\`\`
-debugger_wait_for_stop(
-  sessionId=<id-from-step-2>,
-  timeoutMs=5000
-)
-\`\`\`
-**Expected**: State "Stopped", reason "entry" or "exception".
-**Why**: Program stops at entry before executing user code.
-
-### 4. Verify Session State
-\`\`\`
-debugger_session_state(sessionId=<id>)
-\`\`\`
-**Expected**: State "Stopped", includes reason and threadId.
-**Why**: Confirm session is ready for breakpoint setting.
-
-### 5. Set Breakpoint at Line 13
+### 3. Set Breakpoint at Line 13 (Pending)
 \`\`\`
 debugger_set_breakpoint(
   sessionId=<id>,

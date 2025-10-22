@@ -629,12 +629,12 @@ Document each tool name and its purpose.
 {{
   "sessionId": "<session-id>",
   "sourcePath": "{}",
-  "line": 13
+  "line": 18
 }}
 ```
-**Expected Response**: `verified: true`, confirming breakpoint is set at line 13
+**Expected Response**: `verified: true`, confirming breakpoint is set at line 18
 **Verification**: Check that line number and source path match your request
-**Note**: Line 13 is inside the fizzbuzz function checking n % 15
+**Note**: Line 18 is inside the fizzbuzz function checking n % 15
 
 ### Step 2.4: Continue Execution ✓
 **Tool**: `debugger_continue`
@@ -677,7 +677,7 @@ Document each tool name and its purpose.
 ```
 **Expected Response**: Array of stack frames
 **Verification**:
-- Top frame should be in fizzbuzz function at line 13
+- Top frame should be in fizzbuzz function at line 18
 - Should show the main module as caller
 **Document**: How many frames total? What are the top 3 frames?
 
@@ -784,16 +784,16 @@ Include sections for:
 ## Test Context
 
 **Fizzbuzz Source** (`{}`):
-- Line 13: First condition checking n % 15 == 0
+- Line 18: First condition checking n % 15 == 0 (correct line for breakpoint)
 - Function: fizzbuzz(n) returns string ("FizzBuzz", "Fizz", "Buzz", or number)
-- Bug: Line 15 checks n % 4 instead of n % 5 (deliberate for testing)
+- Note: Line 8 is the function definition, lines 9-17 are docstring
 
 **Expected Execution Flow**:
 1. Program starts with stopOnEntry → stops at entry point
-2. Breakpoint set at line 13 (inside fizzbuzz function)
+2. Breakpoint set at line 18 (inside fizzbuzz function)
 3. Continue → program runs until first call to fizzbuzz(1)
-4. Breakpoint hit at line 13 with n=1
-5. Stack trace shows fizzbuzz function at line 13
+4. Breakpoint hit at line 18 with n=1
+5. Stack trace shows fizzbuzz function at line 18
 6. Evaluating 'n' returns 1
 7. Clean disconnect terminates session
 
