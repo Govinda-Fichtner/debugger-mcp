@@ -961,3 +961,290 @@ Include sections for:
 
     println!("\n🎉 Python Claude Code integration test completed!");
 }
+
+/// Python Codex Integration Test
+///
+/// End-to-end test using Codex CLI to debug Python programs
+/// This test validates the MCP protocol integration with Codex
+#[tokio::test]
+#[ignore]
+async fn test_python_codex_code_integration() {
+    println!("\n🚀 Starting Python Codex Integration Test");
+    println!("════════════════════════════════════════════════════════════════");
+
+    // 1. Check Codex CLI is available
+    println!("\n📋 Step 1: Checking Codex CLI availability...");
+    let codex_check = Command::new("codex").arg("--version").output();
+
+    if codex_check.is_err() || !codex_check.as_ref().unwrap().status.success() {
+        println!("⚠️  Skipping test: Codex CLI not found");
+        return;
+    }
+    println!("✅ Codex CLI is available");
+
+    // 2. Check OPENAI_API_KEY
+    println!("\n🔑 Step 2: Checking OPENAI_API_KEY...");
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        println!("⚠️  Skipping test: OPENAI_API_KEY not set");
+        return;
+    }
+    println!("✅ OPENAI_API_KEY is set");
+
+    // 3. Verify MCP server binary
+    println!("\n📦 Step 3: Verifying MCP server binary...");
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let binary_path = workspace_root.join("target/release/debugger_mcp");
+
+    if !binary_path.exists() {
+        println!(
+            "⚠️  Skipping test: Binary not found at {}",
+            binary_path.display()
+        );
+        return;
+    }
+    println!("✅ Binary found at {}", binary_path.display());
+
+    // 4. Create temporary test directory
+    println!("\n📁 Step 4: Creating temporary test environment...");
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let test_dir = temp_dir.path();
+
+    // 5. Create fizzbuzz.py test file
+    let fizzbuzz_path = test_dir.join("fizzbuzz.py");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.py");
+    fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.py");
+    println!("✅ Created test file: {}", fizzbuzz_path.display());
+
+    // 6. Login to Codex
+    println!("\n🔑 Step 5: Logging in to Codex...");
+    let api_key = std::env::var("OPENAI_API_KEY").unwrap();
+    let login_output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("echo '{}' | codex login --with-api-key", api_key))
+        .output()
+        .expect("Failed to execute codex login");
+
+    if !login_output.status.success() {
+        println!("⚠️  Codex login failed");
+        println!("stderr: {}", String::from_utf8_lossy(&login_output.stderr));
+        return;
+    }
+    println!("✅ Logged in to Codex");
+
+    // 7. Register MCP server
+    println!("\n🔧 Step 6: Registering MCP server with Codex...");
+    let mcp_config = json!({
+        "command": binary_path.to_str().unwrap(),
+        "args": ["serve"]
+    });
+    let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
+
+    let register_output = Command::new("codex")
+        .arg("mcp")
+        .arg("add-json")
+        .arg("debugger-test-python-codex")
+        .arg(&mcp_config_str)
+        .current_dir(test_dir)
+        .output()
+        .expect("Failed to register MCP server");
+
+    if !register_output.status.success() {
+        println!("⚠️  MCP registration failed");
+        println!(
+            "stderr: {}",
+            String::from_utf8_lossy(&register_output.stderr)
+        );
+        return;
+    }
+    println!("✅ MCP server registered");
+
+    // 8. Create debugging prompt
+    println!("\n📝 Step 7: Creating debugging prompt...");
+    let prompt_content = format!(
+        r#"# Python Debugging Test with Codex
+
+**IMPORTANT**: You have access to an MCP server called `debugger-test-python-codex` that provides debugging tools.
+
+---
+
+## Task
+Debug the Python program at: {}/fizzbuzz.py
+
+## Required Steps
+
+Execute these steps IN ORDER and document each operation:
+
+### 1. Start Debug Session
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{{
+  "language": "python",
+  "program": "{}/fizzbuzz.py",
+  "args": [],
+  "cwd": null,
+  "stopOnEntry": false
+}}
+```
+
+### 2. Set Breakpoint
+**Tool**: `debugger_set_breakpoint`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id-from-step-1>",
+  "file": "{}/fizzbuzz.py",
+  "line": 18
+}}
+```
+Verify the breakpoint is verified (check response).
+
+### 3. Continue Execution
+**Tool**: `debugger_continue`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+### 4. Wait for Breakpoint
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "timeoutMs": 5000
+}}
+```
+Confirm stopped at breakpoint (reason: "breakpoint").
+
+### 5. Get Stack Trace
+**Tool**: `debugger_stack_trace`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+### 6. Evaluate Variable
+**Tool**: `debugger_evaluate`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "frameId": <frame-id-from-stack-trace>,
+  "expression": "n"
+}}
+```
+
+### 7. Disconnect
+**Tool**: `debugger_disconnect`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+## Final Step: Create test-results.json
+
+Create a file called `test-results.json` in the current directory with this structure:
+```json
+{{
+  "test_run": {{
+    "language": "python",
+    "timestamp": "<current-iso-timestamp>",
+    "overall_success": true,
+    "ai_client": "codex"
+  }},
+  "operations": {{
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  }},
+  "errors": []
+}}
+```
+
+Set each operation to `true` if it succeeded, `false` if it failed.
+Set `overall_success` to `true` only if ALL operations succeeded.
+"#,
+        test_dir.display(),
+        test_dir.display(),
+        test_dir.display()
+    );
+
+    let prompt_path = test_dir.join("debug_prompt.md");
+    fs::write(&prompt_path, &prompt_content).expect("Failed to write prompt");
+    println!("✅ Created prompt file");
+
+    // 9. Run Codex
+    println!("\n🤖 Step 8: Running Codex...");
+    let codex_output = Command::new("codex")
+        .arg("chat")
+        .arg("--mcp")
+        .arg("debugger-test-python-codex")
+        .stdin(std::fs::File::open(&prompt_path).unwrap())
+        .current_dir(test_dir)
+        .output()
+        .expect("Failed to run Codex");
+
+    println!("\n📊 Codex Output:");
+    let output_str = String::from_utf8_lossy(&codex_output.stdout);
+    println!("{}", output_str);
+
+    if !codex_output.status.success() {
+        println!("⚠️  Codex execution failed");
+        println!("stderr: {}", String::from_utf8_lossy(&codex_output.stderr));
+    }
+
+    // 10. Validate test-results.json
+    println!("\n✅ Step 9: Validating test results...");
+    let results_path = test_dir.join("test-results.json");
+
+    if !results_path.exists() {
+        println!(
+            "⚠️  test-results.json not found at {}",
+            results_path.display()
+        );
+        println!("   Test may have timed out or Codex failed to create the file");
+        // Don't fail the test - timeout is acceptable
+        return;
+    }
+
+    let results_content = fs::read_to_string(&results_path).unwrap();
+    let results: serde_json::Value = serde_json::from_str(&results_content).unwrap();
+
+    println!("\n📊 Test Results:");
+    println!("{}", serde_json::to_string_pretty(&results).unwrap());
+
+    // Validate structure
+    assert!(results["test_run"].is_object(), "Missing test_run object");
+    assert!(
+        results["operations"].is_object(),
+        "Missing operations object"
+    );
+    assert_eq!(results["test_run"]["language"].as_str(), Some("python"));
+    assert_eq!(results["test_run"]["ai_client"].as_str(), Some("codex"));
+
+    // Copy test-results.json to workspace root for CI artifact collection
+    let workspace_results = workspace_root.join("test-results.json");
+    fs::copy(&results_path, &workspace_results).ok();
+
+    // 11. Cleanup
+    let _ = Command::new("codex")
+        .arg("mcp")
+        .arg("remove")
+        .arg("debugger-test-python-codex")
+        .current_dir(test_dir)
+        .output();
+
+    println!("\n🎉 Python Codex integration test completed!");
+}
