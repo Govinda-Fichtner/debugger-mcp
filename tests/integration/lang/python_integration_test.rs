@@ -1185,11 +1185,12 @@ Set `overall_success` to `true` only if ALL operations succeeded.
     // 9. Run Codex
     println!("\n🤖 Step 8: Running Codex...");
     // Codex automatically uses registered MCP servers - no --mcp flag needed
-    // Syntax: codex exec --json --dangerously-bypass-approvals-and-sandbox "<prompt>"
+    // Syntax: codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "<prompt>"
     let codex_output = Command::new("codex")
         .arg("exec")
         .arg("--json")
         .arg("--dangerously-bypass-approvals-and-sandbox")
+        .arg("--skip-git-repo-check")
         .arg(&prompt_content)
         .current_dir(test_dir)
         .output()
