@@ -1211,5 +1211,9 @@ Set `overall_success` to `true` only if ALL operations succeeded.
     assert_eq!(results["test_run"]["language"].as_str(), Some("ruby"));
     assert_eq!(results["test_run"]["ai_client"].as_str(), Some("codex"));
 
+    // Copy test-results.json to workspace root for CI artifact collection
+    let workspace_results = workspace_root.join("test-results.json");
+    fs::copy(&results_path, &workspace_results).ok();
+
     println!("\n✅ Ruby Codex integration test completed!");
 }

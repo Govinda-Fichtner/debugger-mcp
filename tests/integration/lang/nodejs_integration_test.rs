@@ -1137,5 +1137,10 @@ Set all operation flags to `true` only if that step succeeded. If any step fails
         println!("⚠️  mcp_protocol_log.md not found (optional)");
     }
 
+    // Copy test-results.json to workspace root for CI artifact collection
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_results = workspace_root.join("test-results.json");
+    fs::copy(&test_results_path, &workspace_results).ok();
+
     println!("\n🎉 Node.js Codex integration test completed successfully!");
 }
