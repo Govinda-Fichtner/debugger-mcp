@@ -1033,17 +1033,14 @@ async fn test_python_codex_code_integration() {
 
     // 7. Register MCP server
     println!("\n🔧 Step 6: Registering MCP server with Codex...");
-    let mcp_config = json!({
-        "command": binary_path.to_str().unwrap(),
-        "args": ["serve"]
-    });
-    let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
-
+    // Syntax: codex mcp add <name> -- <command> <args>
     let register_output = Command::new("codex")
         .arg("mcp")
-        .arg("add-json")
+        .arg("add")
         .arg("debugger-test-python-codex")
-        .arg(&mcp_config_str)
+        .arg("--")
+        .arg(binary_path.to_str().unwrap())
+        .arg("serve")
         .current_dir(test_dir)
         .output()
         .expect("Failed to register MCP server");
