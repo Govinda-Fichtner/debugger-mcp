@@ -1027,3 +1027,318 @@ Include sections for:
 
     println!("\n🎉 Rust Claude Code integration test completed!");
 }
+
+#[tokio::test]
+#[ignore]
+async fn test_rust_codex_code_integration() {
+    println!("\n🚀 Starting Rust Codex Integration Test");
+
+    // 1. Check if Codex CLI is available
+    let codex_check = Command::new("codex").arg("--version").output();
+
+    if codex_check.is_err() {
+        println!("⚠️  Codex CLI not found - skipping test (expected in CI)");
+        return;
+    }
+
+    println!("✅ Codex CLI available");
+
+    // 2. Check if OPENAI_API_KEY is set
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        println!("⚠️  OPENAI_API_KEY not set - skipping test (expected in CI)");
+        return;
+    }
+
+    println!("✅ OPENAI_API_KEY configured");
+
+    // 3. Verify MCP server binary exists
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let binary_path = workspace_root.join("target/release/debugger_mcp");
+
+    if !binary_path.exists() {
+        println!(
+            "⚠️  MCP server binary not found at {:?} - skipping test",
+            binary_path
+        );
+        return;
+    }
+
+    println!("✅ MCP server binary found at {:?}", binary_path);
+
+    // 4. Check if LLDB is available (required for CodeLLDB)
+    let lldb_check = Command::new("lldb").arg("--version").output();
+
+    if lldb_check.is_err() || !lldb_check.as_ref().unwrap().status.success() {
+        println!("⚠️  LLDB not installed - skipping test");
+        return;
+    }
+
+    println!("✅ LLDB available");
+
+    // 5. Check if rustc is available
+    let rustc_check = Command::new("rustc").arg("--version").output();
+
+    if rustc_check.is_err() || !rustc_check.as_ref().unwrap().status.success() {
+        println!("⚠️  rustc not installed - skipping test");
+        return;
+    }
+
+    println!("✅ rustc available");
+
+    // 6. Create temporary test directory
+    let test_dir = TempDir::new().expect("Failed to create temp dir");
+    println!("✅ Created test directory: {:?}", test_dir.path());
+
+    // 7. Create and compile fizzbuzz.rs
+    let fizzbuzz_path = test_dir.path().join("fizzbuzz.rs");
+    let fizzbuzz_content = r#"// FizzBuzz implementation with a deliberate bug for testing
+// Bug: Line 9 checks n % 4 instead of n % 5
+
+fn fizzbuzz(n: i32) -> String {
+    if n % 15 == 0 {
+        "FizzBuzz".to_string()
+    } else if n % 3 == 0 {
+        "Fizz".to_string()
+    } else if n % 4 == 0 {  // BUG: Should be n % 5
+        "Buzz".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
+fn main() {
+    for i in 1..=100 {
+        println!("{}: {}", i, fizzbuzz(i));
+    }
+}
+"#;
+
+    fs::write(&fizzbuzz_path, fizzbuzz_content).expect("Failed to write fizzbuzz.rs");
+    println!("✅ Created fizzbuzz.rs");
+
+    // 8. Compile the Rust program with debug symbols
+    let binary_output_path = test_dir.path().join("fizzbuzz");
+    let compile_output = Command::new("rustc")
+        .arg("-g") // Debug symbols
+        .arg("-C")
+        .arg("opt-level=0") // No optimizations
+        .arg("-o")
+        .arg(&binary_output_path)
+        .arg(&fizzbuzz_path)
+        .current_dir(test_dir.path())
+        .output()
+        .expect("Failed to compile Rust program");
+
+    if !compile_output.status.success() {
+        println!("⚠️  Failed to compile Rust program:");
+        println!("{}", String::from_utf8_lossy(&compile_output.stderr));
+        return;
+    }
+
+    println!("✅ Compiled Rust program: {:?}", binary_output_path);
+
+    // 9. Login to Codex (ensure authenticated)
+    let login_output = Command::new("codex")
+        .arg("login")
+        .arg("--check")
+        .output()
+        .expect("Failed to check Codex login");
+
+    if !login_output.status.success() {
+        println!("⚠️  Not logged into Codex - skipping test");
+        return;
+    }
+
+    println!("✅ Codex authentication verified");
+
+    // 10. Register MCP server with Codex
+    let register_output = Command::new("codex")
+        .arg("mcp")
+        .arg("add")
+        .arg("debugger-test-rust-codex")
+        .arg("--")
+        .arg(binary_path.to_str().unwrap())
+        .arg("serve")
+        .current_dir(test_dir.path())
+        .output()
+        .expect("Failed to register MCP server");
+
+    if !register_output.status.success() {
+        println!("⚠️  Failed to register MCP server:");
+        println!("{}", String::from_utf8_lossy(&register_output.stderr));
+        return;
+    }
+
+    println!("✅ MCP server registered as: debugger-test-rust-codex");
+
+    // 11. Create debugging prompt
+    let prompt_content = format!(
+        r#"# Rust Debugging Test with Codex
+
+**IMPORTANT**: You have access to an MCP server called `debugger-test-rust-codex` that provides debugging tools.
+
+Your task is to debug the compiled Rust program in this directory using the MCP debugging tools.
+
+## Step-by-Step Instructions:
+
+1. Start a debug session for Rust:
+   - Use the `debugger_start` tool
+   - Set `"language": "rust"`
+   - Set `"program": "{}/fizzbuzz"` (the compiled binary)
+   - Set `"stopOnEntry": true`
+
+2. Wait for the debugger to stop at entry:
+   - Use the `debugger_wait_for_stop` tool
+   - Pass the session ID from step 1
+
+3. Set a breakpoint at line 17 of fizzbuzz.rs (the for loop):
+   - Use the `debugger_set_breakpoint` tool
+   - Set `"file": "{}/fizzbuzz.rs"`
+   - Set `"line": 17`
+
+4. Continue execution to the breakpoint:
+   - Use the `debugger_continue` tool
+   - Then use `debugger_wait_for_stop` again
+
+5. Inspect the call stack:
+   - Use the `debugger_stack_trace` tool
+
+6. Evaluate the variable `i`:
+   - Use the `debugger_evaluate` tool
+   - Set `"expression": "i"`
+
+7. Disconnect the debugger:
+   - Use the `debugger_disconnect` tool
+
+## Output Requirements:
+
+After completing all steps, create TWO files:
+
+1. `test-results.json` with this structure:
+```json
+{{
+  "test_run": {{
+    "language": "rust",
+    "timestamp": "<current-timestamp>",
+    "overall_success": true,
+    "ai_client": "codex"
+  }},
+  "operations": {{
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  }},
+  "errors": []
+}}
+```
+
+2. `mcp_protocol_log.md` documenting all MCP tool calls and responses.
+
+Set all operation flags to `true` only if that step succeeded. If any step fails, set `overall_success` to `false` and add error details to the `errors` array."#,
+        test_dir.path().display(),
+        test_dir.path().display()
+    );
+
+    println!("✅ Created debugging prompt");
+
+    // 12. Run Codex with the debugging task
+    println!("🤖 Executing Codex (this may take 1-2 minutes)...");
+
+    let codex_output = Command::new("codex")
+        .arg("exec")
+        .arg("--json")
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .arg("--skip-git-repo-check")
+        .arg(&prompt_content)
+        .current_dir(test_dir.path())
+        .output()
+        .expect("Failed to run Codex");
+
+    // Log Codex output for debugging
+    println!("\n--- Codex Output ---");
+    println!("Status: {}", codex_output.status);
+    println!("Stdout:\n{}", String::from_utf8_lossy(&codex_output.stdout));
+    if !codex_output.stderr.is_empty() {
+        println!("Stderr:\n{}", String::from_utf8_lossy(&codex_output.stderr));
+    }
+    println!("--- End Codex Output ---\n");
+
+    // 13. Validate test results
+    let test_results_path = test_dir.path().join("test-results.json");
+
+    if !test_results_path.exists() {
+        panic!(
+            "❌ FAIL: test-results.json not created by Codex\nExpected at: {:?}",
+            test_results_path
+        );
+    }
+
+    println!("✅ test-results.json created");
+
+    let test_results_content =
+        fs::read_to_string(&test_results_path).expect("Failed to read test-results.json");
+
+    let test_results: serde_json::Value =
+        serde_json::from_str(&test_results_content).expect("Failed to parse test-results.json");
+
+    println!("📊 Test Results Summary:");
+    println!("{}", serde_json::to_string_pretty(&test_results).unwrap());
+
+    // Validate required fields
+    assert!(
+        test_results["test_run"]["overall_success"]
+            .as_bool()
+            .unwrap_or(false),
+        "❌ FAIL: overall_success is not true"
+    );
+
+    assert_eq!(
+        test_results["test_run"]["language"].as_str().unwrap_or(""),
+        "rust",
+        "❌ FAIL: language field incorrect"
+    );
+
+    assert_eq!(
+        test_results["test_run"]["ai_client"].as_str().unwrap_or(""),
+        "codex",
+        "❌ FAIL: ai_client field incorrect"
+    );
+
+    // Validate all operations succeeded
+    let operations = &test_results["operations"];
+    let required_operations = [
+        "session_started",
+        "breakpoint_set",
+        "breakpoint_verified",
+        "execution_continued",
+        "stopped_at_breakpoint",
+        "stack_trace_retrieved",
+        "variable_evaluated",
+        "session_disconnected",
+    ];
+
+    for op in &required_operations {
+        assert!(
+            operations[op].as_bool().unwrap_or(false),
+            "❌ FAIL: operation '{}' did not succeed",
+            op
+        );
+    }
+
+    println!("✅ All 8 debugging operations completed successfully");
+
+    // Check for MCP protocol log
+    let protocol_log_path = test_dir.path().join("mcp_protocol_log.md");
+    if protocol_log_path.exists() {
+        println!("✅ mcp_protocol_log.md created");
+    } else {
+        println!("⚠️  mcp_protocol_log.md not found (optional)");
+    }
+
+    println!("\n🎉 Rust Codex integration test completed successfully!");
+}

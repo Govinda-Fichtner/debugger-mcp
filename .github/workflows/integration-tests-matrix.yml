@@ -175,21 +175,21 @@ jobs:
         timeout-minutes: 15
         run: |
           if [[ "${{ matrix.ai_client }}" == "codex" ]]; then
-            # Codex tests: Run shell script inside Docker
-            echo "Running Codex ${{ matrix.language }} test via script..."
+            # Codex tests: Run Cargo test with Codex-specific test function
+            echo "Running Codex ${{ matrix.language }} test via Cargo..."
+            # Clean test binaries to ensure latest code is compiled
+            rm -rf target/debug/deps/*${{ matrix.test_file }}*
+
             docker run --rm \
               -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               debugger-mcp:integration-tests \
-              sh -c 'cd /workspace && bash scripts/run-codex-${{ matrix.language }}-test.sh > ${{ matrix.language }}-test-output.txt 2>&1; exit 0'
-
-            # Create clean output (remove ANSI codes) - inside Docker to avoid permission issues
-            docker run --rm \
-              -v ${{ github.workspace }}:/workspace \
-              debugger-mcp:integration-tests \
-              sh -c 'cd /workspace && sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt || true'
+              sh -c 'cd /workspace && \
+                cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_codex_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
           else
-            # Claude tests: Run Cargo test inside Docker
+            # Claude tests: Run Cargo test with Claude-specific test function
             echo "Running Claude ${{ matrix.language }} test via Cargo..."
             # Clean test binaries to ensure latest code is compiled
             rm -rf target/debug/deps/*${{ matrix.test_file }}*
@@ -201,7 +201,7 @@ jobs:
               -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
               debugger-mcp:integration-tests \
               sh -c 'cd /workspace && \
-                cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+                cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_claude_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
                 sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
           fi
 
