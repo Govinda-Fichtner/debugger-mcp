@@ -187,7 +187,9 @@ jobs:
               debugger-mcp:integration-tests \
               sh -c 'cd /workspace && \
                 cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_codex_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
-                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt && \
+                find /tmp -name "test-results.json" -exec cp {} /workspace/test-results.json \; 2>/dev/null || true && \
+                find /tmp -name "mcp_protocol_log.md" -exec cp {} /workspace/mcp_protocol_log.md \; 2>/dev/null || true'
           else
             # Claude tests: Run Cargo test with Claude-specific test function
             echo "Running Claude ${{ matrix.language }} test via Cargo..."
@@ -202,7 +204,9 @@ jobs:
               debugger-mcp:integration-tests \
               sh -c 'cd /workspace && \
                 cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_claude_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
-                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt && \
+                find /tmp -name "test-results.json" -exec cp {} /workspace/test-results.json \; 2>/dev/null || true && \
+                find /tmp -name "mcp_protocol_log.md" -exec cp {} /workspace/mcp_protocol_log.md \; 2>/dev/null || true'
           fi
 
           # Ensure files exist
