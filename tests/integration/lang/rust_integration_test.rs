@@ -611,6 +611,12 @@ async fn test_rust_claude_code_integration() {
 
 **IMPORTANT**: You have access to an MCP server called `debugger-test-rust` that provides debugging tools.
 
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
+
 ---
 
 ## PHASE 1: MCP Resource Discovery
@@ -1176,6 +1182,12 @@ fn main() {
         r#"# Rust Debugging Test with Codex
 
 **IMPORTANT**: You have access to an MCP server called `debugger-test-rust-codex` that provides debugging tools.
+
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
 
 Your task is to debug the compiled Rust program in this directory using the MCP debugging tools.
 

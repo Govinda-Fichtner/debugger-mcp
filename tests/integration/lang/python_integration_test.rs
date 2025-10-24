@@ -545,10 +545,14 @@ async fn test_python_claude_code_integration() {
         return;
     }
 
-    // 4. Create fizzbuzz.py test file
+    // 4. Create fizzbuzz.py test file in temp dir, then copy to workspace
     let fizzbuzz_path = test_dir.join("fizzbuzz.py");
     let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.py");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.py");
+
+    // Copy to workspace root for MCP server accessibility
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.py");
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.py to workspace");
 
     // 5. Create prompt
     let prompt_path = test_dir.join("debug_prompt.md");
@@ -556,6 +560,12 @@ async fn test_python_claude_code_integration() {
         r#"# Python Debugging Test - Enhanced Version
 
 **IMPORTANT**: You have access to an MCP server called `debugger-test-python` that provides debugging tools.
+
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
 
 ---
 
@@ -799,11 +809,15 @@ Include sections for:
 
 **Success Criteria**: All 8 operations complete without errors, detailed logs created, files verified.
 "#,
-        fizzbuzz_path.display(),
-        fizzbuzz_path.display(),
-        fizzbuzz_path.display()
+        workspace_fizzbuzz.display(),
+        workspace_fizzbuzz.display(),
+        workspace_fizzbuzz.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
+
+    // Copy prompt to workspace as well
+    let workspace_prompt = workspace_root.join("debug_prompt.md");
+    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     // 6. Register MCP server
     let mcp_config = json!({
@@ -811,12 +825,6 @@ Include sections for:
         "args": ["serve"]
     });
     let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
-
-    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.py");
-    let workspace_prompt = workspace_root.join("debug_prompt.md");
-
-    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.py");
-    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     let register_output = Command::new("claude")
         .arg("mcp")
@@ -1061,6 +1069,12 @@ async fn test_python_codex_code_integration() {
         r#"# Python Debugging Test with Codex
 
 **IMPORTANT**: You have access to an MCP server called `debugger-test-python-codex` that provides debugging tools.
+
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
 
 ---
 
