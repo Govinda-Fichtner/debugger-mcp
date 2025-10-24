@@ -67,33 +67,51 @@ Both workflows run on pull requests and pushes to `main`, ensuring code quality 
 
 ## Workflow 2: Integration Tests (`integration-tests-matrix.yml`)
 
-**Purpose:** Validate end-to-end debugging across all 5 supported languages
+**Purpose:** Validate end-to-end debugging across all 5 supported languages with AI agents
 
 **When it runs:**
 - Pull requests to `main` (when code/tests/scripts change)
 - Pushes to `main`
 - Manual trigger (`workflow_dispatch`)
 
+### End-to-End AI Integration Testing
+
+**What it tests:** Real AI agents (Claude Code and Codex) autonomously debug programs through the MCP server, executing actual debugging workflows end-to-end.
+
+**Why dual AI clients:**
+- **Claude Code**: Tests MCP protocol implementation with Anthropic's official client
+- **Codex**: Tests OpenAI integration and validates language-agnostic design
+- **Both**: Ensures MCP server works with multiple AI providers (not Claude-specific)
+
+**Test coverage:** 10 test combinations (5 languages × 2 AI clients) running in parallel
+
+Each test:
+1. AI client receives debugging task via prompt
+2. Client uses MCP tools to control debugger (`debugger_start`, `debugger_set_breakpoint`, etc.)
+3. Server translates MCP calls to DAP commands for language-specific debugger
+4. AI validates results and reports success/failure
+
 ### Architecture
 
 ```
-┌──────────────────┐
-│  Build Docker    │  ← Build once, reuse
-│     Image        │
-└────────┬─────────┘
-         │
-         ├──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-         ↓                  ↓                  ↓                  ↓                  ↓
-    ┌────────┐         ┌────────┐         ┌────────┐         ┌────────┐         ┌────────┐
-    │ Python │         │  Ruby  │         │Node.js │         │   Go   │         │  Rust  │
-    │  Test  │         │  Test  │         │  Test  │         │  Test  │         │  Test  │
-    └────────┘         └────────┘         └────────┘         └────────┘         └────────┘
-         │                  │                  │                  │                  │
-         └──────────────────┴──────────────────┴──────────────────┴──────────────────┘
-                                          ↓
-                                  ┌──────────────┐
-                                  │ Test Summary │  ← Aggregate results
-                                  └──────────────┘
+┌──────────────────┐       ┌──────────────────┐
+│  Build Docker    │       │ Build Release    │
+│     Image        │       │     Binary       │  ← Build once, reuse
+└────────┬─────────┘       └────────┬─────────┘
+         │                          │
+         ├──────────────────────────┴──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+         │                                             │                  │                  │                  │
+         ↓                                             ↓                  ↓                  ↓                  ↓
+    ┌─────────┐  ┌─────────┐  ┌────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
+    │ Python  │  │ Python  │  │  Ruby  │  │  Ruby  │  │Node.js│  │Node.js│  │  Go  │  │  Go  │  │ Rust │  │ Rust │
+    │ Claude  │  │  Codex  │  │ Claude │  │  Codex │  │ Claude│  │  Codex│  │Claude│  │ Codex│  │Claude│  │ Codex│
+    └─────────┘  └─────────┘  └────────┘  └────────┘  └───────┘  └───────┘  └──────┘  └──────┘  └──────┘  └──────┘
+         │            │            │            │           │           │          │         │         │         │
+         └────────────┴────────────┴────────────┴───────────┴───────────┴──────────┴─────────┴─────────┴─────────┘
+                                                          ↓
+                                                  ┌──────────────┐
+                                                  │ Test Summary │  ← Aggregate all 10 results
+                                                  └──────────────┘
 ```
 
 ### Jobs
@@ -107,21 +125,23 @@ Both workflows run on pull requests and pushes to `main`, ensuring code quality 
 - Builds release binary inside Docker (ensures correct GLIBC)
 - Uploads binary for Claude Code tests
 
-#### 3. Test Languages (Matrix)
-Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
+#### 3. Test Languages × AI Clients (Matrix)
+Runs in parallel: 5 languages × 2 AI clients = 10 concurrent test jobs
 
-**Each language test:**
-1. Loads Docker image
-2. Runs Claude Code integration test
-3. Validates all debugging operations:
+**Each test (e.g., "Python + Codex"):**
+1. Loads Docker image and release binary
+2. AI client (Claude Code or Codex) receives debugging prompt
+3. AI autonomously executes 8 debugging operations via MCP tools:
    - **S**ession Start
-   - **B**reakpoint Set
+   - **B**reakpoint Set/Verify
    - **C**ontinue Execution
-   - **T**race Stack
+   - **T**race Stack (retrieve call stack)
    - **E**valuate Expression
    - **D**isconnect Session
-4. Generates `test-results.json`
-5. Uploads results as artifact
+4. AI creates `test-results.json` with operation results
+5. Workflow uploads results as artifact
+
+**Test validation:** AI must successfully complete all 8 operations and report `overall_success: true`
 
 #### 4. Test Summary
 - Downloads all language test results
@@ -130,24 +150,28 @@ Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
 
 ### Success Criteria ✅
 
-**Overall:** All 5 languages must be **100% functional**
+**Overall:** All 10 test combinations (5 languages × 2 AI clients) must pass
 
-**Per-language criteria:**
+**Per-test criteria:**
 - ✅ `overall_success: true` in `test-results.json`
-- ✅ All 6 operations complete (SBCTED)
-- ✅ No errors in `errors` array
-- ✅ Session starts successfully
-- ✅ Breakpoint verified
-- ✅ Program stops at breakpoint
-- ✅ Stack trace retrieved
-- ✅ Variable evaluated
-- ✅ Clean disconnection
+- ✅ All 8 operations complete successfully:
+  - `session_started: true`
+  - `breakpoint_set: true`
+  - `breakpoint_verified: true`
+  - `execution_continued: true`
+  - `stopped_at_breakpoint: true`
+  - `stack_trace_retrieved: true`
+  - `variable_evaluated: true`
+  - `session_disconnected: true`
+- ✅ Empty `errors` array (`errors: []`)
 
 **Example successful result:**
 ```json
 {
   "test_run": {
     "language": "python",
+    "ai_client": "codex",
+    "timestamp": "2025-10-24T06:52:39Z",
     "overall_success": true
   },
   "operations": {
@@ -164,15 +188,24 @@ Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
 }
 ```
 
-**Summary output when successful:**
+**Summary output when all tests pass (100% success rate):**
 
-| Language | Status | Pass Rate | Functionality | Operations |
-|----------|--------|-----------|---------------|------------|
-| Python   | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Ruby     | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Node.js  | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Go       | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Rust     | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
+| Language       | Status      | Pass Rate | Functionality           | Operations |
+|----------------|-------------|-----------|-------------------------|------------|
+| Python (claude)| ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Python (codex) | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Ruby (claude)  | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Ruby (codex)   | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Node.js (claude)| ✅ PASS    | 100%      | Fully Functional (JSON) | SBCTED     |
+| Node.js (codex)| ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Go (claude)    | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Go (codex)     | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Rust (claude)  | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Rust (codex)   | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+
+**Legend:** S=Session Start, B=Breakpoint, C=Continue, T=Trace, E=Evaluate, D=Disconnect
+
+**Overall:** 10/10 tests passed (100%)
 
 ### Failure Criteria ❌
 
@@ -222,8 +255,10 @@ Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
 |----------|----------|-----------|
 | `docker-image` | Integration test Docker image | 1 day |
 | `release-binary` | Compiled debugger_mcp binary | 1 day |
-| `{language}-test-results` | Test output for each language | 30 days |
-| `test-analysis-summary` | Aggregated results table | 30 days |
+| `test-output-{language}-{ai_client}` | Test output for each combination (e.g., `test-output-python-codex`) | 30 days |
+| `json-files-{language}-{ai_client}` | All JSON files from test run | 30 days |
+| `test-analysis-summary` | Aggregated results table for all 10 tests | 30 days |
+| `test-analysis-debug-log` | Detailed analysis debug log | 30 days |
 
 ---
 
@@ -424,21 +459,30 @@ When adding a new language (e.g., Java):
 1. **Update `integration-tests-matrix.yml`:**
    ```yaml
    matrix:
-     language:
-       - python
-       - ruby
-       - nodejs
-       - go
-       - rust
-       - java  # New language
+     include:
+       # ... existing languages ...
+       - language: java
+         test_file: java_integration_test
+         emoji: ☕
+         adapter: jdwp
+         ai_client: claude
+       - language: java
+         test_file: java_integration_test
+         emoji: ☕
+         adapter: jdwp
+         ai_client: codex
    ```
 
-2. **Add integration test:**
+2. **Add integration test file:**
    - Create `tests/integration/lang/java_integration_test.rs`
+   - Implement both `test_java_claude_code_integration()` and `test_java_codex_code_integration()`
    - Follow existing pattern from other languages
+   - Ensure both tests create `test-results.json` with 8 operations
 
 3. **Update Docker image:**
    - Add Java debugger to `Dockerfile.integration-tests`
+
+This adds 2 new test jobs (Java + Claude, Java + Codex), bringing total to 12 tests
 
 ### Updating Success Criteria
 
@@ -469,7 +513,7 @@ If adding new debugging operations:
 | Workflow | Duration | Parallelization |
 |----------|----------|-----------------|
 | CI | ~5-7 minutes | 10 parallel jobs |
-| Integration Tests | ~8-10 minutes | 5 languages in parallel |
+| Integration Tests | ~8-12 minutes | 10 tests in parallel (5 languages × 2 AI clients) |
 
 ### Optimization Strategies
 
