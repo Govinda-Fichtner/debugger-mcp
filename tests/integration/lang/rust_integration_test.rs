@@ -1144,18 +1144,20 @@ fn main() {
     println!("✅ Compiled Rust program: {:?}", binary_output_path);
 
     // 9. Login to Codex (ensure authenticated)
-    let login_output = Command::new("codex")
-        .arg("login")
-        .arg("--check")
+    let api_key = std::env::var("OPENAI_API_KEY").unwrap();
+    let login_output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("echo '{}' | codex login --with-api-key", api_key))
         .output()
-        .expect("Failed to check Codex login");
+        .expect("Failed to execute codex login");
 
     if !login_output.status.success() {
-        println!("⚠️  Not logged into Codex - skipping test");
+        println!("⚠️  Codex login failed");
+        println!("stderr: {}", String::from_utf8_lossy(&login_output.stderr));
         return;
     }
 
-    println!("✅ Codex authentication verified");
+    println!("✅ Logged in to Codex");
 
     // 10. Register MCP server with Codex
     let register_output = Command::new("codex")
