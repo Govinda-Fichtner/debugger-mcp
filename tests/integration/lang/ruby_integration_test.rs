@@ -986,11 +986,15 @@ async fn test_ruby_codex_code_integration() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let test_dir = temp_dir.path();
 
-    // 5. Create fizzbuzz.rb test file
+    // 5. Create fizzbuzz.rb test file in temp dir, then copy to workspace
     let fizzbuzz_path = test_dir.join("fizzbuzz.rb");
     let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.rb");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.rb");
-    println!("✅ Created test file: {}", fizzbuzz_path.display());
+
+    // Copy to workspace root for MCP server accessibility
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.rb");
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.rb to workspace");
+    println!("✅ Created test file: {}", workspace_fizzbuzz.display());
 
     // 6. Login to Codex
     println!("\n🔑 Step 5: Logging in to Codex...");
@@ -1008,7 +1012,7 @@ async fn test_ruby_codex_code_integration() {
     }
     println!("✅ Logged in to Codex");
 
-    // 7. Register MCP server
+    // 7. Register MCP server from workspace root (matching Claude test pattern)
     println!("\n🔧 Step 6: Registering MCP server with Codex...");
     // Syntax: codex mcp add <name> -- <command> <args>
     let register_output = Command::new("codex")
@@ -1018,7 +1022,7 @@ async fn test_ruby_codex_code_integration() {
         .arg("--")
         .arg(binary_path.to_str().unwrap())
         .arg("serve")
-        .current_dir(test_dir)
+        .current_dir(&workspace_root)
         .output()
         .expect("Failed to register MCP server");
 
@@ -1150,16 +1154,20 @@ Create a file called `test-results.json` in the current directory with this stru
 Set each operation to `true` if it succeeded, `false` if it failed.
 Set `overall_success` to `true` only if ALL operations succeeded.
 "#,
-        test_dir.display(),
-        test_dir.display(),
-        test_dir.display()
+        workspace_root.display(),
+        workspace_root.display(),
+        workspace_root.display()
     );
 
     let prompt_path = test_dir.join("debug_prompt.md");
     fs::write(&prompt_path, &prompt_content).expect("Failed to write prompt");
-    println!("✅ Created prompt file");
 
-    // 9. Run Codex
+    // Copy prompt to workspace root as well
+    let workspace_prompt = workspace_root.join("debug_prompt.md");
+    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt to workspace");
+    println!("✅ Created prompt file: {}", workspace_prompt.display());
+
+    // 9. Run Codex from workspace root (matching Claude test pattern)
     println!("\n🤖 Step 8: Running Codex...");
     // Codex automatically uses registered MCP servers - no --mcp flag needed
     // Syntax: codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "<prompt>"
@@ -1169,7 +1177,7 @@ Set `overall_success` to `true` only if ALL operations succeeded.
         .arg("--dangerously-bypass-approvals-and-sandbox")
         .arg("--skip-git-repo-check")
         .arg(&prompt_content)
-        .current_dir(test_dir)
+        .current_dir(&workspace_root)
         .output()
         .expect("Failed to run Codex");
 
@@ -1182,9 +1190,9 @@ Set `overall_success` to `true` only if ALL operations succeeded.
         println!("stderr: {}", String::from_utf8_lossy(&codex_output.stderr));
     }
 
-    // 10. Validate test-results.json
+    // 10. Validate test-results.json (now in workspace_root since we run from there)
     println!("\n✅ Step 9: Validating test results...");
-    let results_path = test_dir.join("test-results.json");
+    let results_path = workspace_root.join("test-results.json");
 
     if !results_path.exists() {
         println!(
@@ -1211,9 +1219,7 @@ Set `overall_success` to `true` only if ALL operations succeeded.
     assert_eq!(results["test_run"]["language"].as_str(), Some("ruby"));
     assert_eq!(results["test_run"]["ai_client"].as_str(), Some("codex"));
 
-    // Copy test-results.json to workspace root for CI artifact collection
-    let workspace_results = workspace_root.join("test-results.json");
-    fs::copy(&results_path, &workspace_results).ok();
+    // File is already in workspace root - no copy needed
 
     println!("\n✅ Ruby Codex integration test completed!");
 }
