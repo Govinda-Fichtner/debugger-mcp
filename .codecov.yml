@@ -55,6 +55,36 @@ flags:
       - src/
     carryforward: false
 
+  # Integration tests - Python (Codex)
+  integration-python-codex:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Ruby (Codex)
+  integration-ruby-codex:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Node.js (Codex)
+  integration-nodejs-codex:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Go (Codex)
+  integration-go-codex:
+    paths:
+      - src/
+    carryforward: false
+
+  # Integration tests - Rust (Codex)
+  integration-rust-codex:
+    paths:
+      - src/
+    carryforward: false
+
 # Comment configuration for PR comments
 comment:
   layout: "header, diff, flags, components"

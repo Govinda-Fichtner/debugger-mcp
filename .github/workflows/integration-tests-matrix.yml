@@ -89,40 +89,65 @@ jobs:
 
   # Matrix strategy: Run tests for each language in parallel
   test-language:
-    name: Test ${{ matrix.language }}
+    name: Test ${{ matrix.language }} (${{ matrix.ai_client }})
     needs: [build-docker, build-binary]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false  # Continue testing other languages if one fails
       matrix:
-        language:
-          - python
-          - ruby
-          - nodejs
-          - go
-          - rust
         include:
-          # Language-specific metadata
+          # Claude Code integration tests
           - language: python
             test_file: python_integration_test
             emoji: 🐍
             adapter: debugpy
+            ai_client: claude
           - language: ruby
             test_file: ruby_integration_test
             emoji: 💎
             adapter: rdbg/debug gem
+            ai_client: claude
           - language: nodejs
             test_file: nodejs_integration_test
             emoji: 🟢
             adapter: vscode-js-debug
+            ai_client: claude
           - language: go
             test_file: go_integration_test
             emoji: 🐹
             adapter: Delve
+            ai_client: claude
           - language: rust
             test_file: rust_integration_test
             emoji: 🦀
             adapter: CodeLLDB
+            ai_client: claude
+          # Codex integration tests (all 5 languages)
+          - language: python
+            test_file: python_integration_test
+            emoji: 🐍
+            adapter: debugpy
+            ai_client: codex
+          - language: ruby
+            test_file: ruby_integration_test
+            emoji: 💎
+            adapter: rdbg/debug gem
+            ai_client: codex
+          - language: nodejs
+            test_file: nodejs_integration_test
+            emoji: 🟢
+            adapter: vscode-js-debug
+            ai_client: codex
+          - language: go
+            test_file: go_integration_test
+            emoji: 🐹
+            adapter: Delve
+            ai_client: codex
+          - language: rust
+            test_file: rust_integration_test
+            emoji: 🦀
+            adapter: CodeLLDB
+            ai_client: codex
 
     steps:
       - name: Checkout code
@@ -147,21 +172,38 @@ jobs:
         run: docker load --input /tmp/debugger-mcp-image.tar
 
       - name: Run ${{ matrix.language }} integration tests
+        timeout-minutes: 15
         run: |
-          # Clean test binaries to ensure latest code is compiled
-          # This prevents Cargo from using cached test binaries that may be from before code changes
-          echo "Cleaning test binaries to force recompilation..."
-          rm -rf target/debug/deps/*${{ matrix.test_file }}*
+          if [[ "${{ matrix.ai_client }}" == "codex" ]]; then
+            # Codex tests: Run Cargo test with Codex-specific test function
+            echo "Running Codex ${{ matrix.language }} test via Cargo..."
+            # Clean test binaries to ensure latest code is compiled
+            rm -rf target/debug/deps/*${{ matrix.test_file }}*
 
-          # Run language-specific tests inside Docker container
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -e RUST_BACKTRACE=1 \
-            -e ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
-            debugger-mcp:integration-tests \
-            sh -c 'cd /workspace && \
-              cargo test --test ${{ matrix.test_file }} -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
-              sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              debugger-mcp:integration-tests \
+              sh -c 'cd /workspace && \
+                cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_codex_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+          else
+            # Claude tests: Run Cargo test with Claude-specific test function
+            echo "Running Claude ${{ matrix.language }} test via Cargo..."
+            # Clean test binaries to ensure latest code is compiled
+            rm -rf target/debug/deps/*${{ matrix.test_file }}*
+
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
+              -e ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              debugger-mcp:integration-tests \
+              sh -c 'cd /workspace && \
+                cargo test --test ${{ matrix.test_file }} test_${{ matrix.language }}_claude_code_integration -- --include-ignored --nocapture > ${{ matrix.language }}-test-output.txt 2>&1 || true && \
+                sed "s/\x1b\[[0-9;]*m//g" ${{ matrix.language }}-test-output.txt > ${{ matrix.language }}-test-clean.txt'
+          fi
 
           # Ensure files exist
           test -f ${{ matrix.language }}-test-output.txt || echo "Warning: Output file not created" > ${{ matrix.language }}-test-output.txt
@@ -220,6 +262,9 @@ jobs:
           echo ""
           echo "================================================================"
 
+      # AI CLI tools (Claude Code, Codex) are installed inside Docker image
+      # No host installation needed - tests run inside container
+
       - name: Install debugger for ${{ matrix.language }}
         run: |
           case "${{ matrix.language }}" in
@@ -266,40 +311,66 @@ jobs:
         with:
           tool: cargo-tarpaulin
 
-      - name: Collect coverage for ${{ matrix.language }} integration test
+      - name: Prepare coverage directories
         run: |
-          # Create coverage output directory with sudo to avoid permission issues
-          # Workspace may have restrictive permissions after Docker operations
-          sudo mkdir -p coverage-${{ matrix.language }}
-          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}
+          # Create coverage directory with sudo to avoid permission issues
+          # Docker may have created root-owned files in workspace
+          sudo mkdir -p coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
 
-          # Collect coverage for this language's integration test on host
-          # Debugger was installed in previous step
-          cargo tarpaulin \
-            --test ${{ matrix.test_file }} \
-            --exclude-files 'tests/*' \
-            --ignored \
-            --timeout 120 \
-            --out Xml \
-            --output-dir coverage-${{ matrix.language }} \
-            || echo "Coverage collection failed, continuing..."
+      - name: Collect coverage for ${{ matrix.language }} (${{ matrix.ai_client }}) integration test
+        run: |
+          # Coverage directory already created in previous step with correct permissions
+
+          # For Codex tests, run coverage inside Docker where Codex CLI is available
+          # For Claude tests, run on host (debugger installed in previous step)
+          if [[ "${{ matrix.ai_client }}" == "codex" ]]; then
+            echo "Running coverage inside Docker (Codex CLI required)"
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              -e RUST_BACKTRACE=1 \
+              -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+              -w /workspace \
+              debugger-mcp:integration-tests \
+              cargo tarpaulin \
+                --test ${{ matrix.test_file }} \
+                --exclude-files 'tests/*' \
+                --ignored \
+                --timeout 180 \
+                --out Xml \
+                --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
+              || echo "Coverage collection failed, continuing..."
+          else
+            echo "Running coverage on host (debugger installed)"
+            cargo tarpaulin \
+              --test ${{ matrix.test_file }} \
+              --exclude-files 'tests/*' \
+              --ignored \
+              --timeout 120 \
+              --out Xml \
+              --output-dir coverage-${{ matrix.language }}-${{ matrix.ai_client }} \
+              || echo "Coverage collection failed, continuing..."
+          fi
+
+          # Fix permissions after Docker run
+          sudo chown -R $(whoami):$(whoami) coverage-${{ matrix.language }}-${{ matrix.ai_client }} || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./coverage-${{ matrix.language }}/cobertura.xml
+          files: ./coverage-${{ matrix.language }}-${{ matrix.ai_client }}/cobertura.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: integration-${{ matrix.language }}
+          flags: integration-${{ matrix.language }}-${{ matrix.ai_client }}
           fail_ci_if_error: false
-          name: integration-${{ matrix.language }}-coverage
+          name: integration-${{ matrix.language }}-${{ matrix.ai_client }}-coverage
           verbose: true
 
-      - name: Upload ${{ matrix.language }} test output
+      - name: Upload ${{ matrix.language }} (${{ matrix.ai_client }}) test output
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-output-${{ matrix.language }}
+          name: test-output-${{ matrix.language }}-${{ matrix.ai_client }}
           path: |
             ${{ matrix.language }}-test-output.txt
             ${{ matrix.language }}-test-clean.txt
@@ -308,14 +379,14 @@ jobs:
             fizzbuzz.*
             debug_prompt.md
             mcp_protocol_log.md
-            coverage-${{ matrix.language }}/
+            coverage-${{ matrix.language }}-${{ matrix.ai_client }}/
           retention-days: 30
 
       - name: Upload all JSON files for debugging
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: json-files-${{ matrix.language }}
+          name: json-files-${{ matrix.language }}-${{ matrix.ai_client }}
           path: |
             **/*.json
             !node_modules/**
@@ -328,48 +399,81 @@ jobs:
         if: always()
         id: parse_results
         run: |
-          # Parse test results for this language
-          TOTAL_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) {
-              if($i=="passed" || $i=="passed;") passed=$(i-1);
-              if($i=="failed" || $i=="failed;") failed=$(i-1);
-            }
-          } END {
-            print (passed+0) + (failed+0)
-          }' ${{ matrix.language }}-test-clean.txt || echo "0")
+          # Parse test results - both Claude and Codex create test-results.json
+          if [ -f "test-results.json" ]; then
+            # Both Claude and Codex tests: Parse test-results.json
+            # Count operations (8 total debugging operations)
+            TOTAL_OPS=8
 
-          PASSED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # Count successful operations (those that are true)
+            PASSED_OPS=$(jq '[.operations | to_entries[] | select(.value == true)] | length' test-results.json 2>/dev/null || echo "0")
 
-          FAILED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # Count failed operations (those that are false)
+            FAILED_OPS=$(jq '[.operations | to_entries[] | select(.value == false)] | length' test-results.json 2>/dev/null || echo "0")
 
-          IGNORED_TESTS=$(awk '/test result:/ {
-            for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
-          }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+            # Treat each operation as a "test" for consistent reporting
+            TOTAL_TESTS=$TOTAL_OPS
+            PASSED_TESTS=$PASSED_OPS
+            FAILED_TESTS=$FAILED_OPS
+            IGNORED_TESTS=0
+
+            echo "📊 Test results from test-results.json (${{ matrix.ai_client }}):"
+            echo "   Total operations: $TOTAL_TESTS"
+            echo "   Passed operations: $PASSED_TESTS"
+            echo "   Failed operations: $FAILED_TESTS"
+          else
+            # Fallback: Parse Cargo test output if JSON doesn't exist
+            echo "⚠️ test-results.json not found, parsing Cargo output"
+            TOTAL_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) {
+                if($i=="passed" || $i=="passed;") passed=$(i-1);
+                if($i=="failed" || $i=="failed;") failed=$(i-1);
+              }
+            } END {
+              print (passed+0) + (failed+0)
+            }' ${{ matrix.language }}-test-clean.txt || echo "0")
+
+            PASSED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="passed" || $i=="passed;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            FAILED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="failed" || $i=="failed;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            IGNORED_TESTS=$(awk '/test result:/ {
+              for(i=1;i<=NF;i++) if($i=="ignored" || $i=="ignored;") print $(i-1)
+            }' ${{ matrix.language }}-test-clean.txt | tail -1 || echo "0")
+
+            echo "📊 Test results from Cargo output:"
+            echo "   Total tests: $TOTAL_TESTS"
+            echo "   Passed tests: $PASSED_TESTS"
+            echo "   Failed tests: $FAILED_TESTS"
+          fi
 
           echo "total_tests=${TOTAL_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "passed_tests=${PASSED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "failed_tests=${FAILED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "ignored_tests=${IGNORED_TESTS:-0}" >> $GITHUB_OUTPUT
 
-      - name: Generate ${{ matrix.language }} test summary
+      - name: Generate ${{ matrix.language }} (${{ matrix.ai_client }}) test summary
         if: always()
         run: |
-          echo "## ${{ matrix.emoji }} ${{ matrix.language }} Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "## ${{ matrix.emoji }} ${{ matrix.language }} Integration Tests (${{ matrix.ai_client }})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**AI Client:** ${{ matrix.ai_client }}" >> $GITHUB_STEP_SUMMARY
           echo "**Adapter:** ${{ matrix.adapter }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| Total Tests | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Total Operations | ${{ steps.parse_results.outputs.total_tests }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ✅ Passed | ${{ steps.parse_results.outputs.passed_tests }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ❌ Failed | ${{ steps.parse_results.outputs.failed_tests }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| ⏭️ Ignored | ${{ steps.parse_results.outputs.ignored_tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Each operation tests a debugging capability: session start, breakpoint set/verify, continue, stop at breakpoint, stack trace retrieval, variable evaluation, disconnect_" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ steps.parse_results.outputs.failed_tests }}" != "0" ]; then
@@ -382,7 +486,7 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "</details>" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **All operations passed!**" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Fail if tests failed

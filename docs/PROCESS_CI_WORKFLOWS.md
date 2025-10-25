@@ -67,87 +67,177 @@ Both workflows run on pull requests and pushes to `main`, ensuring code quality 
 
 ## Workflow 2: Integration Tests (`integration-tests-matrix.yml`)
 
-**Purpose:** Validate end-to-end debugging across all 5 supported languages
+**Purpose:** Validate end-to-end debugging across all 5 supported languages with AI agents
 
 **When it runs:**
 - Pull requests to `main` (when code/tests/scripts change)
 - Pushes to `main`
 - Manual trigger (`workflow_dispatch`)
 
+### End-to-End AI Integration Testing
+
+**What it tests:** Real AI agents (Claude Code and Codex) autonomously debug programs through the MCP server, executing actual debugging workflows end-to-end.
+
+**Why dual AI clients:**
+- **Claude Code**: Tests MCP protocol implementation with Anthropic's official client
+- **Codex**: Tests OpenAI integration and validates language-agnostic design
+- **Both**: Ensures MCP server works with multiple AI providers (not Claude-specific)
+
+**Test coverage:** 10 test combinations (5 languages × 2 AI clients) running in parallel
+
+Each test:
+1. AI client receives debugging task via prompt
+2. Client uses MCP tools to control debugger (`debugger_start`, `debugger_set_breakpoint`, etc.)
+3. Server translates MCP calls to DAP commands for language-specific debugger
+4. AI validates results and reports success/failure
+
 ### Architecture
 
 ```
-┌──────────────────┐
-│  Build Docker    │  ← Build once, reuse
-│     Image        │
-└────────┬─────────┘
-         │
-         ├──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-         ↓                  ↓                  ↓                  ↓                  ↓
-    ┌────────┐         ┌────────┐         ┌────────┐         ┌────────┐         ┌────────┐
-    │ Python │         │  Ruby  │         │Node.js │         │   Go   │         │  Rust  │
-    │  Test  │         │  Test  │         │  Test  │         │  Test  │         │  Test  │
-    └────────┘         └────────┘         └────────┘         └────────┘         └────────┘
-         │                  │                  │                  │                  │
-         └──────────────────┴──────────────────┴──────────────────┴──────────────────┘
-                                          ↓
-                                  ┌──────────────┐
-                                  │ Test Summary │  ← Aggregate results
-                                  └──────────────┘
+┌──────────────────┐       ┌──────────────────┐
+│  Build Docker    │       │ Build Release    │
+│     Image        │       │     Binary       │  ← Build once, reuse
+└────────┬─────────┘       └────────┬─────────┘
+         │                          │
+         ├──────────────────────────┴──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+         │                                             │                  │                  │                  │
+         ↓                                             ↓                  ↓                  ↓                  ↓
+    ┌─────────┐  ┌─────────┐  ┌────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
+    │ Python  │  │ Python  │  │  Ruby  │  │  Ruby  │  │Node.js│  │Node.js│  │  Go  │  │  Go  │  │ Rust │  │ Rust │
+    │ Claude  │  │  Codex  │  │ Claude │  │  Codex │  │ Claude│  │  Codex│  │Claude│  │ Codex│  │Claude│  │ Codex│
+    └─────────┘  └─────────┘  └────────┘  └────────┘  └───────┘  └───────┘  └──────┘  └──────┘  └──────┘  └──────┘
+         │            │            │            │           │           │          │         │         │         │
+         └────────────┴────────────┴────────────┴───────────┴───────────┴──────────┴─────────┴─────────┴─────────┘
+                                                          ↓
+                                                  ┌──────────────┐
+                                                  │ Test Summary │  ← Aggregate all 10 results
+                                                  └──────────────┘
 ```
 
-### Jobs
+### Test Architecture Details
 
-#### 1. Build Docker Image
-- Builds integration test Docker image once
-- Caches image layers for speed
-- Uploads image as artifact for reuse
+#### Test Fixtures (FizzBuzz Programs)
 
-#### 2. Build Release Binary
-- Builds release binary inside Docker (ensures correct GLIBC)
-- Uploads binary for Claude Code tests
+Each language uses a simple FizzBuzz implementation for consistency:
 
-#### 3. Test Languages (Matrix)
-Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
+```
+tests/fixtures/
+├── fizzbuzz.py      # Python test program
+├── fizzbuzz.rb      # Ruby test program
+├── fizzbuzz.js      # Node.js test program
+├── fizzbuzz.go      # Go test program
+└── fizzbuzz.rs      # Rust test program
+```
 
-**Each language test:**
-1. Loads Docker image
-2. Runs Claude Code integration test
-3. Validates all debugging operations:
-   - **S**ession Start
-   - **B**reakpoint Set
-   - **C**ontinue Execution
-   - **T**race Stack
-   - **E**valuate Expression
-   - **D**isconnect Session
-4. Generates `test-results.json`
-5. Uploads results as artifact
+**Why FizzBuzz?**
+- ✅ Simple algorithm everyone understands
+- ✅ Exercises all debugging operations:
+  - **Loops** - For setting breakpoints at repeating locations
+  - **Conditionals** - For testing step-over logic
+  - **Variables** - For expression evaluation (`n`, `i`, results)
+  - **Functions** - For stack trace inspection
+- ✅ Fast execution - Completes in milliseconds (requires `stopOnEntry: true`)
+- ✅ Language-agnostic - Same logic implementable in all languages
 
-#### 4. Test Summary
-- Downloads all language test results
-- Analyzes operation success rates
-- Generates summary table
+**Example (Python):**
+```python
+def fizzbuzz(n):
+    if n % 15 == 0: return "FizzBuzz"
+    elif n % 3 == 0: return "Fizz"
+    elif n % 5 == 0: return "Buzz"
+    else: return str(n)
 
-### Success Criteria ✅
+for i in range(1, 16):
+    print(fizzbuzz(i))
+```
 
-**Overall:** All 5 languages must be **100% functional**
+#### AI Client Test Prompt Structure
 
-**Per-language criteria:**
-- ✅ `overall_success: true` in `test-results.json`
-- ✅ All 6 operations complete (SBCTED)
-- ✅ No errors in `errors` array
-- ✅ Session starts successfully
-- ✅ Breakpoint verified
-- ✅ Program stops at breakpoint
-- ✅ Stack trace retrieved
-- ✅ Variable evaluated
-- ✅ Clean disconnection
+Integration tests inject standardized prompts to AI clients (found around lines 1000-1200 in `tests/integration/lang/*_integration_test.rs`):
+
+**Prompt template:**
+```
+You are an AI debugging assistant. Your task is to debug this {language} program
+using the MCP debugging tools available to you.
+
+### 1. Start Debug Session
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{
+  "language": "{language}",
+  "program": "{path}/fizzbuzz.{ext}",
+  "args": [],
+  "cwd": null,
+  "stopOnEntry": true  ← CRITICAL: Prevents race condition
+}
+```
+
+### 2. Set Breakpoint
+**Tool**: `debugger_set_breakpoint`
+[... 8 numbered steps total ...]
+
+### 8. Disconnect Session
+**Tool**: `debugger_disconnect`
+
+---
+
+**IMPORTANT**: Create a file `test-results.json` with this exact format:
+```json
+{
+  "test_run": {
+    "language": "{language}",
+    "timestamp": "ISO-8601",
+    "overall_success": true/false,
+    "ai_client": "claude"/"codex"
+  },
+  "operations": {
+    "session_started": true/false,
+    "breakpoint_set": true/false,
+    "breakpoint_verified": true/false,
+    "execution_continued": true/false,
+    "stopped_at_breakpoint": true/false,
+    "stack_trace_retrieved": true/false,
+    "variable_evaluated": true/false,
+    "session_disconnected": true/false
+  },
+  "errors": []
+}
+```
+```
+
+**Key design decisions:**
+- **Explicit step numbering** - Helps AI track progress through workflow
+- **stopOnEntry: true** - Critical for fast-completing programs (prevents race condition)
+- **JSON output format** - Enables automated validation by CI workflow
+- **8 operations** - Covers complete debugging lifecycle (SBCTED)
+
+#### Operation Validation (SBCTED)
+
+Tests validate 8 operations via `test-results.json` created by AI:
+
+| Letter | Operation | MCP Tool | Validates |
+|--------|-----------|----------|-----------|
+| **S** | Session Start | `debugger_start` | Debugger launches, connects to program |
+| **B** | Breakpoint | `debugger_set_breakpoint` | Breakpoint set and verified |
+| **C** | Continue | `debugger_continue` | Execution resumes after pause |
+| **T** | Trace | `debugger_stack_trace` | Stack frames retrieved |
+| **E** | Evaluate | `debugger_evaluate` | Expression evaluated in scope |
+| **D** | Disconnect | `debugger_disconnect` | Clean session termination |
+
+**Additional implicit validations:**
+- **`execution_continued`** - Program runs after continue command
+- **`stopped_at_breakpoint`** - Breakpoint actually hit (not skipped)
+
+**All 8 must be `true`** for test to pass.
 
 **Example successful result:**
 ```json
 {
   "test_run": {
     "language": "python",
+    "ai_client": "codex",
+    "timestamp": "2025-10-25T15:07:19Z",
     "overall_success": true
   },
   "operations": {
@@ -164,15 +254,206 @@ Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
 }
 ```
 
-**Summary output when successful:**
+#### MCP Protocol Flow
 
-| Language | Status | Pass Rate | Functionality | Operations |
-|----------|--------|-----------|---------------|------------|
-| Python   | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Ruby     | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Node.js  | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Go       | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
-| Rust     | ✅ PASS | 100%      | Fully Functional (JSON) | SBCTED     |
+**Complete interaction for Python Codex test (~36 seconds):**
+
+```
+1. CI Workflow starts test job
+   └─> Spawns Rust test harness (cargo test)
+       └─> Rust test spawns Codex CLI process
+           └─> Codex receives debugging prompt
+               │
+               ├─> MCP Request: initialize
+               ├─> MCP Request: tools/list
+               │   Response: [debugger_start, debugger_set_breakpoint, ...]
+               │
+               ├─> MCP Request: tools/call "debugger_start"
+               │   └─> MCP Server spawns debugpy adapter
+               │       └─> DAP: initialize → launch → configurationDone
+               │   Response: { session_id: "abc123" }
+               │
+               ├─> MCP Request: tools/call "debugger_set_breakpoint"
+               │   └─> DAP: setBreakpoints
+               │   Response: { verified: true }
+               │
+               ├─> MCP Request: tools/call "debugger_continue"
+               │   └─> DAP: continue
+               │   └─> DAP Event: stopped (reason: "breakpoint")
+               │
+               ├─> MCP Request: tools/call "debugger_stack_trace"
+               │   └─> DAP: stackTrace
+               │   Response: { frames: [...] }
+               │
+               ├─> MCP Request: tools/call "debugger_evaluate"
+               │   └─> DAP: evaluate (expression: "n", frameId: 0)
+               │   Response: { result: "1", type: "int" }
+               │
+               └─> MCP Request: tools/call "debugger_disconnect"
+                   └─> DAP: disconnect
+
+2. Codex creates test-results.json (all operations: true)
+3. Rust test harness validates JSON format
+4. CI workflow uploads artifact and marks test as PASSED
+```
+
+**Key observation:** Each MCP tool call maps to one or more DAP protocol messages. The MCP layer abstracts away DAP complexity from the AI client.
+
+#### Test Implementation Location
+
+Integration tests are in `tests/integration/lang/`:
+
+```
+tests/integration/lang/
+├── python_integration_test.rs    (2 tests: Claude + Codex)
+├── ruby_integration_test.rs      (2 tests: Claude + Codex)
+├── nodejs_integration_test.rs    (2 tests: Claude + Codex)
+├── go_integration_test.rs        (2 tests: Claude + Codex)
+└── rust_integration_test.rs      (2 tests: Claude + Codex)
+```
+
+**Each file has 2 test functions:**
+- `test_{language}_claude_code_integration()` - Tests with Claude Code
+- `test_{language}_codex_code_integration()` - Tests with Codex (OpenAI)
+
+**Test structure (Rust async test):**
+```rust
+#[tokio::test]
+#[ignore] // Only run in CI or with --include-ignored
+async fn test_python_codex_code_integration() -> Result<()> {
+    // 1. Build release binary
+    build_release_binary().await?;
+
+    // 2. Prepare prompt with debugging instructions
+    let prompt = format!("Debug this Python program:\n{}", DEBUGGING_PROMPT);
+
+    // 3. Spawn Codex CLI with MCP server registered
+    let output = Command::new("codex")
+        .arg("exec")
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .env("OPENAI_API_KEY", api_key)
+        .spawn()?
+        .wait_with_output()?;
+
+    // 4. Validate test-results.json exists and has correct format
+    let results: TestResults = serde_json::from_str(&fs::read_to_string("test-results.json")?)?;
+
+    // 5. Assert all operations succeeded
+    assert!(results.test_run.overall_success);
+    assert!(results.operations.session_started);
+    // ... (all 8 operations)
+
+    Ok(())
+}
+```
+
+#### Troubleshooting Reference
+
+Common failure modes documented in [USAGE_INTEGRATION_TESTS.md](../USAGE_INTEGRATION_TESTS.md#common-ai-client-test-failures):
+
+- **Timeout with zero output** - `stopOnEntry: false` race condition (fixed in commit `cfc4004`)
+- **1 operation instead of 8** - Authentication failure or missing test-results.json
+- **Variable evaluation fails** - Compiler optimizations (Go/Rust) - AI should step to fix
+- **Claude vs Codex differences** - Different retry strategies, both should pass
+
+**Local reproduction:** See [Reproducing CI Failures Locally](../USAGE_INTEGRATION_TESTS.md#reproducing-ci-failures-locally)
+
+---
+
+### Jobs
+
+#### 1. Build Docker Image
+- Builds integration test Docker image once
+- Caches image layers for speed
+- Uploads image as artifact for reuse
+
+#### 2. Build Release Binary
+- Builds release binary inside Docker (ensures correct GLIBC)
+- Uploads binary for Claude Code tests
+
+#### 3. Test Languages × AI Clients (Matrix)
+Runs in parallel: 5 languages × 2 AI clients = 10 concurrent test jobs
+
+**Each test (e.g., "Python + Codex"):**
+1. Loads Docker image and release binary
+2. AI client (Claude Code or Codex) receives debugging prompt
+3. AI autonomously executes 8 debugging operations via MCP tools:
+   - **S**ession Start
+   - **B**reakpoint Set/Verify
+   - **C**ontinue Execution
+   - **T**race Stack (retrieve call stack)
+   - **E**valuate Expression
+   - **D**isconnect Session
+4. AI creates `test-results.json` with operation results
+5. Workflow uploads results as artifact
+
+**Test validation:** AI must successfully complete all 8 operations and report `overall_success: true`
+
+#### 4. Test Summary
+- Downloads all language test results
+- Analyzes operation success rates
+- Generates summary table
+
+### Success Criteria ✅
+
+**Overall:** All 10 test combinations (5 languages × 2 AI clients) must pass
+
+**Per-test criteria:**
+- ✅ `overall_success: true` in `test-results.json`
+- ✅ All 8 operations complete successfully:
+  - `session_started: true`
+  - `breakpoint_set: true`
+  - `breakpoint_verified: true`
+  - `execution_continued: true`
+  - `stopped_at_breakpoint: true`
+  - `stack_trace_retrieved: true`
+  - `variable_evaluated: true`
+  - `session_disconnected: true`
+- ✅ Empty `errors` array (`errors: []`)
+
+**Example successful result:**
+```json
+{
+  "test_run": {
+    "language": "python",
+    "ai_client": "codex",
+    "timestamp": "2025-10-24T06:52:39Z",
+    "overall_success": true
+  },
+  "operations": {
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  },
+  "errors": []
+}
+```
+
+**Summary output when all tests pass (100% success rate):**
+
+| Language       | Status      | Pass Rate | Functionality           | Operations |
+|----------------|-------------|-----------|-------------------------|------------|
+| Python (claude)| ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Python (codex) | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Ruby (claude)  | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Ruby (codex)   | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Node.js (claude)| ✅ PASS    | 100%      | Fully Functional (JSON) | SBCTED     |
+| Node.js (codex)| ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Go (claude)    | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Go (codex)     | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Rust (claude)  | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+| Rust (codex)   | ✅ PASS     | 100%      | Fully Functional (JSON) | SBCTED     |
+
+**Legend:** S=Session Start, B=Breakpoint, C=Continue, T=Trace, E=Evaluate, D=Disconnect
+
+**Overall:** 10/10 tests passed (100%)
 
 ### Failure Criteria ❌
 
@@ -222,8 +503,10 @@ Runs in parallel for each language: Python, Ruby, Node.js, Go, Rust
 |----------|----------|-----------|
 | `docker-image` | Integration test Docker image | 1 day |
 | `release-binary` | Compiled debugger_mcp binary | 1 day |
-| `{language}-test-results` | Test output for each language | 30 days |
-| `test-analysis-summary` | Aggregated results table | 30 days |
+| `test-output-{language}-{ai_client}` | Test output for each combination (e.g., `test-output-python-codex`) | 30 days |
+| `json-files-{language}-{ai_client}` | All JSON files from test run | 30 days |
+| `test-analysis-summary` | Aggregated results table for all 10 tests | 30 days |
+| `test-analysis-debug-log` | Detailed analysis debug log | 30 days |
 
 ---
 
@@ -424,21 +707,30 @@ When adding a new language (e.g., Java):
 1. **Update `integration-tests-matrix.yml`:**
    ```yaml
    matrix:
-     language:
-       - python
-       - ruby
-       - nodejs
-       - go
-       - rust
-       - java  # New language
+     include:
+       # ... existing languages ...
+       - language: java
+         test_file: java_integration_test
+         emoji: ☕
+         adapter: jdwp
+         ai_client: claude
+       - language: java
+         test_file: java_integration_test
+         emoji: ☕
+         adapter: jdwp
+         ai_client: codex
    ```
 
-2. **Add integration test:**
+2. **Add integration test file:**
    - Create `tests/integration/lang/java_integration_test.rs`
+   - Implement both `test_java_claude_code_integration()` and `test_java_codex_code_integration()`
    - Follow existing pattern from other languages
+   - Ensure both tests create `test-results.json` with 8 operations
 
 3. **Update Docker image:**
    - Add Java debugger to `Dockerfile.integration-tests`
+
+This adds 2 new test jobs (Java + Claude, Java + Codex), bringing total to 12 tests
 
 ### Updating Success Criteria
 
@@ -469,7 +761,7 @@ If adding new debugging operations:
 | Workflow | Duration | Parallelization |
 |----------|----------|-----------------|
 | CI | ~5-7 minutes | 10 parallel jobs |
-| Integration Tests | ~8-10 minutes | 5 languages in parallel |
+| Integration Tests | ~8-12 minutes | 10 tests in parallel (5 languages × 2 AI clients) |
 
 ### Optimization Strategies
 

@@ -221,16 +221,23 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo >&2
 
 # Define languages and their test output files
+# After adding ai_client dimension, artifacts are named test-output-{language}-{ai_client}
+# We analyze BOTH Claude and Codex tests for comprehensive coverage
 declare -A LANGUAGES=(
-    ["Python"]="$ARTIFACTS_DIR/test-output-python/python-test-output.txt"
-    ["Ruby"]="$ARTIFACTS_DIR/test-output-ruby/ruby-test-output.txt"
-    ["Node.js"]="$ARTIFACTS_DIR/test-output-nodejs/nodejs-test-output.txt"
-    ["Go"]="$ARTIFACTS_DIR/test-output-go/go-test-output.txt"
-    ["Rust"]="$ARTIFACTS_DIR/test-output-rust/rust-test-output.txt"
+    ["Python (claude)"]="$ARTIFACTS_DIR/test-output-python-claude/python-test-output.txt"
+    ["Python (codex)"]="$ARTIFACTS_DIR/test-output-python-codex/python-test-output.txt"
+    ["Ruby (claude)"]="$ARTIFACTS_DIR/test-output-ruby-claude/ruby-test-output.txt"
+    ["Ruby (codex)"]="$ARTIFACTS_DIR/test-output-ruby-codex/ruby-test-output.txt"
+    ["Node.js (claude)"]="$ARTIFACTS_DIR/test-output-nodejs-claude/nodejs-test-output.txt"
+    ["Node.js (codex)"]="$ARTIFACTS_DIR/test-output-nodejs-codex/nodejs-test-output.txt"
+    ["Go (claude)"]="$ARTIFACTS_DIR/test-output-go-claude/go-test-output.txt"
+    ["Go (codex)"]="$ARTIFACTS_DIR/test-output-go-codex/go-test-output.txt"
+    ["Rust (claude)"]="$ARTIFACTS_DIR/test-output-rust-claude/rust-test-output.txt"
+    ["Rust (codex)"]="$ARTIFACTS_DIR/test-output-rust-codex/rust-test-output.txt"
 )
 
 echo "📋 Configured languages and their output files:" >&2
-for lang in "Python" "Ruby" "Node.js" "Go" "Rust"; do
+for lang in "Python (claude)" "Python (codex)" "Ruby (claude)" "Ruby (codex)" "Node.js (claude)" "Node.js (codex)" "Go (claude)" "Go (codex)" "Rust (claude)" "Rust (codex)"; do
     file="${LANGUAGES[$lang]}"
     echo "  - $lang: $file" >&2
 done
@@ -242,7 +249,7 @@ declare -A LANG_STATUS=()
 
 echo "🔄 Beginning analysis for each language..." >&2
 echo >&2
-for lang in "Python" "Ruby" "Node.js" "Go" "Rust"; do
+for lang in "Python (claude)" "Python (codex)" "Ruby (claude)" "Ruby (codex)" "Node.js (claude)" "Node.js (codex)" "Go (claude)" "Go (codex)" "Rust (claude)" "Rust (codex)"; do
     echo "──────────────────────────────────────────────────────────────" >&2
     file="${LANGUAGES[$lang]}"
     result=$(analyze_language "$lang" "$file" || echo "$lang|❌ SKIP|0%|Not Tested|0|0|0|0|0|0")
@@ -263,8 +270,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo
 
 # Print summary table
-echo "| Language | Status | Pass Rate | Functionality | Operations |"
-echo "|----------|--------|-----------|---------------|------------|"
+echo "| Language       | Status      | Pass Rate | Functionality         | Operations |"
+echo "|----------------|-------------|-----------|------------------------|------------|"
 
 for result in "${RESULTS[@]}"; do
     IFS='|' read -r lang status rate func session bp cont stack eval disc <<< "$result"
@@ -278,7 +285,7 @@ for result in "${RESULTS[@]}"; do
     [[ $eval -gt 0 ]] && ops+="E" || ops+="-"
     [[ $disc -gt 0 ]] && ops+="D" || ops+="-"
 
-    printf "| %-8s | %-11s | %-9s | %-17s | %-10s |\n" "$lang" "$status" "$rate" "$func" "$ops"
+    printf "| %-14s | %-11s | %-9s | %-22s | %-10s |\n" "$lang" "$status" "$rate" "$func" "$ops"
 done
 
 echo
@@ -286,30 +293,30 @@ echo "**Legend:** S=Session Start, B=Breakpoint, C=Continue, T=stack Trace, E=Ev
 echo
 
 # Calculate overall metrics
-total_langs=5
-passing_langs=0
-partial_langs=0
-failing_langs=0
+total_tests=10  # 5 languages × 2 AI clients (claude + codex)
+passing_tests=0
+partial_tests=0
+failing_tests=0
 
 for lang in "${!LANG_STATUS[@]}"; do
     status="${LANG_STATUS[$lang]}"
     if [[ "$status" == "✅ PASS" ]]; then
-        passing_langs=$((passing_langs + 1))
+        passing_tests=$((passing_tests + 1))
     elif [[ "$status" == "⚠️  PARTIAL" ]]; then
-        partial_langs=$((partial_langs + 1))
+        partial_tests=$((partial_tests + 1))
     else
-        failing_langs=$((failing_langs + 1))
+        failing_tests=$((failing_tests + 1))
     fi
 done
 
-overall_rate=$((passing_langs * 100 / total_langs))
+overall_rate=$((passing_tests * 100 / total_tests))
 
 echo "### Overall Results"
 echo
-echo "- **Total Languages:** $total_langs"
-echo "- **Fully Functional:** $passing_langs ($((passing_langs * 100 / total_langs))%)"
-echo "- **Partially Functional:** $partial_langs ($((partial_langs * 100 / total_langs))%)"
-echo "- **Non-Functional:** $failing_langs ($((failing_langs * 100 / total_langs))%)"
+echo "- **Total Tests:** $total_tests (5 languages × 2 AI clients)"
+echo "- **Fully Functional:** $passing_tests ($((passing_tests * 100 / total_tests))%)"
+echo "- **Partially Functional:** $partial_tests ($((partial_tests * 100 / total_tests))%)"
+echo "- **Non-Functional:** $failing_tests ($((failing_tests * 100 / total_tests))%)"
 echo "- **Overall Success Rate:** ${overall_rate}%"
 echo
 
@@ -326,38 +333,38 @@ done
 if [[ $api_credit_issues -gt 0 ]]; then
     echo -e "${RED}🚨 TEST INFRASTRUCTURE FAILURE${NC}"
     echo
-    echo "⚠️  **$api_credit_issues language(s) skipped due to API credit exhaustion**"
+    echo "⚠️  **$api_credit_issues test(s) skipped due to API credit exhaustion**"
     echo
-    echo "Claude Code integration tests could not run due to insufficient API credits."
+    echo "Integration tests could not run due to insufficient API credits."
     echo "This is NOT a functionality issue - it's a test infrastructure problem."
     echo
     echo "**Action Required:**"
-    echo "  1. Check Claude API credit balance"
+    echo "  1. Check API credit balance (Claude/Codex)"
     echo "  2. Add credits or wait for reset"
     echo "  3. Re-run tests to verify actual functionality"
     echo
 
-    # List affected languages
-    echo "**Affected Languages:**"
+    # List affected tests
+    echo "**Affected Tests:**"
     for lang in "${!LANG_STATUS[@]}"; do
         status="${LANG_STATUS[$lang]}"
         if [[ "$status" == "⚠️  SKIPPED" ]]; then
-            echo "  - $lang (comprehensive test not executed)"
+            echo "  - $lang (test not executed)"
         fi
     done
     exit 2  # Exit code 2 for infrastructure issues
-elif [[ $passing_langs -eq $total_langs ]]; then
+elif [[ $passing_tests -eq $total_tests ]]; then
     echo -e "${GREEN}✅ ALL TESTS PASSED${NC}"
     echo
-    echo "All languages are fully functional with complete debugging capabilities."
+    echo "All language/AI client combinations are fully functional with complete debugging capabilities."
     exit 0
-elif [[ $passing_langs -ge 3 ]]; then
+elif [[ $passing_tests -ge 6 ]]; then
     echo -e "${YELLOW}⚠️  PARTIAL SUCCESS${NC}"
     echo
-    echo "Most languages are working, but some need attention:"
+    echo "Most tests are passing, but some need attention:"
     echo
 
-    # List non-passing languages
+    # List non-passing tests
     for lang in "${!LANG_STATUS[@]}"; do
         status="${LANG_STATUS[$lang]}"
         if [[ "$status" != "✅ PASS" ]]; then
@@ -385,6 +392,6 @@ elif [[ $passing_langs -ge 3 ]]; then
 else
     echo -e "${RED}❌ TESTS FAILED${NC}"
     echo
-    echo "Multiple languages are not working correctly. Review test outputs for details."
+    echo "Multiple tests are not working correctly. Review test outputs for details."
     exit 1
 fi

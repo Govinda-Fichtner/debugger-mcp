@@ -229,6 +229,202 @@ cargo test --test test_rust_integration -- --include-ignored
 cargo test --test test_golang_integration -- --include-ignored
 ```
 
+### Reproducing CI Failures Locally
+
+When CI integration tests fail, reproduce locally using Docker for better visibility:
+
+**For AI client tests (Claude Code / Codex):**
+
+```bash
+# 1. Build Docker image (matches CI environment exactly)
+docker build -f Dockerfile.integration-tests -t debugger-mcp:integration-tests .
+
+# 2. Build release binary (for Claude Code tests)
+docker run --rm \
+  -v $(pwd):/workspace \
+  debugger-mcp:integration-tests \
+  cargo build --release
+
+# 3. Run specific AI client test
+docker run --rm \
+  -v $(pwd):/workspace \
+  -e RUST_BACKTRACE=1 \
+  -e OPENAI_API_KEY="sk-..." \
+  debugger-mcp:integration-tests \
+  cargo test --test python_integration_test test_python_codex_code_integration \
+  -- --include-ignored --nocapture
+```
+
+**Environment variables needed:**
+- `OPENAI_API_KEY` - For Codex tests (get from OpenAI dashboard)
+- `ANTHROPIC_API_KEY` - For Claude Code tests (get from Anthropic Console)
+- `RUST_BACKTRACE=1` - Show Rust stack traces on panic
+
+**Check test output files:**
+Tests create files in workspace root:
+- `test-results.json` - Operation success/failure (8 operations validated)
+- `mcp_protocol_log.md` - Full MCP communication transcript
+- `{language}-{ai_client}-test.txt` - Complete test output capture
+
+**Example: Reproducing Python Codex test failure:**
+
+```bash
+# Run test and capture output
+docker run --rm \
+  -v $(pwd):/workspace \
+  -e RUST_BACKTRACE=1 \
+  -e OPENAI_API_KEY="sk-proj-..." \
+  debugger-mcp:integration-tests \
+  cargo test --test python_integration_test test_python_codex_code_integration \
+  -- --include-ignored --nocapture > python-codex-debug.txt 2>&1
+
+# Check test results
+cat test-results.json | jq .
+
+# Review full output
+less python-codex-debug.txt
+```
+
+### Common AI Client Test Failures
+
+#### Timeout (180s) with Zero Output
+
+**Symptom:** Test hangs at "Step 8: Running Codex..." or "Step 8: Running Claude Code..." with no output
+
+**Cause:** Fast-completing programs (like fizzbuzz) finish execution before breakpoints can be set
+
+**Root Cause:** With `stopOnEntry: false`, the program runs to completion in milliseconds, terminating the debug session before the AI can set breakpoints. The AI then enters an infinite retry loop trying to set breakpoints on a dead session.
+
+**Solution:** Ensure `stopOnEntry: true` in test prompt (around lines 1000-1200 in test files)
+
+```rust
+// ❌ WRONG - program completes instantly, session terminates
+"stopOnEntry": false
+
+// ✅ CORRECT - pauses at entry point, allowing breakpoint setup
+"stopOnEntry": true
+```
+
+**Files to check:**
+- `tests/integration/lang/python_integration_test.rs` (line 1097)
+- `tests/integration/lang/ruby_integration_test.rs` (line 1076)
+- `tests/integration/lang/nodejs_integration_test.rs` (line 1003)
+- `tests/integration/lang/go_integration_test.rs` (line 1110)
+- `tests/integration/lang/rust_integration_test.rs` (line 1202)
+
+**Fix applied in commit `cfc4004`:** Python and Ruby tests had `stopOnEntry: false`, causing 180s timeouts. Changed to `true`, now passing in 30-40s.
+
+---
+
+#### Shows 1 Operation Instead of 8
+
+**Symptom:** CI test summary shows `1 total operation` instead of `8 (SBCTED)`
+
+**Causes:**
+1. **Missing `test-results.json`** - Test didn't complete, AI crashed or timed out
+2. **AI authentication failed** - Invalid API key (OPENAI_API_KEY or ANTHROPIC_API_KEY)
+3. **MCP server crashed early** - Check for panics in test output
+4. **Test harness error** - Rust test wrapper failed before spawning AI
+
+**Debug steps:**
+
+```bash
+# 1. Check if test-results.json exists
+docker run --rm -v $(pwd):/workspace debugger-mcp:integration-tests \
+  ls -la test-results.json
+
+# 2. Run with full output to see authentication errors
+docker run --rm \
+  -v $(pwd):/workspace \
+  -e RUST_BACKTRACE=1 \
+  -e OPENAI_API_KEY="sk-..." \
+  debugger-mcp:integration-tests \
+  cargo test --test python_integration_test test_python_codex_code_integration \
+  -- --include-ignored --nocapture > full-debug.txt 2>&1
+
+# 3. Search for specific error patterns
+grep -i "authentication\|api key\|invalid" full-debug.txt
+grep -i "panic\|error\|failed" full-debug.txt | head -20
+
+# 4. Check MCP server logs for crashes
+grep "ERROR\|WARN" mcp_protocol_log.md
+```
+
+**Common patterns:**
+- `Error: API key invalid` → Check OPENAI_API_KEY format (should start with `sk-proj-`)
+- `Authentication failed` → API key expired or deactivated
+- `thread 'main' panicked at` → MCP server crash (check stack trace)
+
+---
+
+#### Variable Evaluation Fails in Compiled Languages
+
+**Symptom:** Codex reports "variable not in scope" or evaluation returns error for Go/Rust
+
+**Cause:** Compiler optimizations can remove variables or delay their initialization until after the breakpoint line
+
+**Expected behavior:** AI should automatically use `debugger_step_over` to advance execution to where the variable is accessible
+
+**Example (Go - variable `i` not in scope at line 5):**
+```
+AI: debugger_evaluate(expression="i")  ← Fails
+AI: debugger_step_over()               ← Adapts strategy
+AI: debugger_evaluate(expression="i")  ← Now succeeds, i=1
+```
+
+**Not a test failure if:** AI successfully adapts and completes all 8 operations (using stepping to work around optimization)
+
+**Observed in:**
+- **Go (Delve)**: Variable `i` often requires stepping to bring into scope
+- **Rust (CodeLLDB)**: Variables optimized out at function entry, accessible after first step
+- **Python/Ruby/Node.js**: Interpreted languages rarely have this issue
+
+**Test still passes:** As long as `variable_evaluated: true` in final `test-results.json`
+
+---
+
+#### Differences Between Claude Code and Codex
+
+| Aspect | Claude Code | Codex (OpenAI) |
+|--------|-------------|----------------|
+| **Retry strategy** | Less aggressive, clear errors | More aggressive retries (may timeout) |
+| **Error handling** | Detailed error messages | May retry silently on errors |
+| **Variable evaluation** | Direct evaluation | May require stepping first |
+| **Typical duration** | 30-90 seconds | 30-270 seconds (Go slowest) |
+| **Reasoning output** | Concise | Verbose troubleshooting |
+| **Breakpoint strategy** | Sets once | May retry multiple times |
+
+**Key insight:** Both clients should pass, but execution times and strategies differ. Codex typically takes longer due to more extensive reasoning and retry logic.
+
+**Expected test durations (from successful runs):**
+
+| Language | Claude Code | Codex | Notes |
+|----------|-------------|-------|-------|
+| Python   | ~35s | ~36s | Fastest (interpreted) |
+| Ruby     | ~30s | ~28s | Fastest (interpreted) |
+| Node.js  | ~60s | ~189s | Codex does extensive breakpoint retries |
+| Rust     | ~70s | ~121s | Variable stepping needed |
+| Go       | ~90s | ~271s | Slowest (Delve startup + source file fallback) |
+
+---
+
+#### MCP Protocol Errors (Non-Blocking)
+
+**Common error in logs:**
+```
+ERROR codex_mcp_client::mcp_client: failed to deserialize JSONRPCMessage:
+data did not match any variant of untagged enum JSONRPCMessage;
+line = {"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Notifications not yet supported"}}
+```
+
+**Impact:** ✅ **None** - Tests complete successfully despite this error
+
+**Cause:** MCP server sends notification about unsupported feature; client logs as error but continues
+
+**Action:** Ignore this error unless tests actually fail
+
+---
+
 ## Docker Image Details
 
 ### Image Contents

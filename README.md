@@ -64,21 +64,23 @@ Start debugging from Claude!
 | Workflow | Purpose | Latest Status |
 |----------|---------|---------------|
 | **[CI](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml)** | Code quality, security, unit tests (193 tests) | ![CI](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/ci.yml/badge.svg) |
-| **[Integration Tests](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml)** | End-to-end debugging across 5 languages | ![Integration](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml/badge.svg) |
+| **[Integration Tests](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml)** | End-to-end AI debugging: 5 languages × 2 AI clients (Claude Code + Codex) | ![Integration](https://github.com/Govinda-Fichtner/debugger-mcp/actions/workflows/integration-tests-matrix.yml/badge.svg) |
 
-**Latest Results:**
+**What Integration Tests Do:** Real AI agents (Claude Code and Codex) autonomously debug programs via MCP, validating 8 debugging operations per test across all languages.
 
-| Language | Status | Operations | Functionality |
-|----------|--------|------------|---------------|
-| Python   | ✅ PASS | SBCTED     | 100% Functional |
-| Ruby     | ✅ PASS | SBCTED     | 100% Functional |
-| Node.js  | ✅ PASS | SBCTED     | 100% Functional |
-| Go       | ✅ PASS | SBCTED     | 100% Functional |
-| Rust     | ✅ PASS | SBCTED     | 100% Functional |
+**Latest Results (10/10 tests passing):**
+
+| Language       | Claude Code | Codex | Operations |
+|----------------|-------------|-------|------------|
+| Python         | ✅ PASS     | ✅ PASS | SBCTED   |
+| Ruby           | ✅ PASS     | ✅ PASS | SBCTED   |
+| Node.js        | ✅ PASS     | ✅ PASS | SBCTED   |
+| Go             | ✅ PASS     | ✅ PASS | SBCTED   |
+| Rust           | ✅ PASS     | ✅ PASS | SBCTED   |
 
 **Legend:** S=Session Start, B=Breakpoint, C=Continue, T=Trace, E=Evaluate, D=Disconnect
 
-**Understanding CI:** See [CI Workflows Documentation](docs/Processes/CI_WORKFLOWS.md)
+**Understanding CI:** See [CI Workflows Documentation](docs/PROCESS_CI_WORKFLOWS.md)
 
 ---
 

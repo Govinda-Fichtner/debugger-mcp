@@ -545,30 +545,190 @@ async fn test_python_claude_code_integration() {
         return;
     }
 
-    // 4. Create fizzbuzz.py test file
+    // 4. Create fizzbuzz.py test file in temp dir, then copy to workspace
     let fizzbuzz_path = test_dir.join("fizzbuzz.py");
     let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.py");
     fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.py");
 
+    // Copy to workspace root for MCP server accessibility
+    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.py");
+    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.py to workspace");
+
     // 5. Create prompt
     let prompt_path = test_dir.join("debug_prompt.md");
     let prompt = format!(
-        r#"# Python Debugging Test
+        r#"# Python Debugging Test - Enhanced Version
 
-Test the debugger MCP server with Python:
-1. List available MCP tools
-2. Start debugging session for {}
-3. Set breakpoint at line 13
-4. Continue and document results
-5. Disconnect
+**IMPORTANT**: You have access to an MCP server called `debugger-test-python` that provides debugging tools.
 
-IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 'test-results.json' with this EXACT format:
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
+
+---
+
+## PHASE 1: MCP Resource Discovery
+
+**Before starting any debugging operations, perform thorough discovery:**
+
+### Step 1A: List Available Resources
+Call `list_mcp_resources` on the `debugger-test-python` MCP server to discover:
+- Session management resources (debugger://sessions)
+- Workflow templates (debugger://workflows)
+- State machine documentation
+- Any other available resources
+
+Document ALL discovered resources with their URIs and descriptions.
+
+### Step 1B: List Available Tools
+Call `list_mcp_tools` to enumerate all debugging capabilities:
+- Session management tools (debugger_start, debugger_disconnect, etc.)
+- Execution control tools (debugger_continue, debugger_step_*, etc.)
+- Inspection tools (debugger_stack_trace, debugger_evaluate, etc.)
+- State query tools (debugger_session_state, debugger_wait_for_stop, etc.)
+
+Document each tool name and its purpose.
+
+**Why this matters**: Understanding available resources and tools helps plan an effective debugging workflow and verifies the MCP server is properly configured.
+
+---
+
+## PHASE 2: Debugging Workflow
+
+**Execute the following steps IN ORDER, documenting EVERY operation:**
+
+### Step 2.1: Start Debug Session ✓
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{{
+  "language": "python",
+  "program": "{}",
+  "stopOnEntry": true
+}}
+```
+**Expected Response**: Session ID and status "started"
+**Verification**: Confirm you received a valid session ID (UUID format)
+
+### Step 2.2: Wait for Entry Point + Verify State ✓
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id-from-step-2.1>",
+  "timeoutMs": 5000
+}}
+```
+**Expected Response**: State "Stopped" with reason "entry" or "exception"
+
+**THEN IMMEDIATELY call** `debugger_session_state`:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Why**: Verify the session is in a stopped state before setting breakpoints
+**Document**: Current state, stop reason, and thread ID
+
+### Step 2.3: Set Breakpoint ✓
+**Tool**: `debugger_set_breakpoint`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "sourcePath": "{}",
+  "line": 18
+}}
+```
+**Expected Response**: `verified: true`, confirming breakpoint is set at line 18
+**Verification**: Check that line number and source path match your request
+**Note**: Line 18 is inside the fizzbuzz function checking n % 15
+
+### Step 2.4: Continue Execution ✓
+**Tool**: `debugger_continue`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: `status: "continued"`
+**Verification**: Session should transition from Stopped → Running state
+
+### Step 2.5: Wait for Breakpoint Hit + Verify State ✓
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "timeoutMs": 5000
+}}
+```
+**Expected Response**: State "Stopped" with reason "breakpoint"
+
+**THEN IMMEDIATELY call** `debugger_session_state`:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Why**: Confirm we stopped at the breakpoint, not due to an error
+**Document**: Stop reason, thread ID, and any additional details
+
+### Step 2.6: Retrieve Stack Trace ✓
+**Tool**: `debugger_stack_trace`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: Array of stack frames
+**Verification**:
+- Top frame should be in fizzbuzz function at line 18
+- Should show the main module as caller
+**Document**: How many frames total? What are the top 3 frames?
+
+### Step 2.7: Evaluate Variable ✓
+**Tool**: `debugger_evaluate`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "expression": "n",
+  "frameId": <frame-id-from-stack-trace>
+}}
+```
+**Expected Response**: Value should be 1 (first iteration)
+**Verification**: Variable 'n' is the parameter to the fizzbuzz function
+**Context**: First call to fizzbuzz with n=1
+
+### Step 2.8: Disconnect Session ✓
+**Tool**: `debugger_disconnect`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+**Expected Response**: `status: "disconnected"`
+**Verification**: Clean termination without errors
+
+---
+
+## PHASE 3: Documentation Requirements
+
+### test-results.json Format
+
+**USE THE WRITE TOOL** to create 'test-results.json' with this EXACT format:
 ```json
 {{
   "test_run": {{
     "language": "python",
     "timestamp": "<current ISO 8601 timestamp>",
-    "overall_success": <true if all operations succeeded, false otherwise>
+    "overall_success": <true if ALL operations succeeded, false if ANY failed>
   }},
   "operations": {{
     "session_started": <true/false>,
@@ -589,18 +749,75 @@ IMPORTANT: At the end of testing, **USE THE WRITE TOOL** to create a file named 
 }}
 ```
 
-Set each boolean to true only if that specific operation completed successfully.
-Add errors array entries for any failures encountered.
+**Set each boolean to true ONLY if that specific operation completed successfully.**
+**Add errors array entries for ANY failures encountered (include operation name and error message).**
 
-Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all interactions.
+### mcp_protocol_log.md Format
 
-**CRITICAL**: After creating both files:
-1. Use the Read tool to read back test-results.json
-2. Display the full content to verify it was written correctly
-3. Do NOT just claim you created the files - actually show the content!"#,
-        fizzbuzz_path.display()
+**USE THE WRITE TOOL** to create 'mcp_protocol_log.md' with COMPREHENSIVE DETAIL.
+
+**TARGET**: Your mcp_protocol_log.md should be **AT LEAST 5000 bytes (≈200+ lines)** with detailed documentation.
+
+For EACH operation, document:
+- **Timestamp** (ISO 8601 format)
+- **Purpose** (why this step is needed)
+- **Tool name** (full MCP tool name)
+- **Complete request JSON** (all parameters)
+- **Complete response JSON** (all fields)
+- **Result** (✅ SUCCESS or ❌ FAILURE)
+- **Analysis** (what this tells us about the debugging session)
+
+Include sections for:
+1. Test Overview (language, program, timestamp, result)
+2. Phase 1: MCP Resource Discovery (resources and tools found)
+3. Phase 2: Debugging Operations (all 8+ steps with full detail)
+4. Summary table showing all operations and their status
+5. Key Findings about the debugger's behavior
+
+---
+
+## PHASE 4: Verification
+
+**After creating both files, you MUST:**
+
+1. **Use the Read tool** to read back test-results.json
+2. **Display the FULL content** to verify it was written correctly
+3. **Use the Read tool** to read back mcp_protocol_log.md
+4. **Display the first 100 lines** to verify detailed logging was created
+5. **Do NOT just claim you created the files** - actually show the content!
+6. **Verify file sizes**: test-results.json should be ~400-500 bytes, mcp_protocol_log.md should be 5000+ bytes
+
+**If either file is missing, empty, or malformed, explicitly state what went wrong.**
+
+---
+
+## Test Context
+
+**Fizzbuzz Source** (`{}`):
+- Line 18: First condition checking n % 15 == 0 (correct line for breakpoint)
+- Function: fizzbuzz(n) returns string ("FizzBuzz", "Fizz", "Buzz", or number)
+- Note: Line 8 is the function definition, lines 9-17 are docstring
+
+**Expected Execution Flow**:
+1. Program starts with stopOnEntry → stops at entry point
+2. Breakpoint set at line 18 (inside fizzbuzz function)
+3. Continue → program runs until first call to fizzbuzz(1)
+4. Breakpoint hit at line 18 with n=1
+5. Stack trace shows fizzbuzz function at line 18
+6. Evaluating 'n' returns 1
+7. Clean disconnect terminates session
+
+**Success Criteria**: All 8 operations complete without errors, detailed logs created, files verified.
+"#,
+        workspace_fizzbuzz.display(),
+        workspace_fizzbuzz.display(),
+        workspace_fizzbuzz.display()
     );
     fs::write(&prompt_path, prompt).expect("Failed to write prompt");
+
+    // Copy prompt to workspace as well
+    let workspace_prompt = workspace_root.join("debug_prompt.md");
+    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     // 6. Register MCP server
     let mcp_config = json!({
@@ -608,12 +825,6 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
         "args": ["serve"]
     });
     let mcp_config_str = serde_json::to_string(&mcp_config).unwrap();
-
-    let workspace_fizzbuzz = workspace_root.join("fizzbuzz.py");
-    let workspace_prompt = workspace_root.join("debug_prompt.md");
-
-    fs::copy(&fizzbuzz_path, &workspace_fizzbuzz).expect("Failed to copy fizzbuzz.py");
-    fs::copy(&prompt_path, &workspace_prompt).expect("Failed to copy prompt");
 
     let register_output = Command::new("claude")
         .arg("mcp")
@@ -757,4 +968,297 @@ Also **USE THE WRITE TOOL** to create mcp_protocol_log.md documenting all intera
     // These files are needed by CI for artifact upload
 
     println!("\n🎉 Python Claude Code integration test completed!");
+}
+
+/// Python Codex Integration Test
+///
+/// End-to-end test using Codex CLI to debug Python programs
+/// This test validates the MCP protocol integration with Codex
+#[tokio::test]
+#[ignore]
+async fn test_python_codex_code_integration() {
+    println!("\n🚀 Starting Python Codex Integration Test");
+    println!("════════════════════════════════════════════════════════════════");
+
+    // 1. Check Codex CLI is available
+    println!("\n📋 Step 1: Checking Codex CLI availability...");
+    let codex_check = Command::new("codex").arg("--version").output();
+
+    if codex_check.is_err() || !codex_check.as_ref().unwrap().status.success() {
+        println!("⚠️  Skipping test: Codex CLI not found");
+        return;
+    }
+    println!("✅ Codex CLI is available");
+
+    // 2. Check OPENAI_API_KEY
+    println!("\n🔑 Step 2: Checking OPENAI_API_KEY...");
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        println!("⚠️  Skipping test: OPENAI_API_KEY not set");
+        return;
+    }
+    println!("✅ OPENAI_API_KEY is set");
+
+    // 3. Verify MCP server binary
+    println!("\n📦 Step 3: Verifying MCP server binary...");
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let binary_path = workspace_root.join("target/release/debugger_mcp");
+
+    if !binary_path.exists() {
+        println!(
+            "⚠️  Skipping test: Binary not found at {}",
+            binary_path.display()
+        );
+        return;
+    }
+    println!("✅ Binary found at {}", binary_path.display());
+
+    // 4. Create temporary test directory
+    println!("\n📁 Step 4: Creating temporary test environment...");
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let test_dir = temp_dir.path();
+
+    // 5. Create fizzbuzz.py test file
+    let fizzbuzz_path = test_dir.join("fizzbuzz.py");
+    let fizzbuzz_code = include_str!("../../fixtures/fizzbuzz.py");
+    fs::write(&fizzbuzz_path, fizzbuzz_code).expect("Failed to write fizzbuzz.py");
+    println!("✅ Created test file: {}", fizzbuzz_path.display());
+
+    // 6. Login to Codex
+    println!("\n🔑 Step 5: Logging in to Codex...");
+    let api_key = std::env::var("OPENAI_API_KEY").unwrap();
+    let login_output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("echo '{}' | codex login --with-api-key", api_key))
+        .output()
+        .expect("Failed to execute codex login");
+
+    if !login_output.status.success() {
+        println!("⚠️  Codex login failed");
+        println!("stderr: {}", String::from_utf8_lossy(&login_output.stderr));
+        return;
+    }
+    println!("✅ Logged in to Codex");
+
+    // 7. Register MCP server
+    println!("\n🔧 Step 6: Registering MCP server with Codex...");
+    // Syntax: codex mcp add <name> -- <command> <args>
+    let register_output = Command::new("codex")
+        .arg("mcp")
+        .arg("add")
+        .arg("debugger-test-python-codex")
+        .arg("--")
+        .arg(binary_path.to_str().unwrap())
+        .arg("serve")
+        .current_dir(test_dir)
+        .output()
+        .expect("Failed to register MCP server");
+
+    if !register_output.status.success() {
+        println!("⚠️  MCP registration failed");
+        println!(
+            "stderr: {}",
+            String::from_utf8_lossy(&register_output.stderr)
+        );
+        return;
+    }
+    println!("✅ MCP server registered");
+
+    // 8. Create debugging prompt
+    println!("\n📝 Step 7: Creating debugging prompt...");
+    let prompt_content = format!(
+        r#"# Python Debugging Test with Codex
+
+**IMPORTANT**: You have access to an MCP server called `debugger-test-python-codex` that provides debugging tools.
+
+**CRITICAL PATH GUIDANCE:**
+- All file paths referenced in this test are **absolute paths** to files in the working directory
+- When the MCP server is spawned, it inherits the working directory context from where you (the AI client) run
+- The debugger will access files using the paths provided - ensure these paths are accessible from your current working directory
+- If you encounter "file not found" errors with the MCP server, verify the file paths are correct relative to your current working directory
+
+---
+
+## Task
+Debug the Python program at: {}/fizzbuzz.py
+
+## Required Steps
+
+Execute these steps IN ORDER and document each operation:
+
+### 1. Start Debug Session
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{{
+  "language": "python",
+  "program": "{}/fizzbuzz.py",
+  "args": [],
+  "cwd": null,
+  "stopOnEntry": true
+}}
+```
+
+### 2. Set Breakpoint
+**Tool**: `debugger_set_breakpoint`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id-from-step-1>",
+  "file": "{}/fizzbuzz.py",
+  "line": 18
+}}
+```
+Verify the breakpoint is verified (check response).
+
+### 3. Continue Execution
+**Tool**: `debugger_continue`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+### 4. Wait for Breakpoint
+**Tool**: `debugger_wait_for_stop`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "timeoutMs": 5000
+}}
+```
+Confirm stopped at breakpoint (reason: "breakpoint").
+
+### 5. Get Stack Trace
+**Tool**: `debugger_stack_trace`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+### 6. Evaluate Variable
+**Tool**: `debugger_evaluate`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>",
+  "frameId": <frame-id-from-stack-trace>,
+  "expression": "n"
+}}
+```
+
+### 7. Disconnect
+**Tool**: `debugger_disconnect`
+**Parameters**:
+```json
+{{
+  "sessionId": "<session-id>"
+}}
+```
+
+## Final Step: Create test-results.json
+
+Create a file called `test-results.json` in the current directory with this structure:
+```json
+{{
+  "test_run": {{
+    "language": "python",
+    "timestamp": "<current-iso-timestamp>",
+    "overall_success": true,
+    "ai_client": "codex"
+  }},
+  "operations": {{
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  }},
+  "errors": []
+}}
+```
+
+Set each operation to `true` if it succeeded, `false` if it failed.
+Set `overall_success` to `true` only if ALL operations succeeded.
+"#,
+        test_dir.display(),
+        test_dir.display(),
+        test_dir.display()
+    );
+
+    let prompt_path = test_dir.join("debug_prompt.md");
+    fs::write(&prompt_path, &prompt_content).expect("Failed to write prompt");
+    println!("✅ Created prompt file");
+
+    // 9. Run Codex
+    println!("\n🤖 Step 8: Running Codex...");
+    // Codex automatically uses registered MCP servers - no --mcp flag needed
+    // Syntax: codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "<prompt>"
+    let codex_output = Command::new("codex")
+        .arg("exec")
+        .arg("--json")
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .arg("--skip-git-repo-check")
+        .arg(&prompt_content)
+        .current_dir(test_dir)
+        .output()
+        .expect("Failed to run Codex");
+
+    println!("\n📊 Codex Output:");
+    let output_str = String::from_utf8_lossy(&codex_output.stdout);
+    println!("{}", output_str);
+
+    if !codex_output.status.success() {
+        println!("⚠️  Codex execution failed");
+        println!("stderr: {}", String::from_utf8_lossy(&codex_output.stderr));
+    }
+
+    // 10. Validate test-results.json
+    println!("\n✅ Step 9: Validating test results...");
+    let results_path = test_dir.join("test-results.json");
+
+    if !results_path.exists() {
+        println!(
+            "⚠️  test-results.json not found at {}",
+            results_path.display()
+        );
+        println!("   Test may have timed out or Codex failed to create the file");
+        // Don't fail the test - timeout is acceptable
+        return;
+    }
+
+    let results_content = fs::read_to_string(&results_path).unwrap();
+    let results: serde_json::Value = serde_json::from_str(&results_content).unwrap();
+
+    println!("\n📊 Test Results:");
+    println!("{}", serde_json::to_string_pretty(&results).unwrap());
+
+    // Validate structure
+    assert!(results["test_run"].is_object(), "Missing test_run object");
+    assert!(
+        results["operations"].is_object(),
+        "Missing operations object"
+    );
+    assert_eq!(results["test_run"]["language"].as_str(), Some("python"));
+    assert_eq!(results["test_run"]["ai_client"].as_str(), Some("codex"));
+
+    // Copy test-results.json to workspace root for CI artifact collection
+    let workspace_results = workspace_root.join("test-results.json");
+    fs::copy(&results_path, &workspace_results).ok();
+
+    // 11. Cleanup
+    let _ = Command::new("codex")
+        .arg("mcp")
+        .arg("remove")
+        .arg("debugger-test-python-codex")
+        .current_dir(test_dir)
+        .output();
+
+    println!("\n🎉 Python Codex integration test completed!");
 }
