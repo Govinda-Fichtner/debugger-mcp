@@ -114,6 +114,254 @@ Each test:
                                                   └──────────────┘
 ```
 
+### Test Architecture Details
+
+#### Test Fixtures (FizzBuzz Programs)
+
+Each language uses a simple FizzBuzz implementation for consistency:
+
+```
+tests/fixtures/
+├── fizzbuzz.py      # Python test program
+├── fizzbuzz.rb      # Ruby test program
+├── fizzbuzz.js      # Node.js test program
+├── fizzbuzz.go      # Go test program
+└── fizzbuzz.rs      # Rust test program
+```
+
+**Why FizzBuzz?**
+- ✅ Simple algorithm everyone understands
+- ✅ Exercises all debugging operations:
+  - **Loops** - For setting breakpoints at repeating locations
+  - **Conditionals** - For testing step-over logic
+  - **Variables** - For expression evaluation (`n`, `i`, results)
+  - **Functions** - For stack trace inspection
+- ✅ Fast execution - Completes in milliseconds (requires `stopOnEntry: true`)
+- ✅ Language-agnostic - Same logic implementable in all languages
+
+**Example (Python):**
+```python
+def fizzbuzz(n):
+    if n % 15 == 0: return "FizzBuzz"
+    elif n % 3 == 0: return "Fizz"
+    elif n % 5 == 0: return "Buzz"
+    else: return str(n)
+
+for i in range(1, 16):
+    print(fizzbuzz(i))
+```
+
+#### AI Client Test Prompt Structure
+
+Integration tests inject standardized prompts to AI clients (found around lines 1000-1200 in `tests/integration/lang/*_integration_test.rs`):
+
+**Prompt template:**
+```
+You are an AI debugging assistant. Your task is to debug this {language} program
+using the MCP debugging tools available to you.
+
+### 1. Start Debug Session
+**Tool**: `debugger_start`
+**Parameters**:
+```json
+{
+  "language": "{language}",
+  "program": "{path}/fizzbuzz.{ext}",
+  "args": [],
+  "cwd": null,
+  "stopOnEntry": true  ← CRITICAL: Prevents race condition
+}
+```
+
+### 2. Set Breakpoint
+**Tool**: `debugger_set_breakpoint`
+[... 8 numbered steps total ...]
+
+### 8. Disconnect Session
+**Tool**: `debugger_disconnect`
+
+---
+
+**IMPORTANT**: Create a file `test-results.json` with this exact format:
+```json
+{
+  "test_run": {
+    "language": "{language}",
+    "timestamp": "ISO-8601",
+    "overall_success": true/false,
+    "ai_client": "claude"/"codex"
+  },
+  "operations": {
+    "session_started": true/false,
+    "breakpoint_set": true/false,
+    "breakpoint_verified": true/false,
+    "execution_continued": true/false,
+    "stopped_at_breakpoint": true/false,
+    "stack_trace_retrieved": true/false,
+    "variable_evaluated": true/false,
+    "session_disconnected": true/false
+  },
+  "errors": []
+}
+```
+```
+
+**Key design decisions:**
+- **Explicit step numbering** - Helps AI track progress through workflow
+- **stopOnEntry: true** - Critical for fast-completing programs (prevents race condition)
+- **JSON output format** - Enables automated validation by CI workflow
+- **8 operations** - Covers complete debugging lifecycle (SBCTED)
+
+#### Operation Validation (SBCTED)
+
+Tests validate 8 operations via `test-results.json` created by AI:
+
+| Letter | Operation | MCP Tool | Validates |
+|--------|-----------|----------|-----------|
+| **S** | Session Start | `debugger_start` | Debugger launches, connects to program |
+| **B** | Breakpoint | `debugger_set_breakpoint` | Breakpoint set and verified |
+| **C** | Continue | `debugger_continue` | Execution resumes after pause |
+| **T** | Trace | `debugger_stack_trace` | Stack frames retrieved |
+| **E** | Evaluate | `debugger_evaluate` | Expression evaluated in scope |
+| **D** | Disconnect | `debugger_disconnect` | Clean session termination |
+
+**Additional implicit validations:**
+- **`execution_continued`** - Program runs after continue command
+- **`stopped_at_breakpoint`** - Breakpoint actually hit (not skipped)
+
+**All 8 must be `true`** for test to pass.
+
+**Example successful result:**
+```json
+{
+  "test_run": {
+    "language": "python",
+    "ai_client": "codex",
+    "timestamp": "2025-10-25T15:07:19Z",
+    "overall_success": true
+  },
+  "operations": {
+    "session_started": true,
+    "breakpoint_set": true,
+    "breakpoint_verified": true,
+    "execution_continued": true,
+    "stopped_at_breakpoint": true,
+    "stack_trace_retrieved": true,
+    "variable_evaluated": true,
+    "session_disconnected": true
+  },
+  "errors": []
+}
+```
+
+#### MCP Protocol Flow
+
+**Complete interaction for Python Codex test (~36 seconds):**
+
+```
+1. CI Workflow starts test job
+   └─> Spawns Rust test harness (cargo test)
+       └─> Rust test spawns Codex CLI process
+           └─> Codex receives debugging prompt
+               │
+               ├─> MCP Request: initialize
+               ├─> MCP Request: tools/list
+               │   Response: [debugger_start, debugger_set_breakpoint, ...]
+               │
+               ├─> MCP Request: tools/call "debugger_start"
+               │   └─> MCP Server spawns debugpy adapter
+               │       └─> DAP: initialize → launch → configurationDone
+               │   Response: { session_id: "abc123" }
+               │
+               ├─> MCP Request: tools/call "debugger_set_breakpoint"
+               │   └─> DAP: setBreakpoints
+               │   Response: { verified: true }
+               │
+               ├─> MCP Request: tools/call "debugger_continue"
+               │   └─> DAP: continue
+               │   └─> DAP Event: stopped (reason: "breakpoint")
+               │
+               ├─> MCP Request: tools/call "debugger_stack_trace"
+               │   └─> DAP: stackTrace
+               │   Response: { frames: [...] }
+               │
+               ├─> MCP Request: tools/call "debugger_evaluate"
+               │   └─> DAP: evaluate (expression: "n", frameId: 0)
+               │   Response: { result: "1", type: "int" }
+               │
+               └─> MCP Request: tools/call "debugger_disconnect"
+                   └─> DAP: disconnect
+
+2. Codex creates test-results.json (all operations: true)
+3. Rust test harness validates JSON format
+4. CI workflow uploads artifact and marks test as PASSED
+```
+
+**Key observation:** Each MCP tool call maps to one or more DAP protocol messages. The MCP layer abstracts away DAP complexity from the AI client.
+
+#### Test Implementation Location
+
+Integration tests are in `tests/integration/lang/`:
+
+```
+tests/integration/lang/
+├── python_integration_test.rs    (2 tests: Claude + Codex)
+├── ruby_integration_test.rs      (2 tests: Claude + Codex)
+├── nodejs_integration_test.rs    (2 tests: Claude + Codex)
+├── go_integration_test.rs        (2 tests: Claude + Codex)
+└── rust_integration_test.rs      (2 tests: Claude + Codex)
+```
+
+**Each file has 2 test functions:**
+- `test_{language}_claude_code_integration()` - Tests with Claude Code
+- `test_{language}_codex_code_integration()` - Tests with Codex (OpenAI)
+
+**Test structure (Rust async test):**
+```rust
+#[tokio::test]
+#[ignore] // Only run in CI or with --include-ignored
+async fn test_python_codex_code_integration() -> Result<()> {
+    // 1. Build release binary
+    build_release_binary().await?;
+
+    // 2. Prepare prompt with debugging instructions
+    let prompt = format!("Debug this Python program:\n{}", DEBUGGING_PROMPT);
+
+    // 3. Spawn Codex CLI with MCP server registered
+    let output = Command::new("codex")
+        .arg("exec")
+        .arg("--dangerously-bypass-approvals-and-sandbox")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .env("OPENAI_API_KEY", api_key)
+        .spawn()?
+        .wait_with_output()?;
+
+    // 4. Validate test-results.json exists and has correct format
+    let results: TestResults = serde_json::from_str(&fs::read_to_string("test-results.json")?)?;
+
+    // 5. Assert all operations succeeded
+    assert!(results.test_run.overall_success);
+    assert!(results.operations.session_started);
+    // ... (all 8 operations)
+
+    Ok(())
+}
+```
+
+#### Troubleshooting Reference
+
+Common failure modes documented in [USAGE_INTEGRATION_TESTS.md](../USAGE_INTEGRATION_TESTS.md#common-ai-client-test-failures):
+
+- **Timeout with zero output** - `stopOnEntry: false` race condition (fixed in commit `cfc4004`)
+- **1 operation instead of 8** - Authentication failure or missing test-results.json
+- **Variable evaluation fails** - Compiler optimizations (Go/Rust) - AI should step to fix
+- **Claude vs Codex differences** - Different retry strategies, both should pass
+
+**Local reproduction:** See [Reproducing CI Failures Locally](../USAGE_INTEGRATION_TESTS.md#reproducing-ci-failures-locally)
+
+---
+
 ### Jobs
 
 #### 1. Build Docker Image
