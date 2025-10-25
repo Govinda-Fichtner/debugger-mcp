@@ -1094,7 +1094,7 @@ Execute these steps IN ORDER and document each operation:
   "program": "{}/fizzbuzz.py",
   "args": [],
   "cwd": null,
-  "stopOnEntry": false
+  "stopOnEntry": true
 }}
 ```
 

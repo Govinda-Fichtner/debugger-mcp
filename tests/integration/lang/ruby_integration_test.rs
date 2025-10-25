@@ -1073,7 +1073,7 @@ Execute these steps IN ORDER and document each operation:
   "program": "{}/fizzbuzz.rb",
   "args": [],
   "cwd": null,
-  "stopOnEntry": false
+  "stopOnEntry": true
 }}
 ```
 
