@@ -1101,6 +1101,8 @@ func main() {
 
 Your task is to debug the compiled Go program in this directory using the MCP debugging tools.
 
+**EXECUTE THESE STEPS** (do not just plan - actually execute each step using the MCP tools):
+
 ## Step-by-Step Instructions:
 
 1. Start a debug session for Go:

@@ -1006,9 +1006,9 @@ Your task is to debug the fizzbuzz.js program in this directory using the MCP de
    - Use the `debugger_wait_for_stop` tool
    - Pass the session ID from step 1
 
-3. Set a breakpoint at line 17 (the for loop):
+3. Set a breakpoint at line 18 (inside the for loop body):
    - Use the `debugger_set_breakpoint` tool
-   - Set `"line": 17`
+   - Set `"line": 18`
 
 4. Continue execution to the breakpoint:
    - Use the `debugger_continue` tool
