@@ -1300,7 +1300,65 @@ impl DapClient {
         Ok(body.stack_frames)
     }
 
+    pub async fn variables(&self, variables_reference: i32) -> Result<Vec<Variable>> {
+        let args = VariablesArguments {
+            variables_reference,
+            filter: None,
+            start: None,
+            count: None,
+        };
+
+        let response = self
+            .send_request("variables", Some(serde_json::to_value(args)?))
+            .await?;
+
+        if !response.success {
+            return Err(Error::Dap(format!(
+                "Variables failed: {:?}",
+                response.message
+            )));
+        }
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct VariablesResponse {
+            variables: Vec<Variable>,
+        }
+
+        let body: VariablesResponse = response
+            .body
+            .ok_or_else(|| Error::Dap("No body in variables response".to_string()))
+            .and_then(|v| {
+                serde_json::from_value(v)
+                    .map_err(|e| Error::Dap(format!("Failed to parse variables: {}", e)))
+            })?;
+
+        Ok(body.variables)
+    }
+
     pub async fn evaluate(&self, expression: &str, frame_id: Option<i32>) -> Result<String> {
+        let (result, variables_reference) = self.evaluate_raw(expression, frame_id).await?;
+
+        // Auto-expand children when variablesReference > 0 (synthetic providers like HashMap, Vec, BTreeMap)
+        // Skip for strings — LLDB already shows the string content in the result summary
+        if variables_reference > 0 && !result.starts_with('"') {
+            match self.expand_variable(variables_reference, 2).await {
+                Ok(expanded) if !expanded.is_empty() => {
+                    return Ok(format!("{}\n{}", result, expanded));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Raw evaluate returning both result string and variablesReference
+    pub async fn evaluate_raw(
+        &self,
+        expression: &str,
+        frame_id: Option<i32>,
+    ) -> Result<(String, i32)> {
         // If frame_id is None, get the top frame from stack trace
         let frame_id = if let Some(id) = frame_id {
             Some(id)
@@ -1325,7 +1383,7 @@ impl DapClient {
         let args = EvaluateArguments {
             expression: expression.to_string(),
             frame_id,
-            context: Some("watch".to_string()), // Use "watch" for code expression evaluation, not "repl" (LLDB commands)
+            context: Some("watch".to_string()),
         };
 
         let response = self
@@ -1340,8 +1398,11 @@ impl DapClient {
         }
 
         #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct EvaluateResponse {
             result: String,
+            #[serde(default)]
+            variables_reference: i32,
         }
 
         let body: EvaluateResponse = response
@@ -1352,7 +1413,73 @@ impl DapClient {
                     .map_err(|e| Error::Dap(format!("Failed to parse evaluate result: {}", e)))
             })?;
 
-        Ok(body.result)
+        Ok((body.result, body.variables_reference))
+    }
+
+    /// Recursively expand a variablesReference into a readable string
+    fn expand_variable(
+        &self,
+        variables_reference: i32,
+        max_depth: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send + '_>> {
+        Box::pin(async move {
+            if max_depth == 0 || variables_reference <= 0 {
+                return Ok(String::new());
+            }
+
+            let children = self.variables(variables_reference).await?;
+            if children.is_empty() {
+                return Ok(String::new());
+            }
+
+            let mut lines = Vec::new();
+            for child in &children {
+                // Skip [[raw]] entries — internal LLDB synthetic provider detail
+                if child.name == "[raw]" {
+                    continue;
+                }
+                // Skip character-by-character string expansion (unsigned char children)
+                let type_str = child.type_.as_deref().unwrap_or("");
+                if type_str == "unsigned char" || type_str == "char" {
+                    continue;
+                }
+
+                let child_expansion = if child.variables_reference > 0 && max_depth > 1 {
+                    match self
+                        .expand_variable(child.variables_reference, max_depth - 1)
+                        .await
+                    {
+                        Ok(s) if !s.is_empty() => {
+                            let indented: String = s
+                                .lines()
+                                .map(|l| format!("  {}", l))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            format!("\n{}", indented)
+                        }
+                        _ => String::new(),
+                    }
+                } else if child.variables_reference > 0 {
+                    " {…}".to_string()
+                } else {
+                    String::new()
+                };
+
+                if type_str.is_empty() {
+                    lines.push(format!(
+                        "  [{}]: {}{}",
+                        child.name, child.value, child_expansion
+                    ));
+                } else {
+                    lines.push(format!(
+                        "  [{}]: {} ({}){}",
+                        child.name, child.value, type_str, child_expansion
+                    ));
+                }
+            }
+
+            Ok(lines.join("\n"))
+        })
     }
 
     pub async fn disconnect(&self) -> Result<()> {

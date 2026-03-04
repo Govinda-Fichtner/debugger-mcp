@@ -96,6 +96,66 @@ pub enum CargoTargetType {
 }
 
 impl RustAdapter {
+    /// Generate LLDB init commands to load Rust's pretty-printers.
+    ///
+    /// The Rust toolchain ships LLDB formatters (lldb_lookup.py / lldb_providers.py)
+    /// that provide human-readable display of HashMap, BTreeMap, Vec, String, etc.
+    /// `rust-lldb` loads these automatically, but CodeLLDB does not.
+    ///
+    /// This method detects the active Rust toolchain's sysroot and generates
+    /// the LLDB commands to load those formatters. If the toolchain is not found,
+    /// returns empty (debugging still works, just without pretty-printing).
+    fn rust_lldb_init_commands() -> Vec<String> {
+        // Try to find Rust sysroot via rustc
+        let sysroot = std::process::Command::new("rustc")
+            .arg("--print")
+            .arg("sysroot")
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    String::from_utf8(o.stdout)
+                        .ok()
+                        .map(|s| s.trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+        let Some(sysroot) = sysroot else {
+            debug!("🦀 [RUST] Could not determine rustc sysroot, skipping LLDB formatters");
+            return vec![];
+        };
+
+        let etc_dir = format!("{}/lib/rustlib/etc", sysroot);
+        let lookup_path = format!("{}/lldb_lookup.py", etc_dir);
+        let commands_path = format!("{}/lldb_commands", etc_dir);
+
+        if !Path::new(&lookup_path).exists() {
+            debug!(
+                "🦀 [RUST] LLDB formatters not found at {}, skipping",
+                lookup_path
+            );
+            return vec![];
+        }
+
+        info!("🦀 [RUST] Loading Rust LLDB formatters from {}", etc_dir);
+
+        // Read the lldb_commands file and prepend the script import
+        let mut commands = vec![format!("command script import \"{}\"", lookup_path)];
+
+        if let Ok(contents) = std::fs::read_to_string(&commands_path) {
+            for line in contents.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                    commands.push(trimmed.to_string());
+                }
+            }
+        }
+
+        commands
+    }
+
     /// Get CodeLLDB command path
     ///
     /// Checks multiple locations in order:
@@ -653,6 +713,13 @@ impl RustAdapter {
             "stdio": [null, null, null],
             // Explicitly set source path to help with breakpoint resolution
             "sourceMap": {".": "."},
+            // Tell CodeLLDB this is Rust — triggers auto-loading of the toolchain's
+            // LLDB formatters (lldb_lookup.py / lldb_providers.py) for HashMap, Vec,
+            // BTreeMap, String, etc. without manual initCommands.
+            "sourceLanguages": ["rust"],
+            // Also load formatters explicitly via initCommands as a fallback
+            // (e.g. if sourceLanguages isn't supported by the adapter version).
+            "initCommands": Self::rust_lldb_init_commands(),
         });
 
         // Set working directory for proper source path resolution
@@ -850,6 +917,35 @@ mod tests {
         let config = RustAdapter::launch_args(binary, &args, None, false);
 
         assert_eq!(config["args"], json!(args));
+    }
+
+    #[test]
+    fn test_launch_args_includes_init_commands() {
+        let binary = "/workspace/target/debug/fizzbuzz";
+        let args = vec![];
+        let config = RustAdapter::launch_args(binary, &args, None, false);
+
+        // initCommands should be present (may be empty if rustc not installed)
+        assert!(config["initCommands"].is_array());
+
+        // If rustc is available, formatters should be loaded
+        let commands = config["initCommands"].as_array().unwrap();
+        if !commands.is_empty() {
+            // First command should import lldb_lookup.py
+            let first = commands[0].as_str().unwrap();
+            assert!(
+                first.contains("lldb_lookup.py"),
+                "First init command should import lldb_lookup.py, got: {}",
+                first
+            );
+            // Should contain type formatter registrations
+            assert!(
+                commands
+                    .iter()
+                    .any(|c| c.as_str().unwrap().contains("category enable Rust")),
+                "Init commands should enable the Rust category"
+            );
+        }
     }
 
     // Compilation tests require rustc installed

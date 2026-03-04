@@ -187,6 +187,16 @@ pub struct Scope {
     pub expensive: bool,
 }
 
+/// Variables Request Arguments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VariablesArguments {
+    pub variables_reference: i32,
+    pub filter: Option<String>,
+    pub start: Option<i32>,
+    pub count: Option<i32>,
+}
+
 /// Continue Request Arguments
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
